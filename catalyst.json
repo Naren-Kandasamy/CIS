@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "targets": [
+      "ps_1_cis_function",
+      "job_test_func"
+    ],
+    "ignore": [],
+    "source": "functions"
+  }
+}

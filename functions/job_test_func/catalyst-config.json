@@ -1,0 +1,11 @@
+{
+	"deployment": {
+		"name": "job_test_func",
+		"stack": "python_3_13",
+		"type": "job",
+		"env_variables": {}
+	},
+	"execution": {
+		"main": "main.py"
+	}
+}

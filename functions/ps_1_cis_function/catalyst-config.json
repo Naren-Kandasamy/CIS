@@ -1,0 +1,11 @@
+{
+	"deployment": {
+		"name": "ps_1_cis_function",
+		"stack": "python_3_13",
+		"type": "event",
+		"env_variables": {}
+	},
+	"execution": {
+		"main": "main.py"
+	}
+}

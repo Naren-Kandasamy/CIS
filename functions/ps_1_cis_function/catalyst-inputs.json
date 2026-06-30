@@ -1,0 +1,43 @@
+{
+  "test_event_cache_put": {
+    "rule_id": "214901445556698032",
+    "target_id": "98819000",
+    "version": 1,
+    "attempt": 1,
+    "account": {
+      "org_id": "60075634347",
+      "project": {
+        "environment": "Development",
+        "name": "PS1-CIS",
+        "id": "45958000000015001"
+      }
+    },
+    "events": [
+      {
+        "data": {
+          "cache_name": "06923",
+          "cache_value": "fec4f9afac",
+          "project_details": {
+            "project_name": "PS1-CIS",
+            "id": "45958000000015001",
+            "project_type": "Live"
+          },
+          "segment_details": {
+            "segment_name": "Default",
+            "id": "45958000000015019"
+          },
+          "expiry_in_hours": 35,
+          "expires_in": "Jun 30, 2026 12:28 AM",
+          "ttl_in_milliseconds": "126000000"
+        },
+        "id": "e776c757-523f-36c9-bb86-4b3cad9aa90",
+        "time_in_ms": "1782633508042",
+        "source": "publisher_id:53199664735402800/service:cloudscalecache/account:61572484",
+        "event_config": {
+          "api_name": "cache_item_created",
+          "id": "86945384932817696"
+        }
+      }
+    ]
+  }
+}
