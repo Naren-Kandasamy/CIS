@@ -6,6 +6,7 @@
 		"env_variables": {}
 	},
 	"execution": {
-		"main": "main.py"
+		"main": "main.py",
+		"memory": 512
 	}
 }

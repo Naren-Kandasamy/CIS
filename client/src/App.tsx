@@ -1,0 +1,233 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, Loader2 } from 'lucide-react';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  evidence?: any[];
+  status?: string;
+  isStreaming?: boolean;
+}
+
+export default function App() {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: 'Greetings Officer. I am the PS-1 Conversational Intelligence System. How can I assist you today?'
+    }
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: inputValue
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsLoading(true);
+
+    const assistantMsgId = crypto.randomUUID();
+    setMessages(prev => [...prev, {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      status: 'dispatching_job',
+      isStreaming: true
+    }]);
+
+    try {
+      const response = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: 'test-session-123',
+          query: userMessage.content
+        })
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("No reader");
+
+      // SSE frames are separated by double-newline (\r\n\r\n).
+      // Each frame has one or more lines: "event: <type>\r\ndata: <json>\r\n"
+      // We accumulate a buffer across read() calls because a single chunk may
+      // contain partial frames or multiple frames.
+      let buffer = '';
+
+      const parseSSEBuffer = (buf: string) => {
+        // Split on double newline to get complete frames, keep the remainder
+        const parts = buf.split(/\r?\n\r?\n/);
+        const remainder = parts.pop() ?? ''; // last element may be incomplete
+        for (const frame of parts) {
+          if (!frame.trim()) continue;
+          let eventType = 'message';
+          let eventData = '';
+          for (const line of frame.split(/\r?\n/)) {
+            if (line.startsWith('event: '))     eventType = line.slice(7).trim();
+            else if (line.startsWith('data: ')) eventData = line.slice(6).trim();
+          }
+          if (!eventData) continue;
+
+          try {
+            const data = JSON.parse(eventData);
+            setMessages(prev => prev.map(msg => {
+              if (msg.id !== assistantMsgId) return msg;
+              if (eventType === 'ping') return msg; // keepalive, ignore
+              if (eventType === 'progress' && data.status) {
+                return { ...msg, status: data.status.replace(/_/g, ' ') };
+              }
+              if (eventType === 'evidence' && Array.isArray(data)) {
+                return { ...msg, evidence: data };
+              }
+              if (eventType === 'token' && data.token !== undefined) {
+                return { ...msg, content: data.token, isStreaming: false, status: undefined };
+              }
+              if (eventType === 'done') {
+                return { ...msg, isStreaming: false, status: undefined };
+              }
+              if (eventType === 'error' && data.error) {
+                return { ...msg, content: `Error: ${data.error}`, isStreaming: false, status: undefined };
+              }
+              return msg;
+            }));
+          } catch (e) {
+            console.error('Failed to parse SSE frame data:', eventData, e);
+          }
+        }
+        return remainder;
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        buffer = parseSSEBuffer(buffer);
+      }
+      // Flush any remaining buffer content on stream close
+      if (buffer.trim()) parseSSEBuffer(buffer + '\n\n');
+
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => prev.map(msg => 
+        msg.id === assistantMsgId ? { ...msg, content: "Connection failed. Make sure the backend server is running on port 8000.", isStreaming: false, status: undefined } : msg
+      ));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="ambient-bg" />
+      <div className="app-container">
+        {/* Sidebar */}
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brand-icon">
+              <Shield color="white" size={20} />
+            </div>
+            <h1>PS-1 <span>CIS</span></h1>
+          </div>
+          
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+               <Search size={18} /> Active Query
+            </div>
+            <div style={{ padding: '12px', borderRadius: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+               <LayoutDashboard size={18} /> Dashboard
+            </div>
+            <div style={{ padding: '12px', borderRadius: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+               <Database size={18} /> Data Store
+            </div>
+          </nav>
+          
+          <div style={{ marginTop: 'auto' }}>
+            <div style={{ padding: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+               <Settings size={18} /> Settings
+            </div>
+          </div>
+        </aside>
+
+        {/* Main Chat Area */}
+        <main className="chat-container">
+          <div className="chat-messages">
+            {messages.map(msg => (
+              <div key={msg.id} className={`message ${msg.role}`}>
+                <div className="message-avatar">
+                  {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="white" />}
+                </div>
+                <div className="message-content-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '100%' }}>
+                  
+                  {msg.status && (
+                    <div className="status-pill">
+                      <div className="pulse" />
+                      <span style={{ textTransform: 'capitalize' }}>{msg.status}...</span>
+                    </div>
+                  )}
+                  
+                  <div className="message-content">
+                    {msg.content || (msg.isStreaming ? <Loader2 className="animate-spin" size={16} /> : '')}
+                  </div>
+                  
+                  {msg.evidence && msg.evidence.length > 0 && (
+                    <div className="evidence-card">
+                       <div className="evidence-header">
+                         <Database size={14} /> Retrieved Evidence
+                       </div>
+                       <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-secondary)' }}>
+                         {JSON.stringify(msg.evidence, null, 2)}
+                       </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="input-area">
+            <form onSubmit={handleSubmit} className="input-box">
+              <button type="button" className="action-btn">
+                <Paperclip size={20} />
+              </button>
+              <input 
+                type="text" 
+                placeholder="Ask about cases, sections, or criminals..." 
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                disabled={isLoading}
+              />
+              <button type="button" className="action-btn">
+                <Mic size={20} />
+              </button>
+              <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading}>
+                <Send size={18} />
+              </button>
+            </form>
+          </div>
+        </main>
+      </div>
+    </>
+  );
+}
