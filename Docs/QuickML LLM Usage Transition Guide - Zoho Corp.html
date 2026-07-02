@@ -1,0 +1,273 @@
+
+<!DOCTYPE html>   
+<html dir="ltr" lang="en"><head>    
+<script type="text/javascript" crossorigin src='/scroll/fingerPrint.do'></script>
+<script type="text/javascript">var cdnStaticUrl = "https://static.zohocdn.com/learn/";
+var manualPermalink = 'manual';
+var isKalviBundle = 'false';
+var articlePermalink = 'article';
+var teamPermalink = 'team';
+var teamsPermalink = 'teams';
+var questionbankPermalink = 'questionbank';
+var learningpathPermalink = 'learningpath';
+var knowledgePermalink = 'knowledge';
+var coursePermalink = 'course';
+var lessonPermalink = 'lesson';
+var reportPermalink = 'report';
+var examinationPermalink = 'examination';
+var Scroll = {}; Scroll.direction = "ltr";
+var ZLearn_I18N = {};
+
+Scroll._isFreePlan = false;
+
+Scroll.iamOrgType = "LEARN";
+Scroll.iamOrgTypeNum = "170";
+Scroll._printconsolelog = console.log;
+Scroll.isExternalAccess = true;
+Scroll.frameOrigin = "";
+var isSuperUser_OrigVal = false;
+var isDeveloper = false;    	
+var isCustomDomain = false;
+Scroll.iamServiceName = 'ZohoLearn';
+var isDevelopmentSetup = false;
+var isZohoCorp = false;
+var isNotLive = false;
+Scroll.isMobile = false;
+var baseURIContext ='/external';        
+var ajaxContext = '/escroll';
+Scroll.staticVersion = '';
+var loginURL = 'https://learn.zoho.in/login.do';
+var learnLogoUrl = 'https://static.zohocdn.com/learn/images/zlearn-logo.9a656a870d892c3ecebf6e39d6b7512f.svg';
+var learnServiceHomeUrl = 'https://www.zoho.in/learn';
+var androidAppUrl = 'https:\/\/play.google.com\/store\/apps\/details?id=com.zoho.learn';
+var iosAppUrl = 'https:\/\/apps.apple.com\/us\/app\/zoho\-learn\/id1590127933';
+var niceurlPrefix = "/external";
+Scroll.isWriterSameDomain =true; 
+var baseURL = "https://learn.zohopublic.in";
+Scroll.writerURL = "https://learn.zohopublic.in";
+Scroll.publicBaseURL = "https://learn.zohopublic.in";
+Scroll.allowContentFromClient = false
+var isClientPortal = false;
+Scroll.supportedLanguagesList = [{"name":"English","value":"en","languageName":"English"},{"name":"Nederlands","value":"nl","languageName":"Dutch"},{"name":"français","value":"fr","languageName":"French"},{"name":"Deutsch","value":"de","languageName":"German"},{"name":"中文（简体）","value":"zh","languageName":"Chinese (simplified)"},{"name":"中文（繁體）","value":"zh\-TW","languageName":"Chinese (traditional)"},{"name":"Türkçe","value":"tr","languageName":"Turkish"},{"name":"русский","value":"ru","languageName":"Russian"},{"name":"português (Brasil)","value":"pt\-BR","languageName":"Portuguese (br)"},{"name":"português (Portugal)","value":"pt","languageName":"Portuguese (pt)"},{"name":"Dansk","value":"da","languageName":"Danish"},{"name":"norsk","value":"no","languageName":"Norwegian"},{"name":"日本語","value":"ja","languageName":"Japanese"},{"name":"español","value":"es","languageName":"Spanish"},{"name":"suomi","value":"fi","languageName":"Finnish"},{"name":"italiano","value":"it","languageName":"Italian"},{"name":"polski","value":"pl","languageName":"Polish"},{"name":"svenska","value":"sv","languageName":"Swedish"},{"name":"български","value":"bg","languageName":"Bulgarian"},{"name":"hrvatski","value":"hr","languageName":"Croatian"},{"name":"Ελληνικά","value":"el","languageName":"Greek"},{"name":"magyar","value":"hu","languageName":"Hungarian"},{"name":"română","value":"ro","languageName":"Romanian"},{"name":"čeština","value":"cs","languageName":"Czech"},{"name":"shqip","value":"sq","languageName":"Albanian"},{"name":"Tiếng Việt (Việt Nam)","value":"vi","languageName":"Vietnamese"},{"name":"العربية","forSuperUser":"true","value":"ar","languageName":"Arabic","isRTL":"true"}];
+
+Scroll.micsConfig ={"inproductdomain":"https://tipengine.zoho.in","serviceid":"191"};
+
+Scroll.privateBaseURL = "https://learn.zoho.in";
+Scroll.scopeContext = "/portal/zohocorp";
+Scroll.dfsClientType = "ECZ";
+
+Scroll.externalShareValue = "";
+
+Scroll.isConfirmedUser = false;
+Scroll.scopParamKey = "p";
+Scroll.privateNiceurlPrefix = "/portal/zohocorp";
+Scroll.extSharedItemType = "ARTICLE";
+Scroll.externalShareValue = "a612038907b73282d00cca14e04669d7b8f5f0d3a81e282ecaed36687e97562e";
+Scroll.showLastModTime = false;
+
+var timeZone = 'Asia\/Kolkata';	
+var GMTOffset = 'GMT+05:30';
+var language='null';
+var country='null';
+var planGroup = 2;
+Scroll.isLoggedIn = false;
+
+Scroll.referralUrl = "https://referrals.zoho.in/html/referral/index.html?servicename=ZohoLearn";
+Scroll.referralTermsUrl = "https://www.zoho.in/r/refer-a-friend.html";
+var automationDataTypes= {"date":{"isDropDown":false,"operators":[{"name":"automation.criteria.after","mapId":1,"allowedForPI":false},{"name":"automation.criteria.before","mapId":2,"allowedForPI":false}],"name":"date"},"number":{"isDropDown":false,"operators":[{"name":"automation.criteria.equals","mapId":1,"allowedForPI":true},{"name":"automation.criteria.notEquals","mapId":2,"allowedForPI":true},{"name":"automation.criteria.lessThan","mapId":3,"allowedForPI":false},{"name":"automation.criteria.greaterThan","mapId":4,"allowedForPI":false},{"name":"automation.criteria.lessThanOrEquals","mapId":5,"allowedForPI":false},{"name":"automation.criteria.greaterThanOrEquals","mapId":6,"allowedForPI":false}],"name":"number"},"string":{"isDropDown":false,"operators":[{"name":"automation.criteria.is","mapId":1,"allowedForPI":true},{"name":"automation.criteria.isNot","mapId":2,"allowedForPI":true},{"name":"automation.criteria.startsWith","mapId":3,"allowedForPI":false},{"name":"automation.criteria.contains","mapId":4,"allowedForPI":false},{"name":"automation.criteria.endsWith","mapId":5,"allowedForPI":false},{"name":"automation.criteria.doNotContain","mapId":6,"allowedForPI":false}],"name":"string"},"dropdown":{"isDropDown":false,"operators":[{"name":"automation.criteria.is","mapId":1,"allowedForPI":false},{"name":"automation.criteria.isNot","mapId":2,"allowedForPI":false}],"name":"dropdown"}} 
+Scroll.clientPortalLanguages = [{"name":"English","value":"en","languageName":"English"},{"name":"Nederlands","value":"nl","languageName":"Dutch"},{"name":"français","value":"fr","languageName":"French"},{"name":"Deutsch","value":"de","languageName":"German"},{"name":"中文（简体）","value":"zh","languageName":"Chinese (simplified)"},{"name":"中文（繁體）","value":"zh\-TW","languageName":"Chinese (traditional)"},{"name":"Türkçe","value":"tr","languageName":"Turkish"},{"name":"русский","value":"ru","languageName":"Russian"},{"name":"português (Brasil)","value":"pt\-BR","languageName":"Portuguese (br)"},{"name":"português (Portugal)","value":"pt","languageName":"Portuguese (pt)"},{"name":"Dansk","value":"da","languageName":"Danish"},{"name":"norsk","value":"no","languageName":"Norwegian"},{"name":"日本語","value":"ja","languageName":"Japanese"},{"name":"español","value":"es","languageName":"Spanish"},{"name":"suomi","value":"fi","languageName":"Finnish"},{"name":"italiano","value":"it","languageName":"Italian"},{"name":"polski","value":"pl","languageName":"Polish"},{"name":"svenska","value":"sv","languageName":"Swedish"},{"name":"български","value":"bg","languageName":"Bulgarian"},{"name":"hrvatski","value":"hr","languageName":"Croatian"},{"name":"Ελληνικά","value":"el","languageName":"Greek"},{"name":"magyar","value":"hu","languageName":"Hungarian"},{"name":"română","value":"ro","languageName":"Romanian"},{"name":"čeština","value":"cs","languageName":"Czech"},{"name":"shqip","value":"sq","languageName":"Albanian"},{"name":"Tiếng Việt (Việt Nam)","value":"vi","languageName":"Vietnamese"},{"name":"العربية","forSuperUser":"true","value":"ar","languageName":"Arabic","isRTL":"true"}];
+var isAIIntegrationEnabled = true;
+var isAIIntegrationSupportedDC = true;</script>
+<script type="text/javascript" src="https://static.zohocdn.com/learn/js/i18n_en.0e6cdc6e480a87103e466090a39c4b10.js"></script>
+<script type="text/javascript" src="//static.zohocdn.com/zohosecurity/v6_4/js/security.min.js"></script>
+<link rel="stylesheet" type="text/css" href='https://static.zohocdn.com/micsinproduct/13837273/inproductsdk.css'><script type="text/javascript" src='https://static.zohocdn.com/micsinproduct/13837273/inproductsdk.js'></script>
+
+<meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=11;IE12;IE=edge" /><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="alternate" type="application/json+oembed" X-ZOHO-SERVICE="ZohoLearn" href="learn.zoho.in/services/oembed" />
+<link rel="icon" type="image/png" href="https://static.zohocdn.com/learn/images/favicon.53c66e2d46d0163e6bdde6eef258c004.png" sizes="32x32"><title>QuickML LLM Usage Transition Guide - Zoho Corp</title><script>var currentPlan = {"usedDiskSpace":130891343883,"invitedCustomPortalUserCount":1,"removeexternalfooter":true,"canAddUser":true,"addedCustomPortalUserCount":81,"invitedUserCount":0,"enableexternallink":false,"addedUserCount":20879,"customPortalCount":11,"userCount":35000,"diskSpace":175000,"customPortalUserCount":1505,"canInviteCustomPortalUser":true,"canInviteUser":true};
+//TODO #remove default partition
+var defaultPartitionURL = "general";
+var defaultDomainUrl = "https://learn.zoho.in"; 
+var publicDomainUrl = "https://learn.zohopublic.in"; 
+var landingUrls = {"LEARNING":"course","SPACES":"teams/all","KNOWLEDGE":"knowledge","DISCOVER":"activity","EXAMINATION":"examination","QUESTION_BANK":"questionbank","LEARNING_PATH":"learningpath","REPORT":"report","DEFAULT":"knowledge","ACTIVITY":"knowledge"};
+var scopeLandingPageType = 'DEFAULT';
+var featureList = ["layout","template","duplicate","course.name.description.settings","course.settings.description","course.settings.name","course.settings.url","course.expiry.settings","course.settings.enrollmentType","course.settings.duration","course.settings.certificate","course.settings.flow","course.enrollment.ON_REQUEST","course.enrollment.PRIVATE","course.enrollment.PUBLIC","course.enrollment.NOT_REQUIRED","course.discussion","course.multipleAdmin","course.draftAndPublish","scheduledTime","assignment","course.instructor","course.article.lesson.mapping","course.import.lessons","course.settings.button.customization","course.settings.read.acknowledgement","course.space.learner","scorm.settings","course.enrollment.settings","course.completion.view.lesson.settings","course.rating.settings","course.password.settings","course.certificate.settings","course.settings.automation","report.allLearners","report.allCourses","report.singleLearner","report.singleCourse","report.singleGroup","report.singleGroupLearners","report.singlePortal","report.singleLessonSingleGroup","report.singleLessonSinglePortal","report.singleLesson","report.myLearning","report.courseStatistics","report.inCourseReportNav","report.lesson-evaluation","report.singleExamination","report.allExaminations","report.singleLearningpath","report.allLearningpaths","report.singleCourseAllReports","examination.name.description.settings","examination.settings.description","examination.settings.name","examination.settings.url","examination.expiry.settings","examination.settings.enrollmentType","examination.settings.duration","examination.settings.certificate","examination.settings.flow","examination.enrollment.ON_REQUEST","examination.enrollment.PRIVATE","examination.enrollment.PUBLIC","examination.enrollment.NOT_REQUIRED","examination.discussion","examination.multipleAdmin","examination.draftAndPublish","examination.instructor","examination.settings.button.customization","examination.settings.read.acknowledgement","examination.enrollment.settings","examination.completion.view.lesson.settings","examination.rating.settings","examination.password.settings","examination.certificate.settings","learningpath.settings.description","learningpath.settings.name","learningpath.settings.url","learningpath.settings.expiryTime","learningpath.settings.enrollmentType","learningpath.settings.duration","learningpath.settings.certificate","learningpath.settings.flow","learningpath.enrollment.ON_REQUEST","learningpath.enrollment.PRIVATE","learningpath.enrollment.PUBLIC","learningpath.enrollment.NOT_REQUIRED","learningpath.multipleAdmin","learningpath.draftAndPublish","learningpath.instructor","learningpath.space.learner","learningpath.lesson.linkcourse","questionbank","questionbankQuestions","course.coAuthors","quiz.settings","quiz.settings.shouldPassToContinue","quiz.settings.passingScore","quiz.settings.maximumAttempt","quiz.settings.timeLimit","quiz.settings.canShuffleQuestions","quiz.settings.canShuffleAnswers","quiz.settings.canRevealAnswers","quiz.settings.canViewPreviousQuestion","quiz.settings.canSkip","quiz.settings.customAnswerFeedback","quiz.type.descriptive","quiz.general.settings","quiz.evaluation.settings","quiz.timer.settings","quiz.reveal.answer.settings","quiz.review.answer.settings","quiz.question.and.answer.settings","version","export","draft","mandatoryread","verification","approval","pendingActions","clientPortalUser","clientPortal","analytics","multipleadmin","multipleHubAdmin","customdomain","exportItem","customemail","enableexternallink","removeexternalfooter","course.lesson.caption","learnAI","badges"];
+var featureListDetails = JSON.parse('{"course.enrollment.PRIVATE":{"limit":0,"availableFrom":"Free"},"course.settings.duration":{"limit":0,"availableFrom":"Free"},"report.allExaminations":{"limit":0,"availableFrom":"Professional"},"course.enrollment.settings":{"limit":0,"availableFrom":"Free"},"learningpath.settings.enrollmentType":{"limit":0,"availableFrom":"Free"},"learningpath.enrollment.NOT_REQUIRED":{"limit":0,"availableFrom":"Free"},"quiz.settings.passingScore":{"limit":0,"availableFrom":"Express"},"report.singleLessonSingleGroup":{"limit":0,"availableFrom":"Professional"},"quiz.settings.canShuffleAnswers":{"limit":0,"availableFrom":"Express"},"report.allLearningpaths":{"limit":0,"availableFrom":"Professional"},"examination.name.description.settings":{"limit":0,"availableFrom":"Free"},"report.singleCourse":{"limit":0,"availableFrom":"Express"},"examination.settings.url":{"limit":0,"availableFrom":"Free"},"draft":{"limit":0,"availableFrom":"Professional"},"quiz.settings.canSkip":{"limit":0,"availableFrom":"Express"},"examination.settings.flow":{"limit":0,"availableFrom":"Express"},"pendingActions":{"limit":0,"availableFrom":"Professional"},"course.expiry.settings":{"limit":0,"availableFrom":"Professional"},"examination.settings.duration":{"limit":0,"availableFrom":"Free"},"clientPortal":{"limit":1,"availableFrom":"Express"},"scheduledTime":{"limit":0,"availableFrom":"Professional"},"course.completion.view.lesson.settings":{"limit":0,"availableFrom":"Free"},"learningpath.settings.url":{"limit":0,"availableFrom":"Free"},"externallink":{"limit":0,"availableFrom":"Free"},"version":{"limit":0,"availableFrom":"Express"},"report.singleGroup":{"limit":0,"availableFrom":"Professional"},"report.singleLearner":{"limit":0,"availableFrom":"Professional"},"learningpath.settings.duration":{"limit":0,"availableFrom":"Free"},"course.settings.url":{"limit":0,"availableFrom":"Free"},"report.lesson-evaluation":{"limit":0,"availableFrom":"Professional"},"report.singleLessonSinglePortal":{"limit":0,"availableFrom":"Professional"},"course.enrollment.PUBLIC":{"limit":0,"availableFrom":"Free"},"quiz.review.answer.settings":{"limit":0,"availableFrom":"Free"},"learningpath.multipleAdmin":{"limit":0,"availableFrom":"Professional"},"quiz.settings":{"limit":0,"availableFrom":"Express"},"examination.completion.view.lesson.settings":{"limit":0,"availableFrom":"Free"},"quiz.settings.canShuffleQuestions":{"limit":0,"availableFrom":"Express"},"template":{"limit":0,"availableFrom":"Professional"},"quiz.settings.timeLimit":{"limit":0,"availableFrom":"Professional"},"examination.draftAndPublish":{"limit":0,"availableFrom":"Free"},"quiz.question.and.answer.settings":{"limit":0,"availableFrom":"Free"},"learningpath.settings.name":{"limit":0,"availableFrom":"Free"},"manual":{"limit":-1,"availableFrom":"Free"},"course.settings.read.acknowledgement":{"limit":0,"availableFrom":"Professional"},"multipleHubAdmin":{"limit":0,"availableFrom":"Express"},"learningpath.enrollment.PUBLIC":{"limit":0,"availableFrom":"Free"},"course.article.lesson.mapping":{"limit":0,"availableFrom":"Express"},"quiz.settings.canRevealAnswers":{"limit":0,"availableFrom":"Express"},"questionbankQuestions":{"limit":-1,"availableFrom":"Free"},"report.singlePortal":{"limit":0,"availableFrom":"Professional"},"examination.password.settings":{"limit":0,"availableFrom":"Free"},"course":{"limit":-1,"availableFrom":"Free"},"examination.settings.description":{"limit":0,"availableFrom":"Free"},"course.import.lessons":{"limit":0,"availableFrom":"Express"},"quiz":{"limit":0,"availableFrom":"Free"},"course.settings.certificate":{"limit":0,"availableFrom":"Free"},"course.name.description.settings":{"limit":0,"availableFrom":"Free"},"report.singleExamination":{"limit":0,"availableFrom":"Professional"},"examination.discussion":{"limit":0,"availableFrom":"Professional"},"learningpath.instructor":{"limit":0,"availableFrom":"Professional"},"quiz.settings.customAnswerFeedback":{"limit":0,"availableFrom":"Professional"},"learnAI":{"limit":0,"availableFrom":"Express"},"course.coAuthors":{"limit":-1,"availableFrom":"Express"},"multipleadmin":{"limit":0,"availableFrom":"Professional"},"examination.enrollment.NOT_REQUIRED":{"limit":0,"availableFrom":"Free"},"report.myLearning":{"limit":0,"availableFrom":"Professional"},"report":{"limit":0,"availableFrom":"Free"},"quiz.timer.settings":{"limit":0,"availableFrom":"Free"},"learningpath.draftAndPublish":{"limit":0,"availableFrom":"Free"},"course.settings.flow":{"limit":0,"availableFrom":"Express"},"learningpath":{"limit":-1,"availableFrom":"Free"},"course.instructor":{"limit":0,"availableFrom":"Professional"},"quiz.type.descriptive":{"limit":0,"availableFrom":"Professional"},"course.lesson.caption":{"limit":0,"availableFrom":"Express"},"course.password.settings":{"limit":0,"availableFrom":"Free"},"learningpath.enrollment.PRIVATE":{"limit":0,"availableFrom":"Free"},"learningpath.space.learner":{"limit":0,"availableFrom":"Professional"},"report.allLearners":{"limit":0,"availableFrom":"Professional"},"learningpath.lesson.linkcourse":{"limit":0,"availableFrom":"Free"},"examination.rating.settings":{"limit":0,"availableFrom":"Free"},"learnerAnswer.upload.size":{"limit":100,"availableFrom":"Free"},"space":{"limit":-1,"availableFrom":"Free"},"examination.instructor":{"limit":0,"availableFrom":"Professional"},"analytics":{"limit":0,"availableFrom":"Professional"},"learningpath.settings.flow":{"limit":0,"availableFrom":"Express"},"quiz.settings.canViewPreviousQuestion":{"limit":0,"availableFrom":"Express"},"quiz.settings.shouldPassToContinue":{"limit":0,"availableFrom":"Express"},"course.settings.button.customization":{"limit":0,"availableFrom":"Professional"},"exportItem":{"limit":0,"availableFrom":"Professional"},"customemail":{"limit":0,"availableFrom":"Professional"},"examination.enrollment.PRIVATE":{"limit":0,"availableFrom":"Free"},"course.settings.description":{"limit":0,"availableFrom":"Free"},"learningpath.enrollment.ON_REQUEST":{"limit":0,"availableFrom":"Free"},"report.allCourses":{"limit":0,"availableFrom":"Professional"},"export":{"limit":0,"availableFrom":"Express"},"verification":{"limit":0,"availableFrom":"Professional"},"examination.certificate.settings":{"limit":0,"availableFrom":"Free"},"report.singleLesson":{"limit":0,"availableFrom":"Professional"},"course.video.size":{"limit":1000,"availableFrom":"Free"},"customdomain":{"limit":0,"availableFrom":"Professional"},"examination.enrollment.settings":{"limit":0,"availableFrom":"Free"},"duplicate":{"limit":0,"availableFrom":"Express"},"learningpath.settings.description":{"limit":0,"availableFrom":"Free"},"course.space.learner":{"limit":0,"availableFrom":"Express"},"article":{"limit":0,"availableFrom":"Free"},"course.settings.automation":{"limit":0,"availableFrom":"Professional"},"course.certificate.settings":{"limit":0,"availableFrom":"Free"},"examination.settings.read.acknowledgement":{"limit":0,"availableFrom":"Professional"},"course.draftAndPublish":{"limit":0,"availableFrom":"Free"},"examination.enrollment.ON_REQUEST":{"limit":0,"availableFrom":"Free"},"course.rating.settings":{"limit":0,"availableFrom":"Free"},"removeexternalfooter":{"limit":0,"availableFrom":"Professional"},"course.multipleAdmin":{"limit":0,"availableFrom":"Professional"},"quiz.settings.maximumAttempt":{"limit":0,"availableFrom":"Express"},"course.settings.enrollmentType":{"limit":0,"availableFrom":"Free"},"examination.settings.enrollmentType":{"limit":0,"availableFrom":"Free"},"scorm.settings":{"limit":0,"availableFrom":"Free"},"article.attachment.video.size":{"limit":1024,"availableFrom":"Free"},"enableexternallink":{"limit":0,"availableFrom":"Express"},"storage":{"limit":1,"availableFrom":"Free"},"report.inCourseReportNav":{"limit":0,"availableFrom":"Professional"},"examination.settings.certificate":{"limit":0,"availableFrom":"Free"},"mandatoryread":{"limit":0,"availableFrom":"Professional"},"quiz.general.settings":{"limit":0,"availableFrom":"Free"},"examination.expiry.settings":{"limit":0,"availableFrom":"Professional"},"examination":{"limit":-1,"availableFrom":"Free"},"course.enrollment.NOT_REQUIRED":{"limit":0,"availableFrom":"Free"},"article.attachment.document.size":{"limit":200,"availableFrom":"Free"},"examination.enrollment.PUBLIC":{"limit":0,"availableFrom":"Free"},"questionbank":{"limit":-1,"availableFrom":"Free"},"course.settings.name":{"limit":0,"availableFrom":"Free"},"quiz.evaluation.settings":{"limit":0,"availableFrom":"Free"},"zohoone":{"limit":0,"availableFrom":"Free"},"assignment":{"limit":0,"availableFrom":"Professional"},"report.singleCourseAllReports":{"limit":0,"availableFrom":"Professional"},"quiz.reveal.answer.settings":{"limit":0,"availableFrom":"Free"},"approval":{"limit":0,"availableFrom":"Professional"},"learningpath.settings.expiryTime":{"limit":0,"availableFrom":"Professional"},"course.document.size":{"limit":200,"availableFrom":"Free"},"course.scorm.size":{"limit":2048,"availableFrom":"Free"},"learningpath.settings.certificate":{"limit":0,"availableFrom":"Free"},"examination.settings.button.customization":{"limit":0,"availableFrom":"Professional"},"layout":{"limit":0,"availableFrom":"Express"},"report.courseStatistics":{"limit":0,"availableFrom":"Express"},"examination.multipleAdmin":{"limit":0,"availableFrom":"Professional"},"badges":{"limit":0,"availableFrom":"Express"},"report.singleLearningpath":{"limit":0,"availableFrom":"Professional"},"course.discussion":{"limit":0,"availableFrom":"Professional"},"examination.settings.name":{"limit":0,"availableFrom":"Free"},"clientPortalUser":{"limit":5,"availableFrom":"Express"},"course.enrollment.ON_REQUEST":{"limit":0,"availableFrom":"Free"},"user":{"limit":-1,"availableFrom":"Free"},"report.singleGroupLearners":{"limit":0,"availableFrom":"Professional"}}');
+var isCourseCountWithinLimit = true;
+var isExaminationCountWithinLimit = true;
+var isLearningpathCountWithinLimit = true;
+var isCustomPortalCountinLimit = true;
+var isCustomPortalUserCountinLimit = true;
+var coAuthorLimitInCourse = -1;
+var isManualEnabled = true;
+var isLmsEnabled = true;
+var isPeopleIntegrationEnabled =  true;
+var isPaidUser = true; //need to remove this variable
+Scroll._isPaidPortal = true;
+var showLMSMyAuthoring = false;
+var baseTitle ='Zoho Corp';
+var apiurlPrefix = '/_lms/api/portal/zohocorp';
+var courseCustomUI = {"SHOW_LESSON_PREVIEW":true};
+var contactsPhotoUrl = "https://contacts.zoho.in/file?t=user&fs=thumb&ID=";
+Scroll.canShowAnnouncementBanner = false;
+Scroll.isBannerConfigurationEnabled = false;
+Scroll.uniqueActivities = [];
+
+Scroll.uniqueActivities.push("REMIND_COURSE");
+
+Scroll.uniqueActivities.push("PUBLISHED_ARTICLES");
+
+Scroll.uniqueActivities.push("ENABLED_MANDATORY_READ_ACKNOWLEDGEMENT_IN_BULK");
+
+Scroll.uniqueActivities.push("SEND_ARTICLE_FOR_APPROVAL");
+
+Scroll.uniqueActivities.push("SUGGEST_CHANGES_IN_ARTICLE");
+
+Scroll.uniqueActivities.push("APPROVE_ARTICLE");
+
+Scroll.uniqueActivities.push("RESUBMIT_ARTICLE_FOR_APPROVAL");
+
+Scroll.uniqueActivities.push("ABORT_ARTICLE_APPROVAL_FLOW");
+
+Scroll.uniqueActivities.push("ENABLED_APPROVAL_PROCESS");
+
+Scroll.uniqueActivities.push("DISABLED_APPROVAL_PROCESS");
+
+Scroll.uniqueActivities.push("ADDED_APPROVERS_TO_MANUAL");
+
+Scroll.uniqueActivities.push("REMOVED_APPROVERS_FROM_MANUAL");
+
+Scroll.uniqueActivities.push("ABORT_ARTICLE_APPROVAL_FLOW_BY_DISABLING_APPROVAL_IN_MANUAL");
+
+Scroll.uniqueActivities.push("ABORT_ARTICLE_APPROVAL_FLOW_BY_PUBLISHING_IN_LOWER_PLAN");
+
+Scroll.uniqueActivities.push("REPLACE_APPROVER");
+
+Scroll.uniqueActivities.push("ABORT_ARTICLE_AS_IT_IS_MOVED_TO_ANOTHER_MANUAL");
+
+Scroll.uniqueActivities.push("ABORT_ARTICLE_APPROVAL_AS_THERE_IS_NO_APPROVER");
+
+Scroll.uniqueActivities.push("ABORTED_ARTICLES_BY_SYSTEM");
+
+Scroll.uniqueActivities.push("APPROVED_ARTICLES_BY_SYSTEM");
+
+Scroll.uniqueActivities.push("CHANGES_SUGGESTED_ARTICLE_BY_SYSTEM");
+
+Scroll.uniqueActivities.push("DUPLICATE_MANUAL");
+
+var domscriptJquery = document.createElement('script');
+domscriptJquery.type = "text/javascript"; 
+domscriptJquery.src = "https://static.zohocdn.com/zohosearch/h1/js/gshandler.js?_T=1782920164019";
+domscriptJquery.onload = function() {
+zgssearch.initZGSHandler();
+};
+document.head.appendChild(domscriptJquery);
+var isOnboarding =  false;
+Scroll.globalArticleExportEnabled = true;
+Scroll.chatBarEnabled = true;</script>
+<link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-dropdown.f2bfc805bf8436e0985fc02de86b2ff4.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-popover.17fc47ef87dadc76e2a6657b740b4fea.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-beta-popover.e10807d60958195107e6870701da47be.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-calendar.f97006ef6689ff9c1dac53d8f38346ea.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-daterangepicker.574a67e2c445062eb23ac1abdedc6beb.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-hovercard.c12f055fe0f600230d898dd402a159a1.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-breadcrumb.1356b02e1cd9f7d3a201aec0dd1c38d9.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-accordion.05fa753ec8cb614f701933f2ce897a83.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-menu.8da386e4425b06485d119899e9301dbc.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-tooltip.048633560c8f1c7b710e6a59cb70ddb8.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-colorbox.ade1d610e8a19770938cac3c9546048f.css"><link rel="stylesheet" type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-autocomplete.3f173bfaff4443987dffa0af38bf5fd8.css"><link type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-find.2f07bda068ff913051c280f0bab6713a.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-search.60cf1b552a85e686f74cd6745970d37a.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-cropper.0da1cbd78c4f3a53566ef4f1d1bbcfdb.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/lms/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-slider.677b858b930ffa000816aa9c483424b6.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/lyte/dist/bower_components/ui-components/theme/compiledCSS/default/ltr/lyte-ui-tree.94e6adeb5e06217bea01b6bbf0758e90.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/styles/scroll-modules.2ed158f3590d156b875a8bff788ae9aa.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/css/zlearn-master.23c2ee4908c9d726299a28648bd2bcc9.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/styles/scroll-animation.a2fa19cd04a62bbc28f2ff31250872c2.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/styles/prism-coy.967a78782f0637633320ad89b01dc5af.css" rel="stylesheet"><link type="text/css" href="https://static.zohocdn.com/learn/styles/prism-line-numbers.33fcb9c936d6640f7e23484e1b476145.css" rel="stylesheet"><script type="text/javascript" src="https://static.zohocdn.com/learn/lyte/dist/bower_components/lyte/custom-elements-es5-adapter.79106fd9b808b3bbd70d54b934850301.js"></script>
+<script type="text/javascript" src="https://static.zohocdn.com/learn/js/scroll.externallyteinitials.min.4ae4fdbb7f65e089fc94bb32949107c7.js"></script>
+<script type="text/javascript" src="https://static.zohocdn.com/learn/js/scroll.externalmaster.min.08e74b515fb1567d52fa4166a0b00798.js"></script>
+<script type="text/javascript" src="https://static.zohocdn.com/learn/js/scroll.externalroute.min.f96bcc6f4ed3b190960a0411d592fe9c.js"></script>
+<script type="text/javascript" src="https://static.zohocdn.com/learn/js/scroll.externalhomecomponent.min.a9194803e2fa8e695d18ba7e43fc6af2.js"></script>
+<script type="text/javascript" src="https://static.zohocdn.com/learn/js/pdf.79e3e1131a7a7f5d0bae19e867223928.js"></script>
+<product-customtheme-style custom-theme-color="976bbf" custom-header-color="312952" header-text-color="ffffff" header-accent-color="ff8d8d"></product-customtheme-style> </head><body id="zlnBody" class="zlearn-theme:light zls-product-theme0  "><!-- 	<div purpose-topband="true" class="zls-announcement-banner zls-banner-type:info zls-border-tw:1 zls-border-style:solid zls-pos-sticky zw-none zls-fs14">Planned US Datacenter Maintenance on December 25th, 2021 and January 1st, 2022 from 6:30 PM to 09:30 PM PST.</div>-->
+<script>var ZScroll = {};
+ZScroll.csrfParamName = "zpcpn";
+ZScroll.csrfCookieName = "zpccn";
+var tabNames = {"global":[{"module":"manual,personal","name":"Knowledge","tabs":[{"name":"Explore","isDisabled":false,"queryParam":"explore","type":"EXPLORE"}],"isDisabled":false,"href":"\/external\/zohocorp\/knowledge","type":"KNOWLEDGE","zsRoute":"personal.index"},{"module":"lms","name":"Learning","tabs":[{"name":"Explore","isDisabled":false,"type":"DISCOVER","transitionTo":["lms.index",{"view":"discover"}]}],"isDisabled":false,"href":"\/external\/zohocorp\/course","type":"LEARNING","zsRoute":"lms.index"},{"module":"team","name":"Spaces","tabs":[{"name":"Explore","isDisabled":false,"type":"EXPLORE_SPACES","transitionTo":["teams","explore"]}],"isDisabled":false,"href":"\/external\/zohocorp\/teams\/all","type":"SPACE","zsRoute":"teams,all"}],"learning":[{"name":"Explore","isDisabled":false,"type":"DISCOVER","transitionTo":["lms.index",{"view":"discover"}]}],"space":[{"name":"Explore","isDisabled":false,"type":"EXPLORE_SPACES","transitionTo":["teams","explore"]}],"knowledge":[{"name":"Explore","isDisabled":false,"queryParam":"explore","type":"EXPLORE"}]};
+var scopeID = '70634000000004002';
+var soid = '60046821058';
+var scopeUrl = 'zohocorp';
+var agt = navigator.userAgent.toLowerCase();
+var is_gecko = (navigator.product === "Gecko");
+var is_chrome = (agt.indexOf("chrome") !== -1);
+var isSafari = !!window.GestureEvent;
+var is_webkit = is_chrome || isSafari;
+var isAndroid = agt.indexOf("android") != -1;
+var isIOS = ['iPad Simulator','iPhone Simulator','iPod Simulator','iPad','iPhone','iPod'].includes(navigator.platform) || (navigator.userAgent.includes("Mac") && "ontouchend" in document);//no i18n
+var isHandheldDevice = 'false';
+var isZohoCorpSoid = true;
+var userPhotoUrl = 'https://contacts.zoho.in/file/download?t=user&fs=thumb&ID=';
+var partitionLogoUrl = '/scroll/getPartitionLogo.do?scopeID=70634000000004002'+'&partitionId=';
+var spaceLogoUrl = '/scroll/getSpaceLogo.do?scopeID=70634000000004002'+'&partitionId=';
+var userCustomPhotoUrl = apiurlPrefix+'/profileimage?userId=';//no i18n
+var twlOrTwntyHour = true;
+var scopeDateFormat = 'dd MMM yyyy';
+var cloudPickerURL = Scroll.handleFrameorigin("https://gadgets.zoho.in/pickerv2?zservice=ZohoLearn&sources=workdrive,gdrive,dropbox,onedrive,box,evernote&gpicker=true")+ "&originUrl=" + window.location.origin;
+var cloudUploaderURL = Scroll.handleFrameorigin("https://gadgets.zoho.in/uploaderv2?zservice=ZohoLearn&sources=workdrive,gdrive,dropbox,onedrive,box,evernote&gpicker=true")+ "&originUrl=" + window.location.origin;
+var isCNSetup = false;
+var isScopeAdmin = false;
+var createSpaceAccessLevel = 0;
+var uploadServerUrl = 'https://upload.zoho.in/v3/files/ZohoLearn/upload';
+var downloadServerUrl = 'https://files.zohopublic.in/public';
+var udServerServiceName = 'ZohoLearn';
+var templateBuilderServiceName = 'ZohoLearn';
+var previewEngineUrl = 'https://previewengine-accl.zoho.in/';
+var previewEngineServiceName = 'WIKI';
+var templateBuilderUrl = 'https://templates.zoho.in/';
+var canCreateCourse = false;
+var canCreateCertificate = false;
+var canCreateQuestionbank = true;
+var canCreateUsergroup = false;             
+var canUserCreateSpace = false;
+var canHubAdminsAccessManuals = false;
+var canSendNotifyEmail = true;
+var isZtemplateSpaceCreated = true;
+var accountsServer='https://accounts.zoho.in';
+var planName = Scroll.getPlanName("ZOHOONE_PROFESSIONAL");
+var trailexpiryTime = '114';
+var isTrialPlan = false;
+var todayDate = 1782920164044;
+var isExamBeta = false;
+var isAskEnabled = true;
+Scroll.canUserCreateSpace = false;  
+Scroll.canCreateSpace = true;
+Scroll.canCreateManual = true;
+Scroll.learnHelpURL = 'https://help.zoho.com/portal/en/kb/zoho-learn';
+Scroll.whatsNewURL = 'https://www.zoho.in/learn/whatsnew.html';
+Scroll.soid = '60046821058';
+Scroll.wEditorWidth = 950
+Scroll.partitionNavigationType = '1';
+Scroll.partitionId = '70634000036227903';
+Scroll.isUserPurchasedAtleastOnce = true;
+var showClientPortalFooter = false;
+
+var scopeLogoUrl = '';
+var scopeFaviconUrl = '';
+var showLogoOnly = false;
+var scopeName = 'Zoho Corp';
+var themeConfig = '{\x22THEME_NAME\x22:\x220\x22,\x22CUSTOM_THEME_COLOR\x22:\x22976bbf\x22,\x22CUSTOM_HEADER_COLOR\x22:\x22312952\x22,\x22THEME_MODE\x22:\x22dark\x22,\x22HEADER_TEXT_COLOR\x22:\x22ffffff\x22,\x22HEADER_ACCENT_COLOR\x22:\x22ff8d8d\x22}';
+</script>
+<script type="text/javascript">Scroll.isZohoOneBundle = false;
+Scroll.isProjectsPlusBundle = false;
+LearnCrmUtils.initialize(["learn", "-1"]);
+Scroll.zoOrg =  null;
+Scroll.inviteUrl;
+Scroll.hubsArr = null;</script><script></script><script>var currentMode = "light"; //no i18n
+if(Scroll.getDataFromLocalStorage("mode"))
+{
+currentMode = Scroll.getDataFromLocalStorage("mode");//no i18n
+$("body").removeClass("zlearn-theme:light zlearn-theme:dark zlearn-theme:os-default zlearn-os:dark").addClass((currentMode === "light") ? "zlearn-theme:light" : ((currentMode === "dark") ? "zlearn-theme:dark" : ("zlearn-theme:os-default" + (Scroll.isSystemThemeDark()?" zlearn-os:dark":""))));//no i18n
+}</script>
+<!-- common elements -->
+<div id="zwFadeBg" class="zw-fade-bg zw-hide zw-animate zw-short" purpose="zw-fadeBg" defaultzindex="4"></div><div id="zls-topLoaderCon" class="zw-top-loader-con zw-index4 zw-none" purpose="topLoaderCon"><span id="zls-topLoader" class="zw-top-loader" purpose="topLoader"></span></div>
+<icons-file></icons-file>
+<div id="popup-container"></div> 
+<script type="text/javascript">var inCloudFlare = true;
+window.addEventListener("DOMContentLoaded", function () 
+{
+inCloudFlare = false;
+console.log("inCloudFlare set to false");
+});
+console.log("document.readyState ===> "+document.readyState);
+if (document.readyState === "loading") 
+{
+window.addEventListener("load", function () 
+{
+if (inCloudFlare)
+{
+window.dispatchEvent(new Event("DOMContentLoaded"));//NO I18N
+console.log("DOMContentLoaded event added as dispatch event");
+}
+});
+}</script></body></html>

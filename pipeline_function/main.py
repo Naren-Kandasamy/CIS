@@ -1,8 +1,28 @@
 import logging
 import json
 import asyncio
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
+from backend.job_dispatch import write_job_status
+from pipeline_function.pipeline.langgraph_router import run_langgraph_pipeline
+from shared.graph_client import run_query
 
 logger = logging.getLogger()
+
+async def warm_connections():
+    """
+    Run once per cold start, before handling events.
+    """
+    try:
+        await run_query("RETURN 1 as warmup")
+    except Exception as e:
+        print(f"Warm-up failed: {e}")
+
+# Cold-start initialization
+asyncio.run(warm_connections())
 
 def handler(event, context):
     """
@@ -22,26 +42,21 @@ def handler(event, context):
     context.close_with_success()
 
 async def _run_pipeline(job_id: str, session_id: str, query: str):
-    import sys
-    import os
-    # Add root project directory to path so imports work correctly inside Catalyst container
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-    
-    from backend.job_dispatch import write_job_status
-    from pipeline_function.pipeline.template_router import run_template_router
-    
     try:
-        await run_template_router(job_id, query, write_job_status)
+        from backend.job_dispatch import nosql_get, nosql_set
+        history_doc = await nosql_get(f"history:{session_id}")
+        history = json.loads(history_doc["value"]) if history_doc else []
+        
+        await run_langgraph_pipeline(job_id, query, write_job_status, history)
+        
+        from backend.job_dispatch import read_job_status
+        job = await read_job_status(job_id)
+        if job and job.get("status") == "done":
+            history.append({"q": query, "a": job["result"]["answer"]})
+            await nosql_set(f"history:{session_id}", json.dumps(history))
+            
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         await write_job_status(job_id, status="failed", error=str(e))
 
-async def warm_connections():
-    """
-    Run once per cold start, before handling events.
-    """
-    try:
-        from shared.graph_client import run_query
-        await run_query("RETURN 1 as warmup")
-    except Exception as e:
-        print(f"Warm-up failed: {e}")
+

@@ -1,14 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, Loader2 } from 'lucide-react';
+import DashboardPanel from './components/dashboard/DashboardPanel';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   evidence?: any[];
+  visualization?: any;
   status?: string;
   isStreaming?: boolean;
 }
+
+const SESSION_ID = sessionStorage.getItem("ps1_session_id") ?? (() => {
+  const id = crypto.randomUUID();
+  sessionStorage.setItem("ps1_session_id", id);
+  return id;
+})();
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([
@@ -20,6 +28,7 @@ export default function App() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [activeView, setActiveView] = useState<'query' | 'dashboard'>('query');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -58,7 +67,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: 'test-session-123',
+          session_id: SESSION_ID,
           query: userMessage.content
         })
       });
@@ -99,6 +108,9 @@ export default function App() {
               }
               if (eventType === 'evidence' && Array.isArray(data)) {
                 return { ...msg, evidence: data };
+              }
+              if (eventType === 'visualization' && data) {
+                return { ...msg, visualization: data };
               }
               if (eventType === 'token' && data.token !== undefined) {
                 return { ...msg, content: data.token, isStreaming: false, status: undefined };
@@ -151,10 +163,10 @@ export default function App() {
           </div>
           
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+            <div onClick={() => setActiveView('query')} style={{ padding: '12px', borderRadius: '12px', background: activeView === 'query' ? 'rgba(255,255,255,0.05)' : 'transparent', color: activeView === 'query' ? 'white' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                <Search size={18} /> Active Query
             </div>
-            <div style={{ padding: '12px', borderRadius: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+            <div onClick={() => setActiveView('dashboard')} style={{ padding: '12px', borderRadius: '12px', background: activeView === 'dashboard' ? 'rgba(255,255,255,0.05)' : 'transparent', color: activeView === 'dashboard' ? 'white' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                <LayoutDashboard size={18} /> Dashboard
             </div>
             <div style={{ padding: '12px', borderRadius: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
@@ -169,9 +181,11 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Main Chat Area */}
+        {/* Main Content Area */}
         <main className="chat-container">
-          <div className="chat-messages">
+          {activeView === 'query' ? (
+            <>
+              <div className="chat-messages">
             {messages.map(msg => (
               <div key={msg.id} className={`message ${msg.role}`}>
                 <div className="message-avatar">
@@ -226,6 +240,10 @@ export default function App() {
               </button>
             </form>
           </div>
+          </>
+          ) : (
+            <DashboardPanel visualization={messages.filter(m => m.role === 'assistant').pop()?.visualization} />
+          )}
         </main>
       </div>
     </>

@@ -6,5 +6,8 @@
     ],
     "ignore": [],
     "source": "functions"
+  },
+  "scripts": {
+    "ingest": "python ingestion/pipeline.py"
   }
 }

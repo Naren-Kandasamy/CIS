@@ -1,0 +1,9 @@
+"Find me all robbery cases in Belagavi that occurred in narrow gullies where the attacker threatened the victim with a knife." (Tests: Location extraction, weapon NER, and spatial-graph queries)
+
+"Analyze murder cases in Mysuru involving an iron rod or blunt object. Are these mostly linked to land disputes or caste rivalry?" (Tests: Multi-entity resolution, motive clustering, and analytical aggregation)
+
+"Show me the trend of theft cases in Mangaluru. Are they happening more frequently at railway station platforms or ATM vestibules?" (Tests: Time-series routing, location-based filtering, and comparison logic)
+
+"Identify patterns in two-wheeler thefts from apartment complex parking lots in Bengaluru during late-night hours." (Tests: Stolen property extraction, time-of-day parsing, and specific modus operandi matching)
+
+"Give me an overview of all assault cases involving a wooden stick in residential colonies across all districts over the last 3 years." (Tests: Cross-district aggregation, weapon filtering, and timeline boundaries)

@@ -97,7 +97,6 @@ class InputValidationMiddleware:
         response = JSONResponse({"detail": detail}, status_code=status_code)
         await response(scope, receive, send)
 
-# Utility for MIME sniffing endpoints to use
 def validate_mime_type(file_bytes: bytes, allowed_mimes: list[str]) -> bool:
     """
     Very basic magic number MIME sniffing.
@@ -112,7 +111,6 @@ def validate_mime_type(file_bytes: bytes, allowed_mimes: list[str]) -> bool:
         b"\x1A\x45\xDF\xA3": "audio/webm",
         b"ID3": "audio/mpeg",
         b"\xFF\xFB": "audio/mpeg",
-        b"RIFF": "audio/wav", 
         b"OggS": "audio/ogg"
     }
     
@@ -120,8 +118,9 @@ def validate_mime_type(file_bytes: bytes, allowed_mimes: list[str]) -> bool:
         if file_bytes.startswith(sig):
             if mime in allowed_mimes:
                 return True
-            # Special case for RIFF/WAV
-            if sig == b"RIFF" and len(file_bytes) >= 12 and file_bytes[8:12] == b"WAVE" and "audio/wav" in allowed_mimes:
-                 return True
+                
+    if file_bytes.startswith(b"RIFF") and len(file_bytes) >= 12:
+        if file_bytes[8:12] == b"WAVE" and "audio/wav" in allowed_mimes:
+            return True
 
     return False

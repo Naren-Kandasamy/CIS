@@ -3,18 +3,21 @@ from shared.catalyst_client import ztsql_query
 async def get_accused_stats(district: str = None) -> list:
     """
     Retrieves accused profile aggregates from ZTSQL.
-    Example placeholder for SQL retrieval inside the pipeline.
     """
-    # TODO: verify column names against ZTSQL schema §15.
-    # Note: KSP schema routes district through unit_id -> Unit -> DistrictID, not a flat column.
-    query = "SELECT district, COUNT(accused_id) as total_accused, AVG(prior_fir_count) as avg_priors FROM accused"
+    query = """
+        SELECT u.district_id as district, COUNT(a.accused_id) as total_accused, 
+               AVG(a.prior_fir_count) as avg_priors
+        FROM accused a
+        JOIN cases c ON a.case_id = c.fir_internal_id
+        JOIN units u ON c.unit_id = u.unit_id
+    """
     params = []
     
     if district:
-        query += " WHERE district = ?"
+        query += " WHERE u.district_id = ?"
         params.append(district)
         
-    query += " GROUP BY district"
+    query += " GROUP BY u.district_id"
     
     return await ztsql_query(query, params)
 
@@ -22,9 +25,14 @@ async def search_cases_by_district(district: str, limit: int = 50) -> list:
     """
     Structured filtering of cases in a district.
     """
-    # TODO: verify column names against ZTSQL schema §15 (e.g., id vs fir_internal_id).
-    # Note: Cases are linked to districts via unit_id -> Unit -> DistrictID, joining is required.
-    query = "SELECT id, crime_no, date, status, unit_id FROM cases WHERE district = ? LIMIT ?"
+    query = """
+        SELECT c.fir_internal_id as id, c.crime_no, c.registered_date as date, 
+               c.status, c.unit_id
+        FROM cases c
+        JOIN units u ON c.unit_id = u.unit_id
+        WHERE u.district_id = ?
+        LIMIT ?
+    """
     return await ztsql_query(query, [district, limit])
 
 # Additional retrieval functions will be added as DAG planner capabilities grow.

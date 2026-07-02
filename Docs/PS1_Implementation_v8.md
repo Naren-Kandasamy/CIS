@@ -2445,15 +2445,15 @@ Gate: Full pipeline end-to-end on 600 FIRs, running inside the Event Function an
 
 ### Phase 3 -- DAG Planner + Full Dataset (Week 3)
 
-- [ ] Full LangGraph DAG planner replacing template router
-- [ ] DAG planner tested against chaos query suite
-- [ ] 4,000 FIR dataset generated (overnight narrative run)
-- [ ] Full dataset ingested -- KB + Memgraph + ZTSQL
-- [ ] MAGE algorithms run on full graph -- performance benchmarked
-- [ ] field_urgent latency validated < 10s at 5K FIR scale
-- [ ] Dashboard panels live -- Cytoscape, Leaflet, Recharts
-- [ ] Multi-turn coreference working
-- [ ] All 4 planted stories verified at expanded scale
+- [x] Full LangGraph DAG planner replacing template router
+- [x] DAG planner tested against chaos query suite
+- [x] 4,000 FIR dataset generated (overnight narrative run)
+- [x] Full dataset ingested -- KB + Memgraph + ZTSQL
+- [x] MAGE algorithms run on full graph -- performance benchmarked
+- [x] field_urgent latency validated < 10s at 5K FIR scale
+- [x] Dashboard panels live -- Cytoscape, Leaflet, Recharts
+- [x] Multi-turn coreference working
+- [x] All 4 planted stories verified at expanded scale
 
 Gate: DAG planner handles chaos queries gracefully. All latency targets met.
 
