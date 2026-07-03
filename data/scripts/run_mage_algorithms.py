@@ -19,7 +19,7 @@ async def run_pagerank():
     CALL pagerank.get()
     YIELD node, rank
     WITH node, rank
-    WHERE "Person" IN labels(node)
+    WHERE "Accused" IN labels(node)
     SET node.page_rank_score = rank
     """
     try:
@@ -37,7 +37,7 @@ async def run_betweenness():
     CALL betweenness_centrality.get()
     YIELD node, betweenness_centrality
     WITH node, betweenness_centrality
-    WHERE "Person" IN labels(node)
+    WHERE "Accused" IN labels(node)
     SET node.centrality_score = betweenness_centrality
     """
     try:

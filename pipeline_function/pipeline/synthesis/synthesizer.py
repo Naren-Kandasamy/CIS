@@ -3,6 +3,10 @@ from pipeline_function.pipeline.catalyst_resilient_client import RateLimitExhaus
 from pipeline_function.pipeline.synthesis.fallback import build_fallback_response
 from pipeline_function.pipeline.evidence import EvidenceObject
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 SYNTHESIS_SYSTEM = """You are a criminal intelligence assistant for KSP field investigators.
 Synthesize retrieved evidence into clear, actionable summaries.
 
@@ -41,6 +45,15 @@ async def synthesize(evidence: EvidenceObject) -> dict:
     ])
     
     partial_notice = build_partial_results_notice(evidence)
+    
+    if not evidence.items:
+        logger.info("Zero results found. Bypassing synthesis LLM call.")
+        return {
+            "text": "No matching records found in the current databases for this query. Please try broadening your search parameters." + partial_notice,
+            "high_confidence": [],
+            "reasoning_trace": evidence.reasoning_trace + ["Zero results: bypassed LLM synthesis."]
+        }
+    
     
     prompt = f"""QUERY: {evidence.query}
 URGENCY: {evidence.urgency}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Intelligence Report</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; line-height: 1.6; }
+        .header { text-align: center; border-bottom: 2px solid #1a365d; padding-bottom: 10px; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #1a365d; text-transform: uppercase; font-size: 24px; }
+        .header p { margin: 5px 0 0; color: #666; font-size: 12px; }
+        .section { margin-bottom: 20px; }
+        .section h2 { font-size: 16px; color: #1a365d; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .query-box { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 10px 15px; margin: 10px 0; font-style: italic; }
+        .answer-box { background: #fff; padding: 10px 0; }
+        .evidence-item { border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px; margin-bottom: 10px; }
+        .evidence-header { font-weight: bold; color: #0f172a; margin-bottom: 5px; }
+        .evidence-meta { font-size: 12px; color: #64748b; }
+        .footer { text-align: center; margin-top: 40px; font-size: 10px; color: #94a3b8; border-top: 1px solid #eee; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>PS-1 Intelligence Report</h1>
+        <p>Generated: {{ date }} | Confidential - Official Use Only</p>
+    </div>
+
+    <div class="section">
+        <h2>Investigation Query</h2>
+        <div class="query-box">"{{ query }}"</div>
+    </div>
+
+    <div class="section">
+        <h2>System Synthesis</h2>
+        <div class="answer-box">
+            {{ answer | replace('\n', '<br>') }}
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Supporting Evidence</h2>
+        {% if evidence %}
+            {% for item in evidence %}
+            <div class="evidence-item">
+                <div class="evidence-header">FIR: {{ item.fir_id }} {% if item.confidence %} (Confidence: {{ item.confidence }}) {% endif %}</div>
+                <div class="evidence-meta">
+                    <strong>Date:</strong> {{ item.data.get('Date', 'Unknown') }} | 
+                    <strong>District:</strong> {{ item.data.get('district', 'Unknown') }} |
+                    <strong>Crime Type:</strong> {{ item.data.get('crime_type', 'Unknown') }}
+                </div>
+                <p style="font-size: 13px; margin-top: 8px;">
+                    <strong>Narrative/MO:</strong> {{ item.data.get('narrative', '')[:300] }}...
+                </p>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>No direct evidence linked.</p>
+        {% endif %}
+    </div>
+
+    <div class="footer">
+        PS-1 Conversational Crime Intelligence System &copy; Karnataka State Police
+    </div>
+</body>
+</html>

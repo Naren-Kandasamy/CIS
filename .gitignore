@@ -65,3 +65,17 @@ data/*
 !data/scripts/
 # Also keep any markdown/documentation in data if present
 !data/*.md
+
+# Scratch and Diagnostic Files
+test_groq*.py
+test_llm*.py
+test_sdk.py
+test_catalyst.py
+diagnose_*.py
+parse_*.py
+test_data.py
+test_pipeline.py
+
+# Demo outputs
+*.pdf
+*.mp3

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from backend.api.routes import query, health, transcribe, graph
+from backend.api.routes import query, health, transcribe, graph, tts, ocr, export
 from backend.api.middleware.input_validator import InputValidationMiddleware
 from backend.api.middleware.rbac import RBACMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,3 +42,6 @@ app.include_router(query.router)
 app.include_router(health.router)
 app.include_router(transcribe.router)
 app.include_router(graph.router)
+app.include_router(tts.router)
+app.include_router(ocr.router)
+app.include_router(export.router)

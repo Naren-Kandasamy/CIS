@@ -7,6 +7,12 @@
     "ignore": [],
     "source": "functions"
   },
+  "app_sail": {
+    "source": "backend"
+  },
+  "client": {
+    "source": "client/dist"
+  },
   "scripts": {
     "ingest": "python ingestion/pipeline.py"
   }

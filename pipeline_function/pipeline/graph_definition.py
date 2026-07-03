@@ -32,16 +32,17 @@ async def run_pipeline_stages(input_state: dict, config: dict):
         # Resolve Entities
         yield "resolving_entities", {"status": "Resolving entities..."}
         crime_types = intent_obj.get("entities", {}).get("crime_types", [])
-        resolved_crimes = []
-        for ct in crime_types:
-            resolved = await resolve_crime_sub_head(ct)
-            if resolved: resolved_crimes.append(resolved)
-                 
         ipc_sections = intent_obj.get("entities", {}).get("ipc_sections", [])
-        resolved_sections = []
-        for sec in ipc_sections:
-            resolved = await resolve_act_section(sec)
-            if resolved: resolved_sections.append(resolved)
+        
+        async def _gather_or_empty(coros):
+            return await asyncio.gather(*coros) if coros else []
+
+        resolved_crimes_raw, resolved_sections_raw = await asyncio.gather(
+            _gather_or_empty([resolve_crime_sub_head(ct) for ct in crime_types]),
+            _gather_or_empty([resolve_act_section(sec) for sec in ipc_sections])
+        )
+        resolved_crimes = [r for r in resolved_crimes_raw if r]
+        resolved_sections = [r for r in resolved_sections_raw if r]
                  
         intent_obj["entities"]["resolved_crime_sub_heads"] = resolved_crimes
         intent_obj["entities"]["resolved_act_sections"] = resolved_sections

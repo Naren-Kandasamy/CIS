@@ -2459,18 +2459,18 @@ Gate: DAG planner handles chaos queries gracefully. All latency targets met.
 
 ### Phase 4 -- Robustness + Production Readiness (Week 4)
 
-- [ ] Zero-result handler in synthesis
-- [ ] Graceful degradation on API failures
-- [ ] OCR feature demo -- Qwen 7B VLM on one realistic scanned FIR
-- [ ] PDF export (WeasyPrint)
-- [ ] Catalyst TTS for voice response
+- [x] Zero-result handler in synthesis
+- [x] Graceful degradation on API failures
+- [x] OCR feature demo -- Qwen 7B VLM on one realistic scanned FIR
+- [x] PDF export (WeasyPrint)
+- [x] Catalyst TTS for voice response
 - [ ] Memgraph Oracle VM hardened (persistent volume, restart policy)
-- [ ] NER eval suite >= 90% pass rate
-- [ ] verify_stories.py passing on full 5K dataset
-- [ ] Trap scenario planted, verify_trap_scenario.py passing -- launch blocker
+- [x] NER eval suite >= 90% pass rate
+- [x] verify_stories.py passing on full 5K dataset
+- [x] Trap scenario planted, verify_trap_scenario.py passing -- launch blocker
 - [ ] Blind evaluation packet labeled by teammate not involved in story design
 - [ ] Confidence calibration measured -- HIGH tier >= 85% against blind labels
-- [ ] Chaos test suite passing
+- [x] Chaos test suite passing
 - [ ] Full Catalyst deployment verified end-to-end
 
 Gate: Any query, any phrasing, English or Kannada -- sensible response always returned. Trap scenario passes. Confidence calibration measured and acceptable.

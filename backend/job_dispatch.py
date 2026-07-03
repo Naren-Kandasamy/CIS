@@ -89,6 +89,7 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
         job = await read_job_status(job_id)
         if job and job.get("status") == "done":
             history.append({"q": query, "a": job["result"]["answer"]})
+            history = history[-10:] # Cap history to 10
             await nosql_set(f"history:{session_id}", json.dumps(history))
             
     except Exception as e:

@@ -66,6 +66,9 @@ async def run_template_router(job_id: str, query: str, write_status_callback):
             
     # 4. Generate Visualization (Cytoscape Network)
     cytoscape_elements = []
+    donut_data = []
+    trend_data = []
+    map_markers = []
     
     if fir_ids:
         from shared.graph_client import run_query
@@ -78,14 +81,13 @@ async def run_template_router(job_id: str, query: str, write_status_callback):
             })
             
         # Query for associated persons
-        fir_list_str = "[" + ", ".join([f"'{fid}'" for fid in fir_ids]) + "]"
-        person_query = f"""
+        person_query = """
         MATCH (p:Person)-[r]->(f:FIR)
-        WHERE f.id IN {fir_list_str}
+        WHERE f.id IN $fir_ids
         RETURN p.id as person_id, type(r) as rel_type, f.id as fir_id
         """
         try:
-            person_results = await run_query(person_query)
+            person_results = await run_query(person_query, {"fir_ids": fir_ids})
             added_persons = set()
             for row in person_results:
                 pid = row["person_id"]
@@ -161,8 +163,8 @@ async def run_template_router(job_id: str, query: str, write_status_callback):
 
     visualization = {
         "cytoscape": { "elements": cytoscape_elements },
-        "recharts": { "donut": donut_data if fir_ids else [], "trend": trend_data if fir_ids else [] },
-        "leaflet": { "markers": map_markers if fir_ids else [] }
+        "recharts": { "donut": donut_data, "trend": trend_data },
+        "leaflet": { "markers": map_markers }
     }
         
     # 5. Synthesis

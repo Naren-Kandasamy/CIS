@@ -9,6 +9,7 @@ from pipeline_function.pipeline.query_understanding.dag_planner import build_dag
 from pipeline_function.pipeline.retrieval.executor import execute_retrieval
 from pipeline_function.pipeline.evidence import EvidenceObject
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient
+from pipeline_function.pipeline.confidence_engine import run_confidence_engine
 
 # State schema for the graph
 class AgentState(TypedDict):
@@ -69,6 +70,12 @@ async def retrieving_evidence_node(state: AgentState):
     evidence_obj = await execute_retrieval(state["dag"], evidence_obj, {"intent_object": intent_obj})
     return {"evidence": evidence_obj}
 
+async def confidence_scoring_node(state: AgentState):
+    await state["write_status_callback"](state["job_id"], status="confidence_scoring")
+    evidence_obj = state["evidence"]
+    evidence_obj = run_confidence_engine(evidence_obj)
+    return {"evidence": evidence_obj}
+
 async def building_visualization_node(state: AgentState):
     evidence_obj = state["evidence"]
     fir_ids = []
@@ -77,6 +84,9 @@ async def building_visualization_node(state: AgentState):
             fir_ids.append(item.fir_id)
             
     cytoscape_elements = []
+    donut_data = []
+    trend_data = []
+    map_markers = []
     
     if fir_ids:
         from shared.graph_client import run_query
@@ -93,14 +103,13 @@ async def building_visualization_node(state: AgentState):
                 "classes": "fir"
             })
             
-        fir_list_str = "[" + ", ".join([f"'{fid}'" for fid in fir_ids]) + "]"
-        person_query = f"""
+        person_query = """
         MATCH (p:Person)-[r]->(f:FIR)
-        WHERE f.id IN {fir_list_str}
+        WHERE f.id IN $fir_ids
         RETURN p.id as person_id, type(r) as rel_type, f.id as fir_id
         """
         try:
-            results = await run_query(person_query)
+            results = await run_query(person_query, {"fir_ids": fir_ids})
             persons_added = set()
             for r in results:
                 p_id = r["person_id"]
@@ -166,8 +175,8 @@ async def building_visualization_node(state: AgentState):
 
     visualization = {
         "cytoscape": { "elements": cytoscape_elements },
-        "recharts": { "donut": donut_data if fir_ids else [], "trend": trend_data if fir_ids else [] },
-        "leaflet": { "markers": map_markers if fir_ids else [] }
+        "recharts": { "donut": donut_data, "trend": trend_data },
+        "leaflet": { "markers": map_markers }
     }
     return {"visualization": visualization}
 
@@ -178,10 +187,12 @@ async def synthesizing_response_node(state: AgentState):
     query = state["query"]
     
     evidence_dicts = []
-    for item in evidence_obj.items:
+    for item in evidence_obj.items[:10]:
         evidence_dicts.append({
             "source": ",".join(item.sources),
             "fir_id": item.fir_id,
+            "confidence": item.confidence,
+            "relevance_score": item.relevance_score,
             "data": item.metadata
         })
         
@@ -192,31 +203,37 @@ async def synthesizing_response_node(state: AgentState):
     else:
         prompt = f"Query: {query}\nEvidence: {json.dumps(evidence_dicts)}"
         
-    ans = await llm_complete_resilient(prompt=prompt, system=system, temperature=0.2, max_tokens=1500)
+    try:
+        ans = await llm_complete_resilient(prompt=prompt, system=system, temperature=0.2, max_tokens=1500)
+    except Exception as e:
+        print(f"[Synthesis Error] LLM call failed: {e}")
+        ans = "The system successfully retrieved evidence for your query, but the generation model is currently unavailable or under heavy load. Please refer to the evidence panels for retrieved data."
     
     return {"final_response": ans}
 
-# Define the graph
-workflow = StateGraph(AgentState)
-
-workflow.add_node("understanding_query", understanding_query_node)
-workflow.add_node("resolving_entities", resolving_entities_node)
-workflow.add_node("planning_execution", planning_execution_node)
-workflow.add_node("retrieving_evidence", retrieving_evidence_node)
-workflow.add_node("building_visualization", building_visualization_node)
-workflow.add_node("synthesizing_response", synthesizing_response_node)
-
-workflow.add_edge("understanding_query", "resolving_entities")
-workflow.add_edge("resolving_entities", "planning_execution")
-workflow.add_edge("planning_execution", "retrieving_evidence")
-workflow.add_edge("retrieving_evidence", "building_visualization")
-workflow.add_edge("building_visualization", "synthesizing_response")
-workflow.add_edge("synthesizing_response", END)
-
-workflow.set_entry_point("understanding_query")
-app = workflow.compile()
-
+# Define the graph compilation inside the runner for thread-safety
 async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback, history: list = None):
+    workflow = StateGraph(AgentState)
+    
+    workflow.add_node("understanding_query", understanding_query_node)
+    workflow.add_node("resolving_entities", resolving_entities_node)
+    workflow.add_node("planning_execution", planning_execution_node)
+    workflow.add_node("retrieving_evidence", retrieving_evidence_node)
+    workflow.add_node("confidence_scoring", confidence_scoring_node)
+    workflow.add_node("building_visualization", building_visualization_node)
+    workflow.add_node("synthesizing_response", synthesizing_response_node)
+    
+    workflow.add_edge("understanding_query", "resolving_entities")
+    workflow.add_edge("resolving_entities", "planning_execution")
+    workflow.add_edge("planning_execution", "retrieving_evidence")
+    workflow.add_edge("retrieving_evidence", "confidence_scoring")
+    workflow.add_edge("confidence_scoring", "building_visualization")
+    workflow.add_edge("building_visualization", "synthesizing_response")
+    workflow.add_edge("synthesizing_response", END)
+    
+    workflow.set_entry_point("understanding_query")
+    app = workflow.compile()
+
     initial_state = {
         "job_id": job_id,
         "query": query,
@@ -232,6 +249,8 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
         evidence_dicts.append({
             "source": ",".join(item.sources),
             "fir_id": item.fir_id,
+            "confidence": item.confidence,
+            "relevance_score": item.relevance_score,
             "data": item.metadata
         })
         
@@ -239,7 +258,8 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
         "answer": final_state["final_response"],
         "evidence": evidence_dicts,
         "visualization": final_state["visualization"],
-        "intent_parsed": final_state["intent_obj"]
+        "intent_parsed": final_state["intent_obj"],
+        "reasoning_trace": final_state["evidence"].reasoning_trace
     }
     
     await write_status_callback(job_id, status="done", result=result_data)
