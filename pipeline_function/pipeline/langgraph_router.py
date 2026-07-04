@@ -259,25 +259,39 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
         "history": history or []
     }
     
-    final_state = await app.ainvoke(initial_state)
-    
-    # Save output
-    evidence_dicts = []
-    for item in final_state["evidence"].items:
-        evidence_dicts.append({
-            "source": ",".join(item.sources),
-            "fir_id": item.fir_id,
-            "confidence": item.confidence,
-            "relevance_score": item.relevance_score,
-            "data": item.metadata
-        })
-        
-    result_data = {
-        "answer": final_state["final_response"],
-        "evidence": evidence_dicts,
-        "visualization": final_state["visualization"],
-        "intent_parsed": final_state["intent_obj"],
-        "reasoning_trace": final_state["evidence"].reasoning_trace
-    }
-    
-    await write_status_callback(job_id, status="done", result=result_data)
+    # BUG FIX: previously nothing here caught a failure -- an uncaught
+    # exception anywhere in the graph (e.g. a NER cache read exhausting its
+    # retries against a flaky connection) propagated straight out of this
+    # function. The "write failed status" safety net was duplicated ad hoc in
+    # each of the 2 production callers and simply absent in test_router.py /
+    # verify_trap_scenario.py, which would crash instead of reporting a clean
+    # failure. Guaranteed here instead, regardless of caller.
+    try:
+        final_state = await app.ainvoke(initial_state)
+
+        # Save output
+        evidence_dicts = []
+        for item in final_state["evidence"].items:
+            evidence_dicts.append({
+                "source": ",".join(item.sources),
+                "fir_id": item.fir_id,
+                "confidence": item.confidence,
+                "relevance_score": item.relevance_score,
+                "data": item.metadata
+            })
+
+        result_data = {
+            "answer": final_state["final_response"],
+            "evidence": evidence_dicts,
+            "visualization": final_state["visualization"],
+            "intent_parsed": final_state["intent_obj"],
+            "reasoning_trace": final_state["evidence"].reasoning_trace
+        }
+
+        await write_status_callback(job_id, status="done", result=result_data)
+    except Exception as e:
+        print(f"[Pipeline Error] run_langgraph_pipeline failed: {e}")
+        try:
+            await write_status_callback(job_id, status="failed", error=str(e))
+        except Exception as write_error:
+            print(f"[Pipeline Error] Also failed to write failed status: {write_error}")

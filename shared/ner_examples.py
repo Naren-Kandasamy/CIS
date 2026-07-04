@@ -158,5 +158,23 @@ FEW_SHOT_EXAMPLES = [
             "urgency": "analytical",
             "sub_intents": ["mo_search"]
         }
+    },
+    {
+        "query": "Find me all robbery cases in Belagavi that occurred in narrow gullies where the attacker threatened the victim with a knife.",
+        "output": {
+            "entities": {
+                "persons": [],
+                "locations": ["narrow gullies"],
+                "city": "Belagavi",
+                "fir_ids": [],
+                "dates": [],
+                "ipc_sections": [],
+                "crime_types": ["robbery"],
+                "weapon": "knife"
+            },
+            "intent": "lookup",
+            "urgency": "field_urgent",
+            "sub_intents": ["broad_search"]
+        }
     }
 ]

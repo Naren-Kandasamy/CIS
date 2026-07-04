@@ -80,4 +80,11 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
-        await write_job_status(job_id, status="failed", error=str(e))
+        # BUG FIX: guard against this failure-reporting call itself hitting
+        # the same transient NoSQL connectivity issue that caused the
+        # original failure -- otherwise a double-failure crashes the whole
+        # invocation as an unretrieved exception instead of just logging it.
+        try:
+            await write_job_status(job_id, status="failed", error=str(e))
+        except Exception as write_error:
+            logger.error(f"Also failed to write failed status: {write_error}")

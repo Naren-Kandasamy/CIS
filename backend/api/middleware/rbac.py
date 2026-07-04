@@ -1,3 +1,22 @@
+import json
+from fastapi.responses import JSONResponse
+
+from shared.auth import get_session, role_meets_minimum
+
+# BUG FIX: this was previously a complete pass-through no-op -- every request
+# reached every route with zero access control. Now validates a Bearer
+# session token (from /api/auth/login) against the real Catalyst NoSQL
+# session store, and enforces a minimum KSP rank per route where specified.
+
+PUBLIC_PATHS = {"/health", "/api/auth/login"}
+
+# Minimum rank required for a route; routes not listed here just require any
+# authenticated session. Ranks: dysp > inspector > sub_inspector > asi >
+# head_constable > constable (see shared/auth.py ROLE_HIERARCHY).
+ROUTE_MIN_ROLE = {
+    "/api/export/pdf": "sub_inspector",
+}
+
 class RBACMiddleware:
     def __init__(self, app):
         self.app = app
@@ -7,6 +26,28 @@ class RBACMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Stub for Role-Based Access Control logic (DYSP down to Constable)
-        # We can extract user identity and roles from scope["headers"]
+        path = scope.get("path", "")
+        if path in PUBLIC_PATHS or scope["method"] == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        auth_header = headers.get(b"authorization", b"").decode()
+        token = auth_header[len("Bearer "):] if auth_header.startswith("Bearer ") else None
+
+        if not token:
+            return await self._send_error(scope, receive, send, 401, "Missing or invalid Authorization header")
+
+        session = await get_session(token)
+        if not session:
+            return await self._send_error(scope, receive, send, 401, "Session expired or invalid -- please log in again")
+
+        min_role = ROUTE_MIN_ROLE.get(path)
+        if min_role and not role_meets_minimum(session["role"], min_role):
+            return await self._send_error(scope, receive, send, 403, "Insufficient rank for this action")
+
         await self.app(scope, receive, send)
+
+    async def _send_error(self, scope, receive, send, status_code: int, detail: str):
+        response = JSONResponse({"detail": detail}, status_code=status_code)
+        await response(scope, receive, send)
