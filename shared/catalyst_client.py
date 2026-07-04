@@ -34,42 +34,49 @@ CATALYST_DATASTORE_URL = lambda: os.getenv("CATALYST_DATASTORE_URL", "")
 
 async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
-    
-    # NEW FIX: Route to local Ollama if Catalyst endpoints are failing
-    if os.getenv("LOCAL_MOCK_MODE") == "true":
-        async with httpx.AsyncClient() as client:
-            try:
-                # Assuming user has qwen or llama3 installed on local ollama
-                r = await client.post("http://localhost:11434/api/generate", json={
-                    "model": "llama3.2", # Fallback model
-                    "system": system,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": temperature}
-                }, timeout=30.0)
-                if r.status_code == 200:
-                    return r.json()["response"]
-            except Exception as e:
-                return f"[Mock LLM Response - Local Ollama unavailable: {e}]"
-                
-    # NEW FIX: Route to Groq API if GROQ_API_KEY is present
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        async with httpx.AsyncClient() as client:
-            r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers={
-                "Authorization": f"Bearer {groq_key}",
-                "Content-Type": "application/json"
-            }, json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": temperature,
-                "max_tokens": max_tokens
-            }, timeout=45.0)
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+
+    # BUG FIX: the Ollama/Groq dev fallbacks below (Architecture v8 line 48:
+    # "Groq + Llama 3.1 70B (offline/dev only) -- Not for production") used to
+    # activate silently off a stray LOCAL_MOCK_MODE/GROQ_API_KEY env var alone,
+    # with no log line indicating real Catalyst/Qwen was bypassed. They now
+    # require an explicit second opt-in flag and always log loudly when used,
+    # so a leftover dev env var can never silently reroute production traffic.
+    if os.getenv("ALLOW_DEV_LLM_FALLBACK") == "true":
+        if os.getenv("LOCAL_MOCK_MODE") == "true":
+            print("[DEV FALLBACK - NOT FOR PRODUCTION] Routing LLM call to local Ollama instead of Catalyst Qwen")
+            async with httpx.AsyncClient() as client:
+                try:
+                    # Assuming user has qwen or llama3 installed on local ollama
+                    r = await client.post("http://localhost:11434/api/generate", json={
+                        "model": "llama3.2", # Fallback model
+                        "system": system,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": temperature}
+                    }, timeout=30.0)
+                    if r.status_code == 200:
+                        return r.json()["response"]
+                except Exception as e:
+                    return f"[Mock LLM Response - Local Ollama unavailable: {e}]"
+
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            print("[DEV FALLBACK - NOT FOR PRODUCTION] Routing LLM call to Groq (Llama 3.3 70B) instead of Catalyst Qwen")
+            async with httpx.AsyncClient() as client:
+                r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers={
+                    "Authorization": f"Bearer {groq_key}",
+                    "Content-Type": "application/json"
+                }, json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                }, timeout=45.0)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
 
     async with httpx.AsyncClient() as client:
         r = await client.post(CATALYST_LLM_URL(), headers=_quickml_headers(), json={
@@ -91,31 +98,31 @@ async def llm_complete(prompt: str, system: str,
             return resp.get("output", str(resp))
 
 async def vlm_extract(image_bytes: bytes, prompt: str, system: str) -> str:
+    # BUG FIX: previously returned a hardcoded, realistic-looking fake FIR record
+    # whenever the VLM endpoint was unconfigured or the call failed for any reason,
+    # indistinguishable from a real extraction. Now raises instead, so the caller
+    # (backend/api/routes/ocr.py) surfaces a real error rather than fabricated data.
     url = CATALYST_VLM_URL()
     if not url:
-        return '{"FIR_Number": "124/2023", "Date": "15/10/2023", "District": "Belagavi", "Crime_Type": "Robbery", "Accused": "Suresh (Suri)", "Modus_Operandi": "Breaking the iron grill of the rear window", "Victim": "Shri Ramesh Kumar"}'
-        
+        raise EnvironmentError("CATALYST_VLM_ENDPOINT is not configured")
+
     image_b64 = base64.b64encode(image_bytes).decode()
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url, headers=_quickml_headers(), json={
-                "prompt": prompt,
-                "model": "VL-Qwen3.6-35B-A3B",
-                "images": [image_b64],
-                "system_prompt": system,
-                "top_k": 50,
-                "top_p": 0.9,
-                "temperature": 0.0,
-                "max_tokens": 1000
-            }, timeout=45.0)
-            r.raise_for_status()
-            resp = r.json()
-            if "choices" in resp:
-                return resp["choices"][0]["message"]["content"]
-            return resp.get("output", resp.get("text", str(resp)))
-        except Exception as e:
-            print(f"[Mock VLM] Catalyst VLM failed ({e}), returning mock FIR data.")
-            return '{"FIR_Number": "124/2023", "Date": "15/10/2023", "District": "Belagavi", "Crime_Type": "Robbery", "Accused": "Suresh (Suri)", "Modus_Operandi": "Breaking the iron grill of the rear window", "Victim": "Shri Ramesh Kumar"}'
+        r = await client.post(url, headers=_quickml_headers(), json={
+            "prompt": prompt,
+            "model": "VL-Qwen3.6-35B-A3B",
+            "images": [image_b64],
+            "system_prompt": system,
+            "top_k": 50,
+            "top_p": 0.9,
+            "temperature": 0.0,
+            "max_tokens": 1000
+        }, timeout=45.0)
+        r.raise_for_status()
+        resp = r.json()
+        if "choices" in resp:
+            return resp["choices"][0]["message"]["content"]
+        return resp.get("output", resp.get("text", str(resp)))
 
 async def kb_upload(document_id: str, content: str, metadata: dict):
     url = CATALYST_KB_URL()
