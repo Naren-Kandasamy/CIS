@@ -4,21 +4,26 @@ import base64
 import time
 import asyncio
 
-# BUG FIX: guards the session-history read-modify-write race -- two concurrent
-# queries in the same session both read the same history snapshot, then the
-# one that finishes last silently overwrites the other's contribution. This
-# only serializes requests landing in the same process/warm container (a full
+# BUG FIX: general-purpose keyed lock registry, used both to guard the
+# session-history read-modify-write race (two concurrent queries in the same
+# session both read the same history snapshot, then the one that finishes
+# last silently overwrites the other's contribution) and the NER cache
+# stampede (concurrent identical queries all miss cache and all hit the LLM).
+# Only serializes requests landing in the same process/warm container (a full
 # cross-process guarantee would need a database-level conditional write on
 # the NoSQL item, which the Catalyst REST API's condition syntax for this SDK
-# version did not accept in testing). Bounded so long-running warm containers
-# with many distinct sessions don't grow this unboundedly.
-_session_locks: dict = {}
-_SESSION_LOCKS_MAX = 1000
+# version did not accept in testing). Bounded so a long-running warm container
+# with many distinct sessions/queries doesn't grow this unboundedly.
+_locks: dict = {}
+_LOCKS_MAX = 2000
+
+def get_lock(key: str) -> asyncio.Lock:
+    if len(_locks) > _LOCKS_MAX:
+        _locks.clear()
+    return _locks.setdefault(key, asyncio.Lock())
 
 def get_session_lock(session_id: str) -> asyncio.Lock:
-    if len(_session_locks) > _SESSION_LOCKS_MAX:
-        _session_locks.clear()
-    return _session_locks.setdefault(session_id, asyncio.Lock())
+    return get_lock(f"session:{session_id}")
 
 # BUG FIX: env vars must be read lazily (via helper) rather than at module-import
 # time, because Catalyst Functions inject env vars *after* module load.
@@ -183,25 +188,30 @@ async def kb_search(query: str, top_k: int = 10) -> dict:
 # BUG FIX: mutable default argument `params=[]` is shared across all calls.
 # Using None sentinel and replacing with a fresh list each call.
 async def ztsql_query(sql: str, params: list = None) -> list:
+    # BUG FIX: this used to catch every exception (network errors, auth
+    # failures, malformed SQL) and silently return [] -- indistinguishable
+    # from "the query legitimately found nothing." That meant a genuinely
+    # broken SQL retrieval step could never be told apart from "no matches"
+    # anywhere downstream (confidence_caveats, reasoning_trace, or callers
+    # like entity_lookup_resolver.py's cache loader). Only the "datastore not
+    # configured" case degrades silently now; real request failures raise, so
+    # execute_with_timeout's except-Exception handler (executor.py) can
+    # correctly mark the source as unavailable instead of "empty."
     if params is None:
         params = []
-    
+
     url = CATALYST_DATASTORE_URL()
     if not url:
         return []
-        
+
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url + "/query", headers=_headers(),
-                json={"query": sql, "params": params}, timeout=15.0)
-            if r.status_code == 404:
-                print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
-                return []
-            r.raise_for_status()
-            return r.json()["rows"]
-        except Exception as e:
-            print(f"Datastore query failed: {e}")
+        r = await client.post(url + "/query", headers=_headers(),
+            json={"query": sql, "params": params}, timeout=15.0)
+        if r.status_code == 404:
+            print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
             return []
+        r.raise_for_status()
+        return r.json()["rows"]
 
 # BUG FIX: same mutable default arg fix as ztsql_query.
 async def ztsql_execute(sql: str, params: list = None):
@@ -309,11 +319,15 @@ async def _nosql_headers() -> dict:
     return {"Authorization": f"Zoho-oauthtoken {token}", "Content-Type": "application/json"}
 
 async def _nosql_request(method: str, path: str, json_body) -> dict:
+    # BUG FIX: 4 attempts / 1s apart proved too thin against real observed
+    # connection flakiness to this host during testing -- bumped for
+    # resilience, still well inside the 120s SSE poll budget in the worst case.
     import asyncio
     headers = await _nosql_headers()
     url = _nosql_base_url() + path
     last_error = None
-    for attempt in range(4):
+    max_attempts = 6
+    for attempt in range(max_attempts):
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.request(method, url, headers=headers, json=json_body, timeout=15.0)
@@ -321,8 +335,8 @@ async def _nosql_request(method: str, path: str, json_body) -> dict:
                 return r.json()
         except httpx.RequestError as e:
             last_error = e
-            if attempt < 3:
-                await asyncio.sleep(1.0)
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(1.5)
                 continue
     raise last_error
 

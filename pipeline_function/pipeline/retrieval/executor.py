@@ -71,13 +71,15 @@ async def run_graph_step(step, state):
     cypher += " RETURN f.id as fir_id, f.crime_no as crime_no, f.district as district, f.crime_type as crime_type, f.modus_operandi as modus_operandi, f.narrative as narrative, f.date as date LIMIT 10"
     
     print(f"Executing Cypher: {cypher} with params {params}")
-    try:
-        results = await run_query(cypher, params)
-        print(f"Got {len(results)} results from graph")
-    except Exception as e:
-        print(f"Graph query failed: {e}")
-        results = []
-    
+    # BUG FIX: this used to catch every exception and return [] here,
+    # indistinguishable from "the query legitimately found nothing" --
+    # execute_with_timeout (which wraps this coroutine) already has its own
+    # except-Exception handler that correctly marks the source unavailable
+    # in confidence_caveats/reasoning_trace, so let real failures propagate
+    # to it instead of swallowing them here.
+    results = await run_query(cypher, params)
+    print(f"Got {len(results)} results from graph")
+
     # Format for the EvidenceObject
     formatted = []
     for row in results:
@@ -122,21 +124,30 @@ async def run_sql_step(step, entities):
     if not resolved_crime_sub_heads:
         return []
 
-    try:
-        results = []
-        for csh_id in resolved_crime_sub_heads[:3]:
-            results.extend(await search_cases_by_crime_sub_head(csh_id, limit=10))
-        return results
-    except Exception as e:
-        print(f"SQL failed: {e}")
-        return []
+    # BUG FIX: this used to catch every exception (network errors, a broken
+    # query) and return [] here -- indistinguishable from "no matching cases,"
+    # so execute_with_timeout never saw the failure and sql_unavailable never
+    # reached confidence_caveats/reasoning_trace. Real failures now propagate
+    # to execute_with_timeout's own except-Exception handler instead.
+    results = []
+    for csh_id in resolved_crime_sub_heads[:3]:
+        results.extend(await search_cases_by_crime_sub_head(csh_id, limit=10))
+    return results
 
 async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
+    # BUG FIX: an unrecognized step type (e.g. a non-retrieval pseudo-step
+    # like "evidence_assembly"/"synthesis" that a DAG plan shouldn't have
+    # included in the first place) used to silently fall back to
+    # run_graph_step -- re-running the same graph query once per unrecognized
+    # step. Unrecognized types are now skipped with a warning instead of
+    # silently duplicating a real retrieval call.
     tasks = []
+    normalized_steps = []
     for step in steps:
         step_type = step.get("type", "graph")
-        if step_type in ("data_retrieval", "retrieval"): step_type = "graph"
-        
+        if step_type in ("data_retrieval", "retrieval"):
+            step_type = "graph"
+
         if step_type == "graph":
             coro = run_graph_step(step, state)
         elif step_type == "rag":
@@ -144,18 +155,18 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         elif step_type == "sql":
             coro = run_sql_step(step, evidence.entities)
         else:
-            coro = run_graph_step(step, state)  # Default fallback
-            
+            print(f"Skipping DAG step with unrecognized type {step_type!r}: {step}")
+            continue
+
         tasks.append(execute_with_timeout(coro, step_type, evidence))
-        step["_normalized_type"] = step_type
+        normalized_steps.append((step, step_type))
 
     results = await asyncio.gather(*tasks)
 
-    for step, result in zip(steps, results):
+    for (step, step_type), result in zip(normalized_steps, results):
         if result is None:
             continue
-        step_type = step.get("_normalized_type", "graph")
-        
+
         if step_type == "rag":
             evidence.add_rag_results(result)
         elif step_type == "graph":

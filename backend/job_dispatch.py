@@ -106,4 +106,12 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
         import traceback
         traceback.print_exc()
         print(f"[Local pipeline error] {e}")
-        await write_job_status(job_id, status="failed", error=str(e))
+        # BUG FIX: this failure-reporting call can itself hit the same
+        # transient NoSQL connectivity issue that caused the original
+        # failure -- previously unguarded, so a double-failure crashed the
+        # whole background task as an unretrieved exception instead of just
+        # logging that the job's failure status couldn't be persisted.
+        try:
+            await write_job_status(job_id, status="failed", error=str(e))
+        except Exception as write_error:
+            print(f"[Local pipeline error] Also failed to write failed status: {write_error}")
