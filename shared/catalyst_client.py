@@ -183,25 +183,30 @@ async def kb_search(query: str, top_k: int = 10) -> dict:
 # BUG FIX: mutable default argument `params=[]` is shared across all calls.
 # Using None sentinel and replacing with a fresh list each call.
 async def ztsql_query(sql: str, params: list = None) -> list:
+    # BUG FIX: this used to catch every exception (network errors, auth
+    # failures, malformed SQL) and silently return [] -- indistinguishable
+    # from "the query legitimately found nothing." That meant a genuinely
+    # broken SQL retrieval step could never be told apart from "no matches"
+    # anywhere downstream (confidence_caveats, reasoning_trace, or callers
+    # like entity_lookup_resolver.py's cache loader). Only the "datastore not
+    # configured" case degrades silently now; real request failures raise, so
+    # execute_with_timeout's except-Exception handler (executor.py) can
+    # correctly mark the source as unavailable instead of "empty."
     if params is None:
         params = []
-    
+
     url = CATALYST_DATASTORE_URL()
     if not url:
         return []
-        
+
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url + "/query", headers=_headers(),
-                json={"query": sql, "params": params}, timeout=15.0)
-            if r.status_code == 404:
-                print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
-                return []
-            r.raise_for_status()
-            return r.json()["rows"]
-        except Exception as e:
-            print(f"Datastore query failed: {e}")
+        r = await client.post(url + "/query", headers=_headers(),
+            json={"query": sql, "params": params}, timeout=15.0)
+        if r.status_code == 404:
+            print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
             return []
+        r.raise_for_status()
+        return r.json()["rows"]
 
 # BUG FIX: same mutable default arg fix as ztsql_query.
 async def ztsql_execute(sql: str, params: list = None):
