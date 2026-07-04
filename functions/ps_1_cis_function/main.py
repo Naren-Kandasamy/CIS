@@ -8,7 +8,7 @@ import os
 # on every invocation; moved to module level (cold-start only).
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-from backend.job_dispatch import write_job_status
+from backend.job_dispatch import write_job_status, read_job_status, nosql_get, nosql_set
 # BUG FIX: this deployed function used to call run_template_router
 # (template_router.py), an earlier "Phase 2" stopgap pipeline with no
 # Confidence Engine, no citation/officer-verification synthesis rules, and no
@@ -16,6 +16,7 @@ from backend.job_dispatch import write_job_status
 # actually tested locally (test_chaos.py, test_router.py, verify_trap_scenario.py).
 from pipeline_function.pipeline.langgraph_router import run_langgraph_pipeline
 from shared.graph_client import run_query
+from shared.catalyst_client import get_session_lock
 
 logger = logging.getLogger()
 
@@ -51,19 +52,31 @@ def handler(event, context):
     context.close_with_success()
 
 async def _run_pipeline(job_id: str, session_id: str, query: str):
+    # BUG FIX: no idempotency guard previously existed -- a redelivered
+    # Signals event (at-least-once delivery) for the same job_id would run
+    # the entire pipeline twice, double-spending LLM calls and double-writing
+    # history. A job only sits at "queued" until the first real pipeline node
+    # runs (understanding_query_node writes status immediately), so a
+    # redelivery arriving after that sees a non-"queued" status and skips.
+    existing = await read_job_status(job_id)
+    if existing and existing.get("status") != "queued":
+        logger.info(f"Job {job_id} already in progress/done (status={existing.get('status')}) -- skipping duplicate invocation")
+        return
+
     try:
-        from backend.job_dispatch import nosql_get, nosql_set
-        history_doc = await nosql_get(f"history:{session_id}")
-        history = json.loads(history_doc["value"]) if history_doc else []
+        # BUG FIX: serializes the history read-modify-write per session_id,
+        # closing the lost-update race between concurrent same-session queries.
+        async with get_session_lock(session_id):
+            history_doc = await nosql_get(f"history:{session_id}")
+            history = json.loads(history_doc["value"]) if history_doc else []
 
-        await run_langgraph_pipeline(job_id, query, write_job_status, history)
+            await run_langgraph_pipeline(job_id, query, write_job_status, history)
 
-        from backend.job_dispatch import read_job_status
-        job = await read_job_status(job_id)
-        if job and job.get("status") == "done":
-            history.append({"q": query, "a": job["result"]["answer"]})
-            history = history[-10:]  # Cap history to 10 to prevent memory leak
-            await nosql_set(f"history:{session_id}", json.dumps(history))
+            job = await read_job_status(job_id)
+            if job and job.get("status") == "done":
+                history.append({"q": query, "a": job["result"]["answer"]})
+                history = history[-10:]  # Cap history to 10 to prevent memory leak
+                await nosql_set(f"history:{session_id}", json.dumps(history))
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")

@@ -5,18 +5,22 @@ import os
 import json
 import asyncio
 
+# BUG FIX: this used to define its own separate in-memory mock
+# (_nosql_mock_db), entirely disconnected from shared/catalyst_client.py's
+# own separate mock. Neither was ever wired to a real Catalyst NoSQL table --
+# job status written by the pipeline Function (a different deployed process)
+# could never be seen by this AppSail process reading it back for the SSE
+# poller. Now both use the same real NoSQL-backed functions.
+from shared.catalyst_client import nosql_get, nosql_set, get_session_lock
+
 def _get_signals_url() -> str:
     return os.getenv("CATALYST_SIGNALS_PUBLISHER_URL")
 QUERY_CACHE_TTL_SECONDS = 300  # short window
 
-# Mocking NoSQL logic for week 1 skeleton
-_nosql_mock_db = {}
-
-async def nosql_get(key: str):
-    return _nosql_mock_db.get(key)
-
-async def nosql_set(key: str, value: str, ttl: int = None):
-    _nosql_mock_db[key] = {"value": value}
+# BUG FIX: asyncio.create_task()'s returned Task was previously discarded with
+# no reference kept, making it eligible for GC mid-execution (a documented
+# asyncio pitfall) -- silently dropping an in-flight query. Retained here.
+_background_tasks: set = set()
 
 async def read_job_status(job_id: str):
     doc = await nosql_get(f"job:{job_id}")
@@ -69,10 +73,12 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
             response.raise_for_status() 
     else:
         # LOCAL DEV: run pipeline as a background asyncio task in the same
-        # process so it shares _nosql_mock_db with the SSE poller and can
-        # write status updates that the poller will see.
+        # process as the SSE poller, so both see the same real NoSQL-backed
+        # job status via shared.catalyst_client.
         print(f"[Local Dev] Dispatching {job_id} inline via asyncio.create_task")
-        asyncio.create_task(_local_pipeline_runner(job_id, session_id, query))
+        task = asyncio.create_task(_local_pipeline_runner(job_id, session_id, query))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
     return job_id
 
@@ -80,18 +86,22 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
     """Local-dev-only pipeline runner. Replaced by Catalyst Signals in production."""
     from pipeline_function.pipeline.langgraph_router import run_langgraph_pipeline
     try:
-        history_doc = await nosql_get(f"history:{session_id}")
-        history = json.loads(history_doc["value"]) if history_doc else []
-        
-        await run_langgraph_pipeline(job_id, query, write_job_status, history)
-        
-        # After completion, append to history and save
-        job = await read_job_status(job_id)
-        if job and job.get("status") == "done":
-            history.append({"q": query, "a": job["result"]["answer"]})
-            history = history[-10:] # Cap history to 10
-            await nosql_set(f"history:{session_id}", json.dumps(history))
-            
+        # BUG FIX: the read-modify-write on session history below is now
+        # serialized per session_id, closing the lost-update race where two
+        # concurrent queries in the same session each read the same snapshot
+        # and the one finishing last silently discarded the other's turn.
+        async with get_session_lock(session_id):
+            history_doc = await nosql_get(f"history:{session_id}")
+            history = json.loads(history_doc["value"]) if history_doc else []
+
+            await run_langgraph_pipeline(job_id, query, write_job_status, history)
+
+            job = await read_job_status(job_id)
+            if job and job.get("status") == "done":
+                history.append({"q": query, "a": job["result"]["answer"]})
+                history = history[-10:] # Cap history to 10
+                await nosql_set(f"history:{session_id}", json.dumps(history))
+
     except Exception as e:
         import traceback
         traceback.print_exc()

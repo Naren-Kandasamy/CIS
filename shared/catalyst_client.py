@@ -1,6 +1,24 @@
 import httpx
 import os
 import base64
+import time
+import asyncio
+
+# BUG FIX: guards the session-history read-modify-write race -- two concurrent
+# queries in the same session both read the same history snapshot, then the
+# one that finishes last silently overwrites the other's contribution. This
+# only serializes requests landing in the same process/warm container (a full
+# cross-process guarantee would need a database-level conditional write on
+# the NoSQL item, which the Catalyst REST API's condition syntax for this SDK
+# version did not accept in testing). Bounded so long-running warm containers
+# with many distinct sessions don't grow this unboundedly.
+_session_locks: dict = {}
+_SESSION_LOCKS_MAX = 1000
+
+def get_session_lock(session_id: str) -> asyncio.Lock:
+    if len(_session_locks) > _SESSION_LOCKS_MAX:
+        _session_locks.clear()
+    return _session_locks.setdefault(session_id, asyncio.Lock())
 
 # BUG FIX: env vars must be read lazily (via helper) rather than at module-import
 # time, because Catalyst Functions inject env vars *after* module load.
@@ -231,11 +249,100 @@ async def text_to_speech(text: str, language: str = "kn") -> bytes:
             print(f"[Mock TTS] Catalyst TTS failed ({e}), returning dummy audio bytes.")
             return b"ID3\x04\x00\x00\x00\x00\x00\x00MockAudioData"
 
-# --- NoSQL mock for Phase 2 scaffolding ---
-_mock_nosql_cache = {}
+# --- Real Catalyst NoSQL persistence ---
+# BUG FIX: this used to be a plain in-memory dict (_mock_nosql_cache), never
+# wired to any real Catalyst NoSQL table -- job status and session history
+# writes from a separate deployed process (pipeline Function) could never be
+# seen by the backend AppSail process reading them, since each holds its own
+# empty dict. Now talks to a real "AppKeyValueStore" NoSQL table (partition
+# key: item_key, TTL attribute: expires_at) via the Catalyst BaaS REST API.
+CATALYST_NOSQL_TABLE = "AppKeyValueStore"
+_nosql_token_cache = {"access_token": None, "expires_at": 0.0}
+
+def _nosql_base_url() -> str:
+    project_id = os.getenv("CATALYST_PROJECT_ID")
+    if not project_id:
+        raise EnvironmentError("CATALYST_PROJECT_ID is not set")
+    return f"https://api.catalyst.zoho.in/baas/v1/project/{project_id}/nosqltable/{CATALYST_NOSQL_TABLE}"
+
+async def _get_nosql_access_token() -> str:
+    """
+    Returns a cached, valid OAuth access token for NoSQL calls, refreshing via
+    CATALYST_REFRESH_TOKEN (+ CATALYST_CLIENT_ID/CATALYST_CLIENT_SECRET) a
+    minute before expiry -- Catalyst access tokens are only valid ~1 hour.
+    Falls back to a static CATALYST_ACCESS_TOKEN/CATALYST_API_TOKEN if no
+    refresh credentials are configured (that static token will itself expire
+    hourly with no way to renew it).
+    """
+    now = time.time()
+    if _nosql_token_cache["access_token"] and now < _nosql_token_cache["expires_at"]:
+        return _nosql_token_cache["access_token"]
+
+    refresh_token = os.getenv("CATALYST_REFRESH_TOKEN")
+    client_id = os.getenv("CATALYST_CLIENT_ID")
+    client_secret = os.getenv("CATALYST_CLIENT_SECRET")
+    if refresh_token and client_id and client_secret:
+        async with httpx.AsyncClient() as client:
+            r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }, timeout=15.0)
+            r.raise_for_status()
+            data = r.json()
+            _nosql_token_cache["access_token"] = data["access_token"]
+            _nosql_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+            return _nosql_token_cache["access_token"]
+
+    token = os.getenv("CATALYST_ACCESS_TOKEN") or os.getenv("CATALYST_API_TOKEN")
+    if not token:
+        raise EnvironmentError(
+            "No Catalyst NoSQL credentials configured -- set CATALYST_REFRESH_TOKEN, "
+            "CATALYST_CLIENT_ID and CATALYST_CLIENT_SECRET (preferred, auto-refreshes), "
+            "or at minimum CATALYST_ACCESS_TOKEN"
+        )
+    return token
+
+async def _nosql_headers() -> dict:
+    token = await _get_nosql_access_token()
+    return {"Authorization": f"Zoho-oauthtoken {token}", "Content-Type": "application/json"}
+
+async def _nosql_request(method: str, path: str, json_body) -> dict:
+    import asyncio
+    headers = await _nosql_headers()
+    url = _nosql_base_url() + path
+    last_error = None
+    for attempt in range(4):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.request(method, url, headers=headers, json=json_body, timeout=15.0)
+                r.raise_for_status()
+                return r.json()
+        except httpx.RequestError as e:
+            last_error = e
+            if attempt < 3:
+                await asyncio.sleep(1.0)
+                continue
+    raise last_error
 
 async def nosql_get(key: str) -> dict | None:
-    return _mock_nosql_cache.get(key)
+    """Fetch a value from the real Catalyst NoSQL AppKeyValueStore table."""
+    resp = await _nosql_request("POST", "/item/fetch", {"keys": [{"item_key": {"S": key}}]})
+    items = resp.get("data", {}).get("get") or []
+    if not items:
+        return None
+    return {"value": items[0]["item"]["item_value"]["S"]}
 
-async def nosql_set(key: str, value: str, ttl: int = 3600):
-    _mock_nosql_cache[key] = {"value": value}
+async def nosql_set(key: str, value: str, ttl: int = None):
+    """
+    Upsert a value into the real Catalyst NoSQL AppKeyValueStore table.
+    ttl (seconds), if given, sets expires_at -- Catalyst auto-deletes items
+    past their expiry. Left unset by default so job status/session history
+    (which don't pass ttl) persist indefinitely; the NER cache explicitly
+    passes CACHE_TTL_SECONDS.
+    """
+    item = {"item_key": {"S": key}, "item_value": {"S": value}}
+    if ttl:
+        item["expires_at"] = {"N": str(int(time.time()) + ttl)}
+    await _nosql_request("POST", "/item", [{"item": item, "return": "NULL"}])
