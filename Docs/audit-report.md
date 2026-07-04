@@ -24,7 +24,7 @@
 
 All four files hardcode the identical literal string:
 ```python
-token = "m_1004.<REDACTED — real token value present in the source files>"
+token = "<REDACTED — real token value present in the source files>"
 ```
 This is committed to git (confirmed via `git log --oneline -- test_catalyst.py test_sdk.py test_llm.py test_llm_json.py .catalystrc`, present since the "Initial Commit" and touched again in a later commit) and is currently tracked in the working tree (`git ls-files` lists all of these). `.gitignore` explicitly lists `test_sdk.py`, `test_catalyst.py`, `test_llm*.py`, and `.catalystrc` as patterns to ignore — meaning the team recognized these as sensitive/scratch and tried to exclude them, but never ran `git rm --cached`, so they remain committed and (per `git status`, branch tracks `origin/main`) pushed to the remote. This directly violates `Agents.md`'s explicit rule: "never hardcode credentials, and never echo `.env` contents into a response or commit."
 **Severity: Critical** — a real (or real-looking) production credential is permanently in git history, retrievable by anyone with repo access regardless of any future rotation of the working tree files. Recommend rotating this token immediately regardless of the audit-only scope of this pass.
