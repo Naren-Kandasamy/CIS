@@ -66,7 +66,7 @@ ps1-cis/
 │   │   ├── preprocessing/
 │   │   │   └── normalizer.py     # transliteration + code-switch normalization
 │   │   ├── query_understanding/
-│   │   │   ├── ner_intent.py     # Qwen 14B NER + intent (single call)
+│   │   │   ├── ner_intent.py     # GLM-4.7-Flash NER + intent (single call)
 │   │   │   └── dag_planner.py    # Full LangGraph DAG planner
 │   │   ├── retrieval/
 │   │   │   ├── graph_client.py   # Memgraph traversal queries
@@ -74,7 +74,7 @@ ps1-cis/
 │   │   │   ├── sql_client.py     # Catalyst Data Store ZTSQL
 │   │   │   └── executor.py       # Parallel asyncio.gather execution + evidence assembly
 │   │   └── synthesis/
-│   │       ├── synthesizer.py    # Qwen 14B synthesis
+│   │       ├── synthesizer.py    # GLM-4.7-Flash synthesis
 │   │       └── xai.py            # confidence signals + reasoning trace
 │   └── graph/
 │       ├── queries.py            # all Cypher/MAGE query strings
@@ -85,7 +85,7 @@ ps1-cis/
 │   │                           #   Function split needed (see Section 16 below)
 │   ├── pipeline.py            # ingestion orchestrator
 │   ├── format_detector.py     # JSON / PDF / image routing
-│   ├── ocr_extractor.py       # Qwen 7B VLM extraction
+│   ├── ocr_extractor.py       # Qwen 3.6 35B VLM extraction
 │   ├── schema_mapper.py       # CCTNS field names -> canonical
 │   ├── validators.py          # Pydantic validation + value normalization
 │   ├── entity_resolution.py   # rapidfuzz dedup
@@ -126,7 +126,7 @@ ps1-cis/
 │   │   ├── extract_distributions.py     # Phase 1: real distributions
 │   │   ├── generate_base_firs.py        # Phase 2: 3,500 base FIRs
 │   │   ├── plant_stories.py             # Phase 3: 4 expanded stories
-│   │   ├── generate_narratives.py       # Phase 4: Qwen 14B narratives
+│   │   ├── generate_narratives.py       # Phase 4: GLM-4.7-Flash narratives
 │   │   ├── ingest_all.py                # Full ingestion orchestrator
 │   │   ├── compute_derived_edges.py     # SHARED_MO, SHARED_TATTOO, TEMPORAL_CLUSTER (incremental)
 │   │   ├── prune_stale_edges.py         # monthly: archive 2yr+ unreinforced edges
@@ -376,7 +376,7 @@ async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
     async with httpx.AsyncClient() as client:
         r = await client.post(CATALYST_LLM_URL, headers=HEADERS, json={
-            "model": "qwen-14b-instruct", "system": system,
+            "model": "crm-di-glm47b_30b_it", "system": system,
             "prompt": prompt, "temperature": temperature, "max_tokens": max_tokens
         }, timeout=30.0)
         r.raise_for_status()
@@ -386,7 +386,7 @@ async def vlm_extract(image_bytes: bytes, prompt: str, system: str) -> str:
     image_b64 = base64.b64encode(image_bytes).decode()
     async with httpx.AsyncClient() as client:
         r = await client.post(CATALYST_VLM_URL, headers=HEADERS, json={
-            "model": "qwen-7b-vlm", "system": system, "image": image_b64,
+            "model": "VL-Qwen3.6-35B-A3B", "system": system, "image": image_b64,
             "prompt": prompt, "temperature": 0.0, "max_tokens": 1000
         }, timeout=45.0)
         r.raise_for_status()
@@ -442,7 +442,7 @@ async def text_to_speech(text: str, language: str = "kn") -> bytes:
 
 ### Why This Section Changed (Twice)
 
-The original design ran LangGraph end-to-end inside one AppSail request, streaming intermediate steps over SSE as the graph executed. That design assumed the entire pipeline -- NER, planning, retrieval, confidence, synthesis -- could fit in AppSail's 30-second hard timeout. Three sequential Qwen 14B calls plus retries made that a real risk on analytical queries, not just an edge case.
+The original design ran LangGraph end-to-end inside one AppSail request, streaming intermediate steps over SSE as the graph executed. That design assumed the entire pipeline -- NER, planning, retrieval, confidence, synthesis -- could fit in AppSail's 30-second hard timeout. Three sequential GLM-4.7-Flash calls plus retries made that a real risk on analytical queries, not just an edge case.
 
 **First fix:** AppSail stopped running the pipeline; a Custom Event Listener fired a job to a plain Catalyst Event Function with a 15-minute budget instead of 30 seconds.
 
@@ -740,7 +740,7 @@ Must be active well before judging -- not switched on minutes before the demo, s
 
 ---
 
-## 7. NER + Intent (Qwen 14B)
+## 7. NER + Intent (GLM-4.7-Flash)
 
 Single call, temperature 0.0, combined NER + intent output. Uses the resilient LLM client (Section 8) so rate limits don't crash the request.
 
@@ -768,36 +768,11 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
         }
 ```
 
-### New Gap Surfaced by the KSP Schema Correction -- Entity-to-Lookup Resolution
+### Entity-to-Lookup Resolution (Solved in Phase 3)
 
-**This did not exist as a problem before the schema correction.** Under the original guessed schema, NER extracted `crime_types: ["murder"]` / `ipc_sections: ["302"]` as free text, and the (also-guessed) `firs` table stored `crime_type`/`ipc_sections` as flat strings -- free text matched free text directly, no resolution step needed. The real schema replaces both with lookup-driven IDs (`CrimeSubHeadID` via `CrimeHead`/`CrimeSubHead`, and `(ActCode, SectionCode)` pairs via `Act`/`Section`) -- so an officer saying "murder cases" or "section 302" now produces NER text that has no direct column to match against. **Nothing in the current design resolves this gap.** `entity_resolution.py` (Section 16/22) only handles accused-name fuzzy-dedup during *ingestion*; there is no equivalent for resolving NER-extracted crime-type/section text into real lookup IDs at *query time*.
+Under the official schema, NER extracts `crime_types: ["murder"]` / `ipc_sections: ["302"]` as free text, but the real schema uses lookup-driven IDs (`CrimeSubHeadID` via `CrimeHead`/`CrimeSubHead`, and `(ActCode, SectionCode)` pairs via `Act`/`Section`).
 
-**What's needed, to be built during Phase 2 alongside the DAG planner (not yet written):**
-
-```python
-# pipeline_function/pipeline/query_understanding/entity_lookup_resolver.py
-# NEW MODULE -- does not exist yet, needs to be built
-
-async def resolve_crime_sub_head(crime_type_text: str) -> str | None:
-    """
-    "murder" -> CrimeSubHeadID, via fuzzy match against crime_sub_heads.crime_sub_head_name.
-    Returns None if no confident match -- caller decides whether to fall back
-    to free-text narrative search (RAG) instead of a structured filter.
-    """
-    ...
-
-async def resolve_act_section(ipc_section_text: str) -> tuple[str, str] | None:
-    """
-    "302" -> ("IPC", "302"), via lookup against sections.section_code,
-    defaulting to act_code="IPC" when the officer doesn't name the act
-    explicitly (the overwhelming majority of spoken/typed references --
-    confirm this assumption holds once real query samples exist, since
-    NDPS/other-act section numbers can collide with IPC numbering).
-    """
-    ...
-```
-
-**Where this plugs in:** between NER+Intent (this section) and the DAG planner (Section 9) -- the DAG planner currently receives the raw `intent_object` straight from NER and passes `crime_types`/`ipc_sections` text directly into step `params` with no resolution in between. This resolver should run first, attaching resolved `crime_sub_head_id`/`act_section` IDs alongside the original free text, so SQL/graph retrieval steps can filter on real IDs while RAG retrieval can still fall back to the original free text for narrative similarity search when no confident lookup match exists.
+We successfully implemented this resolution directly within the LangGraph pipeline (`langgraph_router.py`). The `resolve_crime_sub_head` and `resolve_act_section` functions run in parallel via `asyncio.gather` inside the `resolving_entities_node`. This translates free-text outputs into real database lookup IDs before the SQL/Graph retrieval steps execute, while preserving the original text for RAG narrative semantic search.
 
 **Open question, not yet decided:** what happens when resolution fails or is ambiguous (e.g. "theft" could plausibly map to several `CrimeSubHead` rows, or an officer's phrasing doesn't closely match any lookup value)? Options: (a) fall back to RAG-only retrieval for that entity, accepting lower precision, (b) ask the DAG planner to treat it as unresolved and skip structured filtering on that entity, (c) surface a clarifying question to the officer. This wasn't a design question before the schema correction since free text never needed resolving -- worth deciding deliberately rather than discovering the failure mode mid-build.
 
@@ -805,7 +780,7 @@ async def resolve_act_section(ipc_section_text: str) -> tuple[str, str] | None:
 
 ## 8. LLM Resilience -- Caching, Retry, Degradation
 
-Every query makes three separate Qwen 14B calls (NER+intent, DAG planning, synthesis). A rate limit hit on any one breaks the response unless handled. Three layers of defense, applied across all three call sites.
+Every query makes three separate GLM-4.7-Flash calls (NER+intent, DAG planning, synthesis). A rate limit hit on any one breaks the response unless handled. Three layers of defense, applied across all three call sites.
 
 ### Layer 1 -- Response Caching (NER+Intent)
 
@@ -830,7 +805,7 @@ async def set_cached_ner(query: str, result: dict):
     await nosql_set(cache_key(query, "ner_intent"), json.dumps(result), ttl=CACHE_TTL_SECONDS)
 ```
 
-Wired into `extract_ner_and_intent` (Section 7) -- check cache before calling Qwen 14B, populate cache after. Removes a meaningful fraction of LLM load, especially during demo open-floor segments where similar questions recur across officers/judges.
+Wired into `extract_ner_and_intent` (Section 7) -- check cache before calling GLM-4.7-Flash, populate cache after. Removes a meaningful fraction of LLM load, especially during demo open-floor segments where similar questions recur across officers/judges.
 
 ### Layer 2 -- Retry with Exponential Backoff
 
@@ -870,7 +845,7 @@ async def llm_complete_resilient(prompt: str, system: str, **kwargs) -> str:
             raise  # non-rate-limit errors fail fast, no retry
 
     raise RateLimitExhaustedError(
-        f"Qwen 14B rate limited after {MAX_RETRIES} attempts"
+        f"GLM-4.7-Flash rate limited after {MAX_RETRIES} attempts"
     ) from last_error
 ```
 
@@ -889,7 +864,7 @@ NER and DAG planning already have safe fallbacks (broad_search intent, default p
 ```python
 def build_fallback_response(evidence) -> str:
     """
-    Template-built response from raw Evidence Object when Qwen 14B
+    Template-built response from raw Evidence Object when GLM-4.7-Flash
     is unavailable. Less natural, but officer gets real data, not an error.
     """
     if not evidence.items:
@@ -919,7 +894,7 @@ Used in synthesis (Section 12) -- if `llm_complete_resilient` raises `RateLimitE
 
 ## 9. DAG Planner
 
-Full LangGraph DAG planner for production. Template router used as scaffold in Phase 2, replaced by DAG planner in Phase 3 without changing any other pipeline components.
+Full LangGraph state machine fully implemented in Phase 3 (`langgraph_router.py`), replacing the temporary template router from Phase 2 without changing any other pipeline components.
 
 ```python
 # pipeline_function/pipeline/query_understanding/dag_planner.py
@@ -1106,7 +1081,7 @@ def build_partial_results_notice(evidence: EvidenceObject) -> str:
     )
 ```
 
-Appended to the synthesis prompt context so Qwen 14B caveats its answer when sources are missing.
+Appended to the synthesis prompt context so GLM-4.7-Flash caveats its answer when sources are missing.
 
 ### Frontend Notice
 
@@ -1220,7 +1195,7 @@ def run_confidence_engine(evidence: EvidenceObject) -> EvidenceObject:
 
 ---
 
-## 13. Synthesis (Qwen 14B)
+## 13. Synthesis (GLM-4.7-Flash)
 
 ```python
 # pipeline_function/pipeline/synthesis/synthesizer.py
@@ -1979,7 +1954,7 @@ Surfaces unknown fields automatically. Add to `FIELD_NAME_MAP` -- no other code 
 
 Coverage: pure English, romanized Kannada, mixed code-switched, all 6 intents, both urgency levels, edge cases (single word, vague references, pure Kannada pronouns).
 
-`data/scripts/eval_ner.py` -- runs all examples against Qwen 14B, reports pass rate.
+`data/scripts/eval_ner.py` -- runs all examples against GLM-4.7-Flash, reports pass rate.
 Target: 90%+ before any demo or judging. Failing patterns: add new examples, re-run, repeat.
 
 ```bash
@@ -2296,7 +2271,7 @@ validated_doc = validate_document(await doc.read())
 | Threat | Without | With |
 |---|---|---|
 | 50MB audio upload | Memory exhaustion, server crash for all users | Rejected at 5MB before read |
-| 10K character query | Sent to Qwen 14B, token waste, injection risk | Rejected at 500 char limit |
+| 10K character query | Sent to GLM-4.7-Flash, token waste, injection risk | Rejected at 500 char limit |
 | Cypher keyword in query | Reaches pipeline, unpredictable behavior | Rejected with 400 |
 | Wrong file type | Pipeline errors | Rejected with 415 |
 | Empty query | NER call made with empty input | Rejected with 400 |
@@ -2421,7 +2396,7 @@ React Context only. No Redux.
 - [ ] Update `pipeline_function/main.py`'s handler to the corrected envelope-unwrapping version (Section 6) -- the version tested above was a minimal logging/sleep test, not the real pipeline handler yet
 - [ ] Memgraph on Oracle Cloud -- Docker running, MAGE verified, constraints created
 - [ ] AppSail FastAPI skeleton -- thin front door only (validation, cache check, job dispatch, SSE poll loop); no Catalyst LLM/VLM/KB/SQL clients here
-- [ ] Qwen 14B test call from the pipeline Function (not AppSail) returning valid JSON
+- [ ] GLM-4.7-Flash test call from the pipeline Function (not AppSail) returning valid JSON
 - [ ] KB test FIR document uploaded and searchable
 - [ ] React shell on Catalyst Slate
 - [ ] Integration contracts frozen (graph schema, API shapes, Evidence Object schema, job-status document schema)
@@ -2461,7 +2436,7 @@ Gate: DAG planner handles chaos queries gracefully. All latency targets met.
 
 - [x] Zero-result handler in synthesis
 - [x] Graceful degradation on API failures
-- [x] OCR feature demo -- Qwen 7B VLM on one realistic scanned FIR
+- [x] OCR feature demo -- Qwen 3.6 35B VLM on one realistic scanned FIR
 - [x] PDF export (WeasyPrint)
 - [x] Catalyst TTS for voice response
 - [ ] Memgraph Oracle VM hardened (persistent volume, restart policy)
@@ -2485,7 +2460,7 @@ At least 30 minutes before judging:
       check last successful ping was within 5 minutes
       (AppSail instance lifetime is exactly 5 minutes -- any gap
       longer than this guarantees a cold start on next request)
-  [ ] Qwen 14B test call from the pipeline Function -- confirm responsive
+  [ ] GLM-4.7-Flash test call from the pipeline Function -- confirm responsive
       (not from AppSail -- AppSail no longer calls Qwen directly, Section 6)
   [ ] Custom Publisher -> Rule -> Function trigger path -- confirm a test
       job dispatched from AppSail reaches "done" status in Catalyst NoSQL
