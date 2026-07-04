@@ -39,13 +39,22 @@ ALLOWED_ORIGINS = os.getenv(
 
 app.add_middleware(InputValidationMiddleware)
 app.add_middleware(RBACMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# BUG FIX: Catalyst's own AppSail gateway independently reflects the request's
+# Origin header on every response (confirmed via x-frame-options: ALLOW-FROM
+# <origin>, which this app never sets) -- adding our own CORSMiddleware on top
+# produced two Access-Control-Allow-Origin/-Credentials values on the same
+# response, which browsers reject as invalid, breaking every cross-origin call.
+# X_ZOHO_CATALYST_LISTEN_PORT is only set when actually running inside
+# Catalyst's AppSail, never during local dev, where there's no gateway to
+# reflect Origin and this middleware is still needed.
+if not os.getenv("X_ZOHO_CATALYST_LISTEN_PORT"):
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(query.router)
 app.include_router(health.router)

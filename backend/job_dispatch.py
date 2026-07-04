@@ -14,7 +14,10 @@ import asyncio
 from shared.catalyst_client import nosql_get, nosql_set, get_session_lock
 
 def _get_signals_url() -> str:
-    return os.getenv("CATALYST_SIGNALS_PUBLISHER_URL")
+    # BUG FIX: Catalyst AppSail rejects any deployed env var key containing
+    # "CATALYST" as reserved, so this is set as ZC_SIGNALS_PUBLISHER_URL in
+    # production; CATALYST_SIGNALS_PUBLISHER_URL is kept as a local-dev alias.
+    return os.getenv("ZC_SIGNALS_PUBLISHER_URL") or os.getenv("CATALYST_SIGNALS_PUBLISHER_URL")
 QUERY_CACHE_TTL_SECONDS = 300  # short window
 
 # BUG FIX: asyncio.create_task()'s returned Task was previously discarded with
