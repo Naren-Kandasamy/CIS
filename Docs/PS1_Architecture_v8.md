@@ -32,7 +32,7 @@ Combine:
 - **Graph traversal** -- relationships, network analysis (Memgraph)
 - **Semantic search** -- MO similarity, narrative search (Catalyst KB + RAG)
 - **SQL** -- aggregations, statistics, filtering (Catalyst Data Store / ZTSQL)
-- **LLM** -- planning, routing, synthesis, explanation (Qwen 14B via Catalyst)
+- **LLM** -- planning, routing, synthesis, explanation (GLM-4.7-Flash via Catalyst)
 
 **Key principle:** LLM plans and synthesizes. Systems retrieve. LLM never directly queries raw data.
 
@@ -44,14 +44,14 @@ Combine:
 
 | Component | Choice | Notes |
 |---|---|---|
-| LLM | Qwen 14B Instruct (Catalyst hosted) | 128k context, data private, no external key |
+| LLM | GLM-4.7-Flash Instruct (Catalyst hosted) | 128k context, data private, no external key |
 | LLM fallback | Groq + Llama 3.1 70B (offline/dev only) | Not for production |
-| NER + Intent | Qwen 14B via structured prompt | Single call, combined NER + intent |
+| NER + Intent | GLM-4.7-Flash via structured prompt | Single call, combined NER + intent |
 | Embeddings | Catalyst KB managed | No model loaded in AppSail |
 | Semantic search | Catalyst KB + RAG | Built-in chunking, reranking, citations |
 | Kannada ASR | Catalyst NLP (audio to text) | Handles Kannada/Hindi/English natively |
 | Kannada TTS | Catalyst NLP (text to audio) | For voice response output |
-| OCR | Qwen 7B VLM (Catalyst hosted) | For scanned FIR documents only |
+| OCR | Qwen 3.6 35B VLM (Catalyst hosted) | For scanned FIR documents only |
 
 ### Data Layer
 
@@ -83,7 +83,7 @@ Combine:
 | gTTS / pyttsx3 | Catalyst Kannada TTS API |
 | Qdrant Cloud | Catalyst KB + RAG |
 | multilingual-e5-large | Catalyst managed embeddings |
-| MuRIL / IndicBERT | Qwen 14B prompt-based NER |
+| MuRIL / IndicBERT | GLM-4.7-Flash prompt-based NER |
 | Cross-encoder reranker | Custom Python Evidence assembler |
 | PostgreSQL | Catalyst Data Store (ZTSQL) |
 | Neo4j AuraDB | Memgraph on Oracle Cloud |
@@ -131,13 +131,13 @@ This is a rough estimate, not yet measured against an actual deployed Function -
 ```
 Layer 0  -- Input (text / voice / scanned document)
 Layer 0a -- Input Validation Gate (size limits, MIME checks, injection denylist)
-Layer 0b -- Format Detection + OCR (Qwen 7B VLM if PDF/image)
+Layer 0b -- Format Detection + OCR (Qwen 3.6 35B VLM if PDF/image)
 Layer 0c -- Schema Mapping (CCTNS -> canonical FIRSchema)
 Layer 1  -- Preprocessing (transliteration, code-switch normalization)
 Layer 2  -- Query Understanding (NER + Intent + DAG Planner)
 Layer 3  -- Retrieval (Memgraph + Catalyst KB + ZTSQL + Evidence Assembly)
 Layer 4  -- Confidence Engine
-Layer 5  -- LLM Synthesis + XAI (Qwen 14B)
+Layer 5  -- LLM Synthesis + XAI (GLM-4.7-Flash)
 Layer 6  -- Output (chat / voice / dashboard / PDF)
 Layer 7  -- Session Memory + Feedback (Catalyst NoSQL)
 Layer 8  -- Offline Ingestion Pipeline (ingestion time only)
@@ -173,7 +173,7 @@ This gate runs first, before format detection, before OCR, before anything else 
 
 **Structured text (synthetic data / CCTNS digital exports):** parsed directly, no OCR.
 
-**PDF or scanned image (real KSP FIRs):** Qwen 7B VLM extracts structured fields before ingestion pipeline runs.
+**PDF or scanned image (real KSP FIRs):** Qwen 3.6 35B VLM extracts structured fields before ingestion pipeline runs.
 
 **Voice:** Catalyst Kannada ASR transcribes audio to text, feeds into same text pipeline.
 
@@ -181,13 +181,13 @@ This gate runs first, before format detection, before OCR, before anything else 
 
 | Model | Purpose | When Called |
 |---|---|---|
-| Qwen 14B Instruct | NER, intent, planning, synthesis | Every query -- all text reasoning |
-| Qwen 7B VLM | Scanned FIR OCR extraction | Only when input is image or PDF |
+| GLM-4.7-Flash Instruct | NER, intent, planning, synthesis | Every query -- all text reasoning |
+| Qwen 3.6 35B VLM | Scanned FIR OCR extraction | Only when input is image or PDF |
 | Catalyst Kannada NLP | ASR (voice->text), TTS (text->voice) | Voice input/output only |
 
 ### OCR Strategy for Demo
 
-OCR is a production capability demonstrated as a feature moment, not a core demo dependency. Demo data is synthetic structured JSON -- OCR passes through immediately. Feature moment: upload one realistic scanned FIR, show Qwen 7B VLM extract fields live, narrate production relevance.
+OCR is a production capability demonstrated as a feature moment, not a core demo dependency. Demo data is synthetic structured JSON -- OCR passes through immediately. Feature moment: upload one realistic scanned FIR, show Qwen 3.6 35B VLM extract fields live, narrate production relevance.
 
 ---
 
@@ -198,14 +198,14 @@ Catalyst Kannada ASR handles audio -> text. No local model. Supports Kannada, Hi
 
 ### Text Normalization
 1. **Transliteration:** Kannada script -> Roman (indic-transliteration library, runs locally, minimal RAM)
-2. **Code-switch normalization:** Qwen 14B prompt-based (e.g. "case-alli" -> "in case")
+2. **Code-switch normalization:** GLM-4.7-Flash prompt-based (e.g. "case-alli" -> "in case")
 3. **Name/place canonicalization:** Canonical dictionary of KSP districts, stations -- fuzzy matched via rapidfuzz
 
 ---
 
 ## 8. Layer 2 -- Query Understanding
 
-### NER + Intent (Single Qwen 14B Call)
+### NER + Intent (Single GLM-4.7-Flash Call)
 
 Combined into one call to avoid 4-6s extra latency. Temperature 0.0 for deterministic output.
 
@@ -229,13 +229,13 @@ Combined into one call to avoid 4-6s extra latency. Temperature 0.0 for determin
 
 **NER example library:** 30+ examples in `shared/ner_examples.py` covering all 6 intents, pure English, romanized Kannada, mixed code-switched, and edge cases. Single source of truth used by both live prompt and eval suite. Target: 90%+ pass rate on eval before any demo.
 
-**New architectural gap, surfaced by the KSP schema correction:** `CRIME_TYPE` and `IPC_SECTION` are extracted from officer queries as free text ("murder", "302"), but the real schema resolves these via lookup tables (`CrimeSubHead`, `Act`/`Section`), not flat strings. There is currently no resolution step translating NER's free-text output into the real lookup IDs before retrieval -- this gap didn't exist when both the NER output and the (then-guessed) database schema were both free text. See Implementation Section 7 for the concrete missing module and the open design question about resolution failure/ambiguity.
+**Entity-to-Lookup Resolution:** `CRIME_TYPE` and `IPC_SECTION` are extracted from officer queries as free text ("murder", "302"), but the real schema resolves these via lookup tables (`CrimeSubHead`, `Act`/`Section`), not flat strings. This is natively solved directly within the LangGraph pipeline via `resolve_crime_sub_head` and `resolve_act_section` running in parallel to translate free-text outputs into database-ready lookup IDs before retrieval.
 
 ### Query Planner -- Full LangGraph DAG
 
-Production uses full DAG planner. Template router used as scaffold in Phase 2, replaced by DAG planner in Phase 3.
+Production uses full DAG planner via LangGraph. The formal state machine is fully implemented (`langgraph_router.py`), replacing the temporary template router from Phase 2.
 
-**Why DAG planner is necessary at production scale:** Real KSP officer queries are compound and unpredictable. Five templates cannot cover the query variety of hundreds of officers. The DAG planner asks Qwen 14B to generate an execution plan as a JSON array of steps, with dependency tracking for parallel execution.
+**Why DAG planner is necessary at production scale:** Real KSP officer queries are compound and unpredictable. Five templates cannot cover the query variety of hundreds of officers. The DAG planner asks GLM-4.7-Flash to generate an execution plan as a JSON array of steps, with dependency tracking for parallel execution.
 
 **Urgency effect:**
 - `field_urgent`: graph depth capped at 1, no viz steps, synthesis max_tokens=300
@@ -247,7 +247,7 @@ Production uses full DAG planner. Template router used as scaffold in Phase 2, r
 
 ### Evidence Object (Architectural Spine)
 
-All retrievers fill one Evidence Object. Qwen 14B only reads it -- never touches raw DB output.
+All retrievers fill one Evidence Object. GLM-4.7-Flash only reads it -- never touches raw DB output.
 
 ```
 EvidenceItem:
@@ -327,13 +327,13 @@ UNVERIFIED < 0.40 OR any flags + score < 0.70
 
 ### OCR Penalty
 
-Fields extracted via Qwen 7B VLM carry `ocr_extracted: true`. Confidence score multiplied by 0.90 and flagged: "Fields extracted via OCR -- verify against original document."
+Fields extracted via Qwen 3.6 35B VLM carry `ocr_extracted: true`. Confidence score multiplied by 0.90 and flagged: "Fields extracted via OCR -- verify against original document."
 
 ---
 
 ## 11. Layer 5 -- LLM Synthesis + XAI
 
-### Qwen 14B Synthesis
+### GLM-4.7-Flash Synthesis
 
 Receives structured Evidence Object. Never raw DB output.
 
@@ -364,7 +364,7 @@ Receives structured Evidence Object. Never raw DB output.
 
 ### Resilience -- Rate Limit Handling Across All LLM Calls
 
-Every query makes three separate Qwen 14B calls (NER+intent, DAG planning, synthesis). A rate limit hit on any one breaks the response unless handled explicitly. Three layers of defense:
+Every query makes three separate GLM-4.7-Flash calls (NER+intent, DAG planning, synthesis). A rate limit hit on any one breaks the response unless handled explicitly. Three layers of defense:
 
 **1. Response caching.** NER+intent output is cached by query hash (1hr TTL) in Catalyst NoSQL -- identical or repeated queries skip the LLM call entirely. Removes a meaningful fraction of load, especially during demo open-floor segments where similar questions recur.
 
@@ -372,7 +372,7 @@ Every query makes three separate Qwen 14B calls (NER+intent, DAG planning, synth
 
 **3. Graceful degradation, not crash.** If retries are exhausted: NER and DAG planning already fall back to safe defaults (broad_search intent, default plan -- designed earlier). Synthesis additionally falls back to a template-built response constructed directly from the Evidence Object -- the officer sees real evidence with confidence tiers, not an error screen, even if natural-language synthesis is temporarily unavailable.
 
-This matters specifically for the demo: if Qwen 14B hiccups mid-judging, the system visibly keeps working rather than appearing broken.
+This matters specifically for the demo: if GLM-4.7-Flash hiccups mid-judging, the system visibly keeps working rather than appearing broken.
 
 **Known limitation -- partially resolved via workshop Q&A.** Catalyst's actual rate limit thresholds (requests/minute, concurrent requests) remain undisclosed, but organizers confirmed the consequence of hitting the limit (≈10-minute stall, then resets) and that hackathon credits should cover normal usage. This design handles rate limiting gracefully whenever it occurs and now explicitly accounts for a stall of that length rather than assuming a brief one, but the exact threshold is still unverified until load-tested or clarified further.
 
@@ -431,7 +431,7 @@ Contents: query + timestamp, full synthesis, evidence table, confidence summary,
 1. extract_distributions.py      -- real distributions from public data
 2. generate_base_firs.py         -- 3,500 base FIRs
 3. plant_stories.py              -- 4 expanded stories (500 FIRs)
-4. generate_narratives.py        -- Qwen 14B narratives via Catalyst LLM
+4. generate_narratives.py        -- GLM-4.7-Flash narratives via Catalyst LLM
 5. ingest_all.py                 -- KB + Memgraph + ZTSQL simultaneously
 6. compute_derived_edges.py      -- SHARED_MO, SHARED_TATTOO, TEMPORAL_CLUSTER
 7. run_mage_algorithms.py        -- Louvain, Betweenness, PageRank, WCC via MAGE
@@ -616,7 +616,7 @@ Catalyst Platform
       each stage so AppSail's SSE poll has something to report
     Final write: result + status="done" to Catalyst NoSQL, keyed by job_id
     -- single 15-minute budget for the whole function body, not
-       per-stage -- ample headroom for 3 sequential Qwen 14B calls
+       per-stage -- ample headroom for 3 sequential GLM-4.7-Flash calls
        plus parallel retrieval, even with retries
     -- this is the same Event Function type used elsewhere (15-min
        budget per official docs); what changed is only how it's
@@ -631,8 +631,8 @@ Catalyst Platform
     Structured FIR records + accused table
   Catalyst NoSQL
     Session memory + audit logs + job state (NEW -- see below)
-  Qwen 14B Instruct (Catalyst hosted)
-  Qwen 7B VLM (Catalyst hosted)
+  GLM-4.7-Flash Instruct (Catalyst hosted)
+  Qwen 3.6 35B VLM (Catalyst hosted)
   Catalyst Kannada NLP (ASR + TTS)
 
 External (Oracle Cloud Free Tier ARM VM -- 4GB RAM, always free)
@@ -663,11 +663,11 @@ External (Oracle Cloud Free Tier ARM VM -- 4GB RAM, always free)
 
 First correction: the original design wrapped the pipeline in a Circuit triggered by a Custom Event Listener. Verification found Circuits only execute 30s-capped Basic I/O functions and are unavailable in the IN data center -- so the design moved to a Custom Event Listener triggering a plain Event Function directly.
 
-Second correction (this revision): further verification found the Custom Event Listener itself is a deprecated, EOL'd component as of this writing. The underlying problem this section solves (AppSail's 30-second hard timeout can't safely hold three sequential Qwen 14B calls) and the underlying fix (move the pipeline into something with a 15-minute budget) are both still correct and unchanged. What keeps moving is the specific Catalyst primitive used to **trigger** that 15-minute function from AppSail -- first Custom Event Listener -> Circuit, then Custom Event Listener -> plain Event Function, now **Signals Custom Publisher -> Rule -> Function target**. The Function target itself is the same kind of Event Function described throughout this document; only its trigger mechanism changed.
+Second correction (this revision): further verification found the Custom Event Listener itself is a deprecated, EOL'd component as of this writing. The underlying problem this section solves (AppSail's 30-second hard timeout can't safely hold three sequential GLM-4.7-Flash calls) and the underlying fix (move the pipeline into something with a 15-minute budget) are both still correct and unchanged. What keeps moving is the specific Catalyst primitive used to **trigger** that 15-minute function from AppSail -- first Custom Event Listener -> Circuit, then Custom Event Listener -> plain Event Function, now **Signals Custom Publisher -> Rule -> Function target**. The Function target itself is the same kind of Event Function described throughout this document; only its trigger mechanism changed.
 
 ### The 30-Second Problem (Unchanged)
 
-The original design ran the entire pipeline (NER, DAG planning, retrieval, confidence, synthesis) inside one AppSail request. Even with per-source retrieval timeouts, three sequential Qwen 14B calls plus a single rate-limit retry (Section 8 -- exponential backoff) could realistically exceed AppSail's 30-second hard request limit on analytical queries. This was a structural risk, not an edge case -- bounding retrieval alone was never sufficient because the LLM calls sit outside that budget entirely.
+The original design ran the entire pipeline (NER, DAG planning, retrieval, confidence, synthesis) inside one AppSail request. Even with per-source retrieval timeouts, three sequential GLM-4.7-Flash calls plus a single rate-limit retry (Section 8 -- exponential backoff) could realistically exceed AppSail's 30-second hard request limit on analytical queries. This was a structural risk, not an edge case -- bounding retrieval alone was never sufficient because the LLM calls sit outside that budget entirely.
 
 **Confirmed via official docs** (`docs.catalyst.zoho.com/en/serverless/help/functions/basic-io/`, `.../event-functions/`, `.../faq/serverless/`): Basic I/O and Advanced I/O functions are capped at 30 seconds; Event and Cron functions get a 15-minute budget. This is the load-bearing fact the redesign depends on, and it holds regardless of which trigger mechanism fires the function.
 
@@ -813,7 +813,7 @@ Import rule: shared/ imports nothing from backend/ or data/. Both backend/ and d
 - Edge cases: single word inputs, vague references, pure Kannada pronouns, IPC-first queries
 
 **Key decisions:**
-- NER + intent in single Qwen 14B call (saves 4-6s latency)
+- NER + intent in single GLM-4.7-Flash call (saves 4-6s latency)
 - Temperature 0.0 (deterministic)
 - Coreference flagged as sub_intent, not resolved in NER
 - sub_intents are additive (compound queries produce multiple)
@@ -826,7 +826,7 @@ Import rule: shared/ imports nothing from backend/ or data/. Both backend/ and d
 
 ### Purpose
 
-Makes PS-1 legally defensible. Every retrieved evidence item gets a computed confidence tier before Qwen 14B sees it. LLM calibrates language to tier.
+Makes PS-1 legally defensible. Every retrieved evidence item gets a computed confidence tier before GLM-4.7-Flash sees it. LLM calibrates language to tier.
 
 ### Three Sub-Scores
 
@@ -846,13 +846,13 @@ Most teams return results with no calibration. A judge familiar with law enforce
 
 ### Purpose
 
-Real KSP FIRs arrive as scanned documents. Catalyst hosts Qwen 7B VLM which can extract structured fields from document images -- purpose-built for this.
+Real KSP FIRs arrive as scanned documents. Catalyst hosts Qwen 3.6 35B VLM which can extract structured fields from document images -- purpose-built for this.
 
 ### Revised Ingestion with Stage 0
 
 ```
 Stage 0:  Format detection (JSON / PDF / image)
-Stage 0b: Qwen 7B VLM extraction if PDF or image
+Stage 0b: Qwen 3.6 35B VLM extraction if PDF or image
 Stage 0c: Schema mapping (KSP source field names -> canonical, per the real ER diagram -- Implementation Section 17)
 Stage 1:  Pydantic validation + value normalization
 Stage 2:  Entity resolution (rapidfuzz dedup)
@@ -1106,7 +1106,7 @@ Open floor is the most important segment. Stay quiet and let the system work.
 
 - Zero-result queries return useful suggestions, never silence
 - Every retrieval step wrapped in try/except -- one source failing does not crash pipeline
-- NER fallback returns broad_search intent if Qwen 14B returns malformed JSON
+- NER fallback returns broad_search intent if GLM-4.7-Flash returns malformed JSON
 - Fuzzy name/location resolution handles common variants
 
 ### Chaos Test Suite
@@ -1129,11 +1129,11 @@ All must return a sensible response. None must crash.
 
 | Gap | Current State | Production Fix |
 |---|---|---|
-| Qwen 14B NER on real KSP Kannada | 30 few-shot examples | Expand from real officer query logs |
+| GLM-4.7-Flash NER on real KSP Kannada | 30 few-shot examples | Expand from real officer query logs |
 | CCTNS schema mapping | Designed against provided schema | Validate against real CCTNS export, extend FIELD_NAME_MAP |
 | MAGE at true lakh scale | Fast at 5K FIRs | Scheduled overnight job (architecture already anticipates this) |
 | RBAC | Inspector context hardcoded | Connect to KSP officer identity system |
-| Handwritten Kannada OCR | Qwen 7B VLM best effort | Fine-tune on KSP-specific scanned document samples |
+| Handwritten Kannada OCR | Qwen 3.6 35B VLM best effort | Fine-tune on KSP-specific scanned document samples |
 
 ---
 
@@ -1150,7 +1150,7 @@ All must return a sensible response. None must crash.
 - [x] Input validation -- DONE (Section 6)
 - [x] Step timeouts -- DONE (Section 9)
 - [x] O(n^2) edge computation -- DONE (Section 14)
-- [x] Qwen 14B rate limits + fallback -- DONE (Section 11)
+- [x] GLM-4.7-Flash rate limits + fallback -- DONE (Section 11)
 - [x] AppSail cold starts -- DONE (Section 16) -- also corrected an inaccurate "no timeout" claim
 - [x] activityScore methodology -- DONE (Section 24)
 - [x] Trap scenario, blind/circular evaluation, confidence calibration -- DONE (Section 27)

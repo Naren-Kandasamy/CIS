@@ -26,6 +26,8 @@ This list aggregates all the unchecked items across the official project phases 
 ## Phase 4: Robustness + Production Readiness
 *These items focus on hardening the deployed system and conducting strict evaluations before demo day.*
 
+- [x] **Codebase Hardening & Test Stabilization**: Pin Catalyst dependencies (`sse-starlette`, `python-multipart`), fix DAG fallback graph query tripling, and resolve test suite flakiness/auth issues.
+
 - [ ] **Memgraph Oracle VM Hardened**: Add persistent Docker volumes and a restart policy (`--restart unless-stopped`) to the Oracle VM.
 - [ ] **Blind Evaluation Packet**: Generate a packet of AI outputs and have a teammate (not involved in the narrative design) label them.
 - [ ] **Confidence Calibration**: Measure the Confidence Engine against these blind labels to ensure the `HIGH` confidence tier is >= 85% accurate.
