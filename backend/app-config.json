@@ -1,11 +1,8 @@
 {
-	"deployment": {
-		"name": "backend",
-		"stack": "python_3_13",
-		"env_variables": {}
-	},
-	"execution": {
-		"build_command": "pip install -r requirements.txt",
-		"run_command": "uvicorn main:app --host 0.0.0.0 --port $X_ZOHO_CATALYST_LISTEN_PORT"
-	}
+	"command": "python3.13 backend/start.py",
+	"build_path": "..",
+	"stack": "python_3_13",
+	"env_variables": {},
+	"memory": 512,
+	"scripts": {}
 }

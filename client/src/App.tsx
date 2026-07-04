@@ -81,7 +81,7 @@ export default function App() {
     }]);
 
     try {
-      const response = await fetch('/api/query', {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
