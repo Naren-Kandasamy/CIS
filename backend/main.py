@@ -1,6 +1,15 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from backend.api.routes import query, health, transcribe, graph, tts, ocr, export
+
+# BUG FIX: nothing previously loaded .env for the backend process itself --
+# only start_all.sh's manual `export $(grep ...)` did, which is fragile/shell-
+# specific and skipped entirely if uvicorn is run directly (as Catalyst's own
+# "run_command" does). load_dotenv() is a no-op in real deployment (no .env
+# file there; Catalyst injects env vars directly).
+from dotenv import load_dotenv
+load_dotenv()
+
+from backend.api.routes import query, health, transcribe, graph, tts, ocr, export, auth
 from backend.api.middleware.input_validator import InputValidationMiddleware
 from backend.api.middleware.rbac import RBACMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,3 +54,4 @@ app.include_router(graph.router)
 app.include_router(tts.router)
 app.include_router(ocr.router)
 app.include_router(export.router)
+app.include_router(auth.router)
