@@ -71,13 +71,15 @@ async def run_graph_step(step, state):
     cypher += " RETURN f.id as fir_id, f.crime_no as crime_no, f.district as district, f.crime_type as crime_type, f.modus_operandi as modus_operandi, f.narrative as narrative, f.date as date LIMIT 10"
     
     print(f"Executing Cypher: {cypher} with params {params}")
-    try:
-        results = await run_query(cypher, params)
-        print(f"Got {len(results)} results from graph")
-    except Exception as e:
-        print(f"Graph query failed: {e}")
-        results = []
-    
+    # BUG FIX: this used to catch every exception and return [] here,
+    # indistinguishable from "the query legitimately found nothing" --
+    # execute_with_timeout (which wraps this coroutine) already has its own
+    # except-Exception handler that correctly marks the source unavailable
+    # in confidence_caveats/reasoning_trace, so let real failures propagate
+    # to it instead of swallowing them here.
+    results = await run_query(cypher, params)
+    print(f"Got {len(results)} results from graph")
+
     # Format for the EvidenceObject
     formatted = []
     for row in results:
@@ -122,14 +124,15 @@ async def run_sql_step(step, entities):
     if not resolved_crime_sub_heads:
         return []
 
-    try:
-        results = []
-        for csh_id in resolved_crime_sub_heads[:3]:
-            results.extend(await search_cases_by_crime_sub_head(csh_id, limit=10))
-        return results
-    except Exception as e:
-        print(f"SQL failed: {e}")
-        return []
+    # BUG FIX: this used to catch every exception (network errors, a broken
+    # query) and return [] here -- indistinguishable from "no matching cases,"
+    # so execute_with_timeout never saw the failure and sql_unavailable never
+    # reached confidence_caveats/reasoning_trace. Real failures now propagate
+    # to execute_with_timeout's own except-Exception handler instead.
+    results = []
+    for csh_id in resolved_crime_sub_heads[:3]:
+        results.extend(await search_cases_by_crime_sub_head(csh_id, limit=10))
+    return results
 
 async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
     tasks = []
