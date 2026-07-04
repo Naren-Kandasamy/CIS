@@ -135,11 +135,19 @@ async def run_sql_step(step, entities):
     return results
 
 async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
+    # BUG FIX: an unrecognized step type (e.g. a non-retrieval pseudo-step
+    # like "evidence_assembly"/"synthesis" that a DAG plan shouldn't have
+    # included in the first place) used to silently fall back to
+    # run_graph_step -- re-running the same graph query once per unrecognized
+    # step. Unrecognized types are now skipped with a warning instead of
+    # silently duplicating a real retrieval call.
     tasks = []
+    normalized_steps = []
     for step in steps:
         step_type = step.get("type", "graph")
-        if step_type in ("data_retrieval", "retrieval"): step_type = "graph"
-        
+        if step_type in ("data_retrieval", "retrieval"):
+            step_type = "graph"
+
         if step_type == "graph":
             coro = run_graph_step(step, state)
         elif step_type == "rag":
@@ -147,18 +155,18 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         elif step_type == "sql":
             coro = run_sql_step(step, evidence.entities)
         else:
-            coro = run_graph_step(step, state)  # Default fallback
-            
+            print(f"Skipping DAG step with unrecognized type {step_type!r}: {step}")
+            continue
+
         tasks.append(execute_with_timeout(coro, step_type, evidence))
-        step["_normalized_type"] = step_type
+        normalized_steps.append((step, step_type))
 
     results = await asyncio.gather(*tasks)
 
-    for step, result in zip(steps, results):
+    for (step, step_type), result in zip(normalized_steps, results):
         if result is None:
             continue
-        step_type = step.get("_normalized_type", "graph")
-        
+
         if step_type == "rag":
             evidence.add_rag_results(result)
         elif step_type == "graph":

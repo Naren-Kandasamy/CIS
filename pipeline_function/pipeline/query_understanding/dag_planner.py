@@ -31,8 +31,14 @@ async def build_dag(intent_object: dict) -> list:
         return _default_plan(intent_object)
 
 def _default_plan(intent: dict) -> list:
+    # BUG FIX: this used to also include "evidence_assembly" and "synthesis"
+    # pseudo-steps -- neither is a real retrieval type executor.py recognizes
+    # (only "graph"/"rag"/"sql"), so both silently fell through to
+    # execute_retrieval's "unknown type" fallback and re-ran the SAME graph
+    # query a second and third time on every DAG-planner failure. Assembly
+    # and synthesis already happen as their own dedicated LangGraph nodes
+    # (confidence_scoring, synthesizing_response) after retrieval -- they were
+    # never meant to be retrieval steps here.
     return [
         {"step_id": 1, "type": "graph", "operation": "mo_search", "params": {}, "depends_on": []},
-        {"step_id": 2, "type": "evidence_assembly", "operation": "merge_and_rank", "params": {}, "depends_on": [1]},
-        {"step_id": 3, "type": "synthesis", "operation": "generate_response", "params": {}, "depends_on": [2]}
     ]
