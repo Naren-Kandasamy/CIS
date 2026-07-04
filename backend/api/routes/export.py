@@ -8,7 +8,10 @@ import os
 
 try:
     from weasyprint import HTML
-except ImportError:
+except Exception:
+    # BUG FIX: weasyprint's native GTK libs (gobject/pango) failing to load
+    # raise OSError, not ImportError -- an ImportError-only guard let that
+    # propagate and crash the entire app's module import chain at startup.
     HTML = None
 
 router = APIRouter()
