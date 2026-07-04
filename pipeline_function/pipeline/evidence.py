@@ -53,12 +53,22 @@ class EvidenceObject:
                     confidence="medium", metadata=result.get("metadata", {})
                 ))
     
-    def add_sql_results(self, sql_results: list):
+    async def add_sql_results(self, sql_results: list):
         """Map structured SQL rows to EvidenceItems."""
+        # BUG FIX: SQL rows only carry crime_sub_head_id (not a display name)
+        # and "date" (not "crime_type"/"Date") -- the visualization code
+        # (building_visualization_node) reads metadata["crime_type"]/["Date"],
+        # so without this, SQL-sourced evidence was silently bucketed as
+        # "Unknown" in the dashboard exactly like the KB-metadata mismatch fixed
+        # earlier. Resolves the friendly name via the same cache
+        # entity_lookup_resolver.py already loads.
+        from pipeline_function.pipeline.query_understanding.entity_lookup_resolver import get_crime_sub_head_name
         for row in sql_results:
             fir_id = row.get("id") or row.get("fir_internal_id")
             if not fir_id:
                 continue
+            csh_id = row.get("crime_sub_head_id")
+            crime_type_name = await get_crime_sub_head_name(csh_id) if csh_id else None
             self.items.append(EvidenceItem(
                 fir_id=fir_id,
                 relevance_score=row.get("score", 0.65),
@@ -68,7 +78,11 @@ class EvidenceObject:
                 similarity_reason=f"Structured match: {row.get('crime_no', 'unknown')}",
                 confidence="medium",
                 fir_date=row.get("date"),
-                metadata=row
+                metadata={
+                    **row,
+                    "crime_type": crime_type_name or "Unknown",
+                    "Date": row.get("date", ""),
+                }
             ))
 
     def rank(self):

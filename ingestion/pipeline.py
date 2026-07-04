@@ -49,13 +49,20 @@ async def ingest_fir_to_sql(fir: dict, sem: asyncio.Semaphore):
             await asyncio.sleep(0.01)
             return
             
+        # BUG FIX: previously targeted a table "Firs" with columns
+        # (fir_internal_id, crime_no, district_name, incident_date,
+        # crime_sub_head_name) -- a table nothing else in the codebase reads
+        # from. The actual retrieval code (sql_client.py) and the other real
+        # seeding scripts (data/scripts/ingest_all.py, plant_trap_scenario.py)
+        # all target "cases" with (fir_internal_id, crime_no, registered_date,
+        # crime_head_id, crime_sub_head_id). Aligned to match.
         sql = """
-        INSERT INTO Firs (fir_internal_id, crime_no, district_name, incident_date, crime_sub_head_name)
+        INSERT INTO cases (fir_internal_id, crime_no, registered_date, crime_head_id, crime_sub_head_id)
         VALUES (?, ?, ?, ?, ?)
         """
         params = [
-            fir["fir_internal_id"], fir.get("crime_no", ""), fir.get("district_name", ""),
-            fir.get("incident_date", ""), fir.get("crime_sub_head_name", "")
+            fir["fir_internal_id"], fir.get("crime_no", ""), fir.get("incident_date", ""),
+            fir.get("crime_head_id", ""), fir.get("crime_sub_head_id", "")
         ]
         try:
             await ztsql_execute(sql, params)
