@@ -42,7 +42,9 @@ class InputValidationMiddleware:
                 path = scope.get("path", "")
                 if path.endswith("/transcribe") and length > MAX_AUDIO_SIZE_BYTES:
                     return await self._send_error(scope, receive, send, 413, "Audio upload exceeds 5MB limit")
-                elif path.endswith("/upload") and length > MAX_DOC_SIZE_BYTES:
+                # BUG FIX: /ocr matched neither /transcribe nor /upload, so
+                # image uploads had no fail-fast size guard at all.
+                elif (path.endswith("/upload") or path.endswith("/ocr")) and length > MAX_DOC_SIZE_BYTES:
                     return await self._send_error(scope, receive, send, 413, "Document upload exceeds 10MB limit")
                 elif b"application/json" in content_type and length > 2048:
                     return await self._send_error(scope, receive, send, 413, "Payload too large")
