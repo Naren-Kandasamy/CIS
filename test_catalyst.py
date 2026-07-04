@@ -1,8 +1,14 @@
 import httpx
 import asyncio
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 async def test_endpoint():
-    token = "m_1004.665d10ca35618d9bbd07ed5334861c45.13cbacb7119fece74c598b02a5b34922"
+    token = os.getenv("CATALYST_API_TOKEN")
+    if not token:
+        raise EnvironmentError("CATALYST_API_TOKEN is not set")
     url = "https://api.catalyst.zoho.in/baas/v1/project/45958000000015001/datastore/execute"
     
     headers = {
