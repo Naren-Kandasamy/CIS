@@ -1,8 +1,12 @@
 import zcatalyst_sdk
 import os
+from dotenv import load_dotenv
 
-os.environ["CATALYST_API_TOKEN"] = "m_1004.665d10ca35618d9bbd07ed5334861c45.13cbacb7119fece74c598b02a5b34922"
-os.environ["CATALYST_PROJECT_ID"] = "45958000000015001"
+load_dotenv()
+
+if not os.getenv("CATALYST_API_TOKEN"):
+    raise EnvironmentError("CATALYST_API_TOKEN is not set")
+os.environ.setdefault("CATALYST_PROJECT_ID", "45958000000015001")
 
 try:
     app = zcatalyst_sdk.initialize(req=None)

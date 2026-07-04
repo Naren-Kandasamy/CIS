@@ -1,6 +1,24 @@
 import httpx
 import os
 import base64
+import time
+import asyncio
+
+# BUG FIX: guards the session-history read-modify-write race -- two concurrent
+# queries in the same session both read the same history snapshot, then the
+# one that finishes last silently overwrites the other's contribution. This
+# only serializes requests landing in the same process/warm container (a full
+# cross-process guarantee would need a database-level conditional write on
+# the NoSQL item, which the Catalyst REST API's condition syntax for this SDK
+# version did not accept in testing). Bounded so long-running warm containers
+# with many distinct sessions don't grow this unboundedly.
+_session_locks: dict = {}
+_SESSION_LOCKS_MAX = 1000
+
+def get_session_lock(session_id: str) -> asyncio.Lock:
+    if len(_session_locks) > _SESSION_LOCKS_MAX:
+        _session_locks.clear()
+    return _session_locks.setdefault(session_id, asyncio.Lock())
 
 # BUG FIX: env vars must be read lazily (via helper) rather than at module-import
 # time, because Catalyst Functions inject env vars *after* module load.
@@ -34,42 +52,49 @@ CATALYST_DATASTORE_URL = lambda: os.getenv("CATALYST_DATASTORE_URL", "")
 
 async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
-    
-    # NEW FIX: Route to local Ollama if Catalyst endpoints are failing
-    if os.getenv("LOCAL_MOCK_MODE") == "true":
-        async with httpx.AsyncClient() as client:
-            try:
-                # Assuming user has qwen or llama3 installed on local ollama
-                r = await client.post("http://localhost:11434/api/generate", json={
-                    "model": "llama3.2", # Fallback model
-                    "system": system,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": temperature}
-                }, timeout=30.0)
-                if r.status_code == 200:
-                    return r.json()["response"]
-            except Exception as e:
-                return f"[Mock LLM Response - Local Ollama unavailable: {e}]"
-                
-    # NEW FIX: Route to Groq API if GROQ_API_KEY is present
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        async with httpx.AsyncClient() as client:
-            r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers={
-                "Authorization": f"Bearer {groq_key}",
-                "Content-Type": "application/json"
-            }, json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": temperature,
-                "max_tokens": max_tokens
-            }, timeout=45.0)
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+
+    # BUG FIX: the Ollama/Groq dev fallbacks below (Architecture v8 line 48:
+    # "Groq + Llama 3.1 70B (offline/dev only) -- Not for production") used to
+    # activate silently off a stray LOCAL_MOCK_MODE/GROQ_API_KEY env var alone,
+    # with no log line indicating real Catalyst/Qwen was bypassed. They now
+    # require an explicit second opt-in flag and always log loudly when used,
+    # so a leftover dev env var can never silently reroute production traffic.
+    if os.getenv("ALLOW_DEV_LLM_FALLBACK") == "true":
+        if os.getenv("LOCAL_MOCK_MODE") == "true":
+            print("[DEV FALLBACK - NOT FOR PRODUCTION] Routing LLM call to local Ollama instead of Catalyst Qwen")
+            async with httpx.AsyncClient() as client:
+                try:
+                    # Assuming user has qwen or llama3 installed on local ollama
+                    r = await client.post("http://localhost:11434/api/generate", json={
+                        "model": "llama3.2", # Fallback model
+                        "system": system,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": temperature}
+                    }, timeout=30.0)
+                    if r.status_code == 200:
+                        return r.json()["response"]
+                except Exception as e:
+                    return f"[Mock LLM Response - Local Ollama unavailable: {e}]"
+
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            print("[DEV FALLBACK - NOT FOR PRODUCTION] Routing LLM call to Groq (Llama 3.3 70B) instead of Catalyst Qwen")
+            async with httpx.AsyncClient() as client:
+                r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers={
+                    "Authorization": f"Bearer {groq_key}",
+                    "Content-Type": "application/json"
+                }, json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                }, timeout=45.0)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
 
     async with httpx.AsyncClient() as client:
         r = await client.post(CATALYST_LLM_URL(), headers=_quickml_headers(), json={
@@ -91,31 +116,31 @@ async def llm_complete(prompt: str, system: str,
             return resp.get("output", str(resp))
 
 async def vlm_extract(image_bytes: bytes, prompt: str, system: str) -> str:
+    # BUG FIX: previously returned a hardcoded, realistic-looking fake FIR record
+    # whenever the VLM endpoint was unconfigured or the call failed for any reason,
+    # indistinguishable from a real extraction. Now raises instead, so the caller
+    # (backend/api/routes/ocr.py) surfaces a real error rather than fabricated data.
     url = CATALYST_VLM_URL()
     if not url:
-        return '{"FIR_Number": "124/2023", "Date": "15/10/2023", "District": "Belagavi", "Crime_Type": "Robbery", "Accused": "Suresh (Suri)", "Modus_Operandi": "Breaking the iron grill of the rear window", "Victim": "Shri Ramesh Kumar"}'
-        
+        raise EnvironmentError("CATALYST_VLM_ENDPOINT is not configured")
+
     image_b64 = base64.b64encode(image_bytes).decode()
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url, headers=_quickml_headers(), json={
-                "prompt": prompt,
-                "model": "VL-Qwen3.6-35B-A3B",
-                "images": [image_b64],
-                "system_prompt": system,
-                "top_k": 50,
-                "top_p": 0.9,
-                "temperature": 0.0,
-                "max_tokens": 1000
-            }, timeout=45.0)
-            r.raise_for_status()
-            resp = r.json()
-            if "choices" in resp:
-                return resp["choices"][0]["message"]["content"]
-            return resp.get("output", resp.get("text", str(resp)))
-        except Exception as e:
-            print(f"[Mock VLM] Catalyst VLM failed ({e}), returning mock FIR data.")
-            return '{"FIR_Number": "124/2023", "Date": "15/10/2023", "District": "Belagavi", "Crime_Type": "Robbery", "Accused": "Suresh (Suri)", "Modus_Operandi": "Breaking the iron grill of the rear window", "Victim": "Shri Ramesh Kumar"}'
+        r = await client.post(url, headers=_quickml_headers(), json={
+            "prompt": prompt,
+            "model": "VL-Qwen3.6-35B-A3B",
+            "images": [image_b64],
+            "system_prompt": system,
+            "top_k": 50,
+            "top_p": 0.9,
+            "temperature": 0.0,
+            "max_tokens": 1000
+        }, timeout=45.0)
+        r.raise_for_status()
+        resp = r.json()
+        if "choices" in resp:
+            return resp["choices"][0]["message"]["content"]
+        return resp.get("output", resp.get("text", str(resp)))
 
 async def kb_upload(document_id: str, content: str, metadata: dict):
     url = CATALYST_KB_URL()
@@ -224,11 +249,100 @@ async def text_to_speech(text: str, language: str = "kn") -> bytes:
             print(f"[Mock TTS] Catalyst TTS failed ({e}), returning dummy audio bytes.")
             return b"ID3\x04\x00\x00\x00\x00\x00\x00MockAudioData"
 
-# --- NoSQL mock for Phase 2 scaffolding ---
-_mock_nosql_cache = {}
+# --- Real Catalyst NoSQL persistence ---
+# BUG FIX: this used to be a plain in-memory dict (_mock_nosql_cache), never
+# wired to any real Catalyst NoSQL table -- job status and session history
+# writes from a separate deployed process (pipeline Function) could never be
+# seen by the backend AppSail process reading them, since each holds its own
+# empty dict. Now talks to a real "AppKeyValueStore" NoSQL table (partition
+# key: item_key, TTL attribute: expires_at) via the Catalyst BaaS REST API.
+CATALYST_NOSQL_TABLE = "AppKeyValueStore"
+_nosql_token_cache = {"access_token": None, "expires_at": 0.0}
+
+def _nosql_base_url() -> str:
+    project_id = os.getenv("CATALYST_PROJECT_ID")
+    if not project_id:
+        raise EnvironmentError("CATALYST_PROJECT_ID is not set")
+    return f"https://api.catalyst.zoho.in/baas/v1/project/{project_id}/nosqltable/{CATALYST_NOSQL_TABLE}"
+
+async def _get_nosql_access_token() -> str:
+    """
+    Returns a cached, valid OAuth access token for NoSQL calls, refreshing via
+    CATALYST_REFRESH_TOKEN (+ CATALYST_CLIENT_ID/CATALYST_CLIENT_SECRET) a
+    minute before expiry -- Catalyst access tokens are only valid ~1 hour.
+    Falls back to a static CATALYST_ACCESS_TOKEN/CATALYST_API_TOKEN if no
+    refresh credentials are configured (that static token will itself expire
+    hourly with no way to renew it).
+    """
+    now = time.time()
+    if _nosql_token_cache["access_token"] and now < _nosql_token_cache["expires_at"]:
+        return _nosql_token_cache["access_token"]
+
+    refresh_token = os.getenv("CATALYST_REFRESH_TOKEN")
+    client_id = os.getenv("CATALYST_CLIENT_ID")
+    client_secret = os.getenv("CATALYST_CLIENT_SECRET")
+    if refresh_token and client_id and client_secret:
+        async with httpx.AsyncClient() as client:
+            r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }, timeout=15.0)
+            r.raise_for_status()
+            data = r.json()
+            _nosql_token_cache["access_token"] = data["access_token"]
+            _nosql_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+            return _nosql_token_cache["access_token"]
+
+    token = os.getenv("CATALYST_ACCESS_TOKEN") or os.getenv("CATALYST_API_TOKEN")
+    if not token:
+        raise EnvironmentError(
+            "No Catalyst NoSQL credentials configured -- set CATALYST_REFRESH_TOKEN, "
+            "CATALYST_CLIENT_ID and CATALYST_CLIENT_SECRET (preferred, auto-refreshes), "
+            "or at minimum CATALYST_ACCESS_TOKEN"
+        )
+    return token
+
+async def _nosql_headers() -> dict:
+    token = await _get_nosql_access_token()
+    return {"Authorization": f"Zoho-oauthtoken {token}", "Content-Type": "application/json"}
+
+async def _nosql_request(method: str, path: str, json_body) -> dict:
+    import asyncio
+    headers = await _nosql_headers()
+    url = _nosql_base_url() + path
+    last_error = None
+    for attempt in range(4):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.request(method, url, headers=headers, json=json_body, timeout=15.0)
+                r.raise_for_status()
+                return r.json()
+        except httpx.RequestError as e:
+            last_error = e
+            if attempt < 3:
+                await asyncio.sleep(1.0)
+                continue
+    raise last_error
 
 async def nosql_get(key: str) -> dict | None:
-    return _mock_nosql_cache.get(key)
+    """Fetch a value from the real Catalyst NoSQL AppKeyValueStore table."""
+    resp = await _nosql_request("POST", "/item/fetch", {"keys": [{"item_key": {"S": key}}]})
+    items = resp.get("data", {}).get("get") or []
+    if not items:
+        return None
+    return {"value": items[0]["item"]["item_value"]["S"]}
 
-async def nosql_set(key: str, value: str, ttl: int = 3600):
-    _mock_nosql_cache[key] = {"value": value}
+async def nosql_set(key: str, value: str, ttl: int = None):
+    """
+    Upsert a value into the real Catalyst NoSQL AppKeyValueStore table.
+    ttl (seconds), if given, sets expires_at -- Catalyst auto-deletes items
+    past their expiry. Left unset by default so job status/session history
+    (which don't pass ttl) persist indefinitely; the NER cache explicitly
+    passes CACHE_TTL_SECONDS.
+    """
+    item = {"item_key": {"S": key}, "item_value": {"S": value}}
+    if ttl:
+        item["expires_at"] = {"N": str(int(time.time()) + ttl)}
+    await _nosql_request("POST", "/item", [{"item": item, "return": "NULL"}])
