@@ -23,11 +23,18 @@ async def ingest_fir_to_kb(fir: dict, sem: asyncio.Semaphore):
             return
             
         content = f"NARRATIVE: {fir.get('narrative', '')}\nMO DESCRIPTOR: {fir.get('mo_descriptor', '')}"
+        # BUG FIX: metadata previously only had "crime_sub_head" and no date
+        # field at all, while the dashboard visualization (building_visualization_node)
+        # reads "crime_type" and "Date" -- KB/RAG-sourced evidence was silently
+        # bucketed as "Unknown" with no date. crime_type/Date are added here to
+        # match the key names the graph-sourced path already produces.
         metadata = {
             "fir_id": fir["fir_internal_id"],
             "crime_no": fir.get("crime_no", ""),
             "district": fir.get("district_name", ""),
             "crime_sub_head": fir.get("crime_sub_head_name", ""),
+            "crime_type": fir.get("crime_sub_head_name", ""),
+            "Date": fir.get("incident_date", ""),
             "ocr_extracted": fir.get("ocr_extracted", False)
         }
         try:
