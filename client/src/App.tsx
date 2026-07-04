@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, Loader2 } from 'lucide-react';
+import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, Loader2, LogOut } from 'lucide-react';
 import DashboardPanel from './components/dashboard/DashboardPanel';
+import Login from './components/Login';
 
 interface Message {
   id: string;
@@ -19,6 +20,23 @@ const SESSION_ID = sessionStorage.getItem("ps1_session_id") ?? (() => {
 })();
 
 export default function App() {
+  const [authToken, setAuthToken] = useState<string | null>(() => sessionStorage.getItem("ps1_auth_token"));
+  const [displayName, setDisplayName] = useState<string>(() => sessionStorage.getItem("ps1_display_name") ?? '');
+
+  const handleLogin = (token: string, _username: string, _role: string, name: string) => {
+    sessionStorage.setItem("ps1_auth_token", token);
+    sessionStorage.setItem("ps1_display_name", name);
+    setAuthToken(token);
+    setDisplayName(name);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem("ps1_auth_token");
+    sessionStorage.removeItem("ps1_display_name");
+    setAuthToken(null);
+    setDisplayName('');
+  };
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -65,13 +83,20 @@ export default function App() {
     try {
       const response = await fetch('/api/query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
         body: JSON.stringify({
           session_id: SESSION_ID,
           query: userMessage.content
         })
       });
 
+      if (response.status === 401) {
+        handleLogout();
+        throw new Error('Session expired -- please sign in again.');
+      }
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       const reader = response.body?.getReader();
@@ -149,6 +174,10 @@ export default function App() {
     }
   };
 
+  if (!authToken) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <>
       <div className="ambient-bg" />
@@ -161,7 +190,7 @@ export default function App() {
             </div>
             <h1>PS-1 <span>CIS</span></h1>
           </div>
-          
+
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div onClick={() => setActiveView('query')} style={{ padding: '12px', borderRadius: '12px', background: activeView === 'query' ? 'rgba(255,255,255,0.05)' : 'transparent', color: activeView === 'query' ? 'white' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                <Search size={18} /> Active Query
@@ -173,10 +202,18 @@ export default function App() {
                <Database size={18} /> Data Store
             </div>
           </nav>
-          
+
           <div style={{ marginTop: 'auto' }}>
+            {displayName && (
+              <div style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                Signed in as <strong style={{ color: 'white' }}>{displayName}</strong>
+              </div>
+            )}
             <div style={{ padding: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                <Settings size={18} /> Settings
+            </div>
+            <div onClick={handleLogout} style={{ padding: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+               <LogOut size={18} /> Sign Out
             </div>
           </div>
         </aside>
