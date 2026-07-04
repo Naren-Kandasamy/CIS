@@ -104,23 +104,29 @@ async def run_rag_step(step, query):
     return result
 
 async def run_sql_step(step, entities):
-    """Execute a structured SQL retrieval step."""
-    # Since search_cases_by_district doesn't exist yet, we mock or implement a simple ZTSQL query
-    from shared.catalyst_client import ztsql_query
-    locations = entities.get("locations", [])
-    city = entities.get("city", "")
-    
-    district = ""
-    if locations: district = locations[0]
-    elif city: district = city
-    
-    if not district:
+    """
+    Execute a structured SQL retrieval step, filtered by resolved crime
+    sub-head classification.
+
+    BUG FIX: previously filtered by district_name against the `cases` table,
+    a column that was never actually populated by any real ingestion script
+    (see sql_client.py) -- this always returned empty/erroring results,
+    silently, for every query ever routed through SQL. Now delegates to
+    sql_client.py's search_cases_by_crime_sub_head(), which filters on
+    crime_sub_head_id -- a column the real seeding scripts do populate, and a
+    value entity_lookup_resolver.py already resolves from free-text mentions
+    of a crime type earlier in the pipeline.
+    """
+    from pipeline_function.pipeline.retrieval.sql_client import search_cases_by_crime_sub_head
+    resolved_crime_sub_heads = entities.get("resolved_crime_sub_heads", [])
+    if not resolved_crime_sub_heads:
         return []
-        
-    query = "SELECT * FROM cases WHERE district_name LIKE ? LIMIT 10"
+
     try:
-        res = await ztsql_query(query, [f"%{district}%"])
-        return res
+        results = []
+        for csh_id in resolved_crime_sub_heads[:3]:
+            results.extend(await search_cases_by_crime_sub_head(csh_id, limit=10))
+        return results
     except Exception as e:
         print(f"SQL failed: {e}")
         return []
@@ -155,7 +161,7 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         elif step_type == "graph":
             evidence.add_graph_results(result)
         elif step_type == "sql":
-            evidence.add_sql_results(result)
+            await evidence.add_sql_results(result)
 
     evidence.rank()
     return evidence

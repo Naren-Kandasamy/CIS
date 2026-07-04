@@ -49,6 +49,12 @@ async def _load_caches_if_needed():
         if sub_heads_ok or sections_ok:
             _CACHE_LOADED = True
 
+async def get_crime_sub_head_name(crime_sub_head_id: str) -> Optional[str]:
+    """Reverse lookup: resolved crime_sub_head_id -> its display name, reusing
+    the same cache resolve_crime_sub_head() loads."""
+    await _load_caches_if_needed()
+    return _CRIME_SUB_HEADS_CACHE.get(crime_sub_head_id)
+
 async def resolve_crime_sub_head(crime_type_text: str) -> Optional[str]:
     """
     "murder" -> CrimeSubHeadID, via fuzzy match against crime_sub_heads.crime_sub_head_name.
