@@ -10,6 +10,8 @@ from pipeline_function.pipeline.retrieval.executor import execute_retrieval
 from pipeline_function.pipeline.evidence import EvidenceObject
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient
 from pipeline_function.pipeline.confidence_engine import run_confidence_engine
+from pipeline_function.pipeline.synthesis.synthesizer import SYNTHESIS_SYSTEM
+from pipeline_function.pipeline.synthesis.fallback import build_fallback_response
 
 # State schema for the graph
 class AgentState(TypedDict):
@@ -67,7 +69,11 @@ async def retrieving_evidence_node(state: AgentState):
         entities=intent_obj.get("entities", {})
     )
     
-    evidence_obj = await execute_retrieval(state["dag"], evidence_obj, {"intent_object": intent_obj})
+    # BUG FIX: run_graph_step (executor.py) reads state.get("intent", {}) -- the
+    # key here must be "intent", not "intent_object", or entity filters (city,
+    # locations, crime_types, weapon) silently resolve to {} and every graph
+    # query falls back to an unfiltered "MATCH (f:FIR) WHERE 1=1 LIMIT 10".
+    evidence_obj = await execute_retrieval(state["dag"], evidence_obj, {"intent": intent_obj})
     return {"evidence": evidence_obj}
 
 async def confidence_scoring_node(state: AgentState):
@@ -186,6 +192,11 @@ async def synthesizing_response_node(state: AgentState):
     evidence_obj = state["evidence"]
     query = state["query"]
     
+    # BUG FIX: previously each item omitted confidence_flags (the specific
+    # weak-evidence caveats like "not forensically confirmed") and the prompt
+    # never included the reasoning trace -- the LLM could only see the coarse
+    # confidence tier, not the reasons behind it, undermining the "flag
+    # low-confidence results explicitly" rule below.
     evidence_dicts = []
     for item in evidence_obj.items[:10]:
         evidence_dicts.append({
@@ -193,22 +204,29 @@ async def synthesizing_response_node(state: AgentState):
             "fir_id": item.fir_id,
             "confidence": item.confidence,
             "relevance_score": item.relevance_score,
+            "flags": item.confidence_flags,
             "data": item.metadata
         })
-        
-    system = "You are an AI assistant for the PS-1 police system. Answer based ONLY on the evidence provided."
+
+    # BUG FIX: this used to be a bare one-line prompt with no citation
+    # requirement, no confidence-tier language calibration, and critically no
+    # "All outputs require officer verification before action" disclaimer --
+    # SYNTHESIS_SYSTEM (previously only reachable via dead code in
+    # graph_definition.py) carries all of that.
+    system = SYNTHESIS_SYSTEM
+    trace_str = "\n".join(evidence_obj.reasoning_trace) or "None"
     if state.get("history"):
         history_str = "\n".join([f"Q: {h['q']}\nA: {h['a']}" for h in state["history"][-3:]])
-        prompt = f"Previous conversation history:\n{history_str}\n\nCurrent Query: {query}\n\nEvidence: {json.dumps(evidence_dicts)}"
+        prompt = f"Previous conversation history:\n{history_str}\n\nCurrent Query: {query}\n\nEvidence: {json.dumps(evidence_dicts)}\n\nTRACE: {trace_str}"
     else:
-        prompt = f"Query: {query}\nEvidence: {json.dumps(evidence_dicts)}"
-        
+        prompt = f"Query: {query}\nEvidence: {json.dumps(evidence_dicts)}\n\nTRACE: {trace_str}"
+
     try:
         ans = await llm_complete_resilient(prompt=prompt, system=system, temperature=0.2, max_tokens=1500)
     except Exception as e:
         print(f"[Synthesis Error] LLM call failed: {e}")
-        ans = "The system successfully retrieved evidence for your query, but the generation model is currently unavailable or under heavy load. Please refer to the evidence panels for retrieved data."
-    
+        ans = build_fallback_response(evidence_obj)
+
     return {"final_response": ans}
 
 # Define the graph compilation inside the runner for thread-safety
