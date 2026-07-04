@@ -23,11 +23,18 @@ async def ingest_fir_to_kb(fir: dict, sem: asyncio.Semaphore):
             return
             
         content = f"NARRATIVE: {fir.get('narrative', '')}\nMO DESCRIPTOR: {fir.get('mo_descriptor', '')}"
+        # BUG FIX: metadata previously only had "crime_sub_head" and no date
+        # field at all, while the dashboard visualization (building_visualization_node)
+        # reads "crime_type" and "Date" -- KB/RAG-sourced evidence was silently
+        # bucketed as "Unknown" with no date. crime_type/Date are added here to
+        # match the key names the graph-sourced path already produces.
         metadata = {
             "fir_id": fir["fir_internal_id"],
             "crime_no": fir.get("crime_no", ""),
             "district": fir.get("district_name", ""),
             "crime_sub_head": fir.get("crime_sub_head_name", ""),
+            "crime_type": fir.get("crime_sub_head_name", ""),
+            "Date": fir.get("incident_date", ""),
             "ocr_extracted": fir.get("ocr_extracted", False)
         }
         try:
@@ -42,13 +49,20 @@ async def ingest_fir_to_sql(fir: dict, sem: asyncio.Semaphore):
             await asyncio.sleep(0.01)
             return
             
+        # BUG FIX: previously targeted a table "Firs" with columns
+        # (fir_internal_id, crime_no, district_name, incident_date,
+        # crime_sub_head_name) -- a table nothing else in the codebase reads
+        # from. The actual retrieval code (sql_client.py) and the other real
+        # seeding scripts (data/scripts/ingest_all.py, plant_trap_scenario.py)
+        # all target "cases" with (fir_internal_id, crime_no, registered_date,
+        # crime_head_id, crime_sub_head_id). Aligned to match.
         sql = """
-        INSERT INTO Firs (fir_internal_id, crime_no, district_name, incident_date, crime_sub_head_name)
+        INSERT INTO cases (fir_internal_id, crime_no, registered_date, crime_head_id, crime_sub_head_id)
         VALUES (?, ?, ?, ?, ?)
         """
         params = [
-            fir["fir_internal_id"], fir.get("crime_no", ""), fir.get("district_name", ""),
-            fir.get("incident_date", ""), fir.get("crime_sub_head_name", "")
+            fir["fir_internal_id"], fir.get("crime_no", ""), fir.get("incident_date", ""),
+            fir.get("crime_head_id", ""), fir.get("crime_sub_head_id", "")
         ]
         try:
             await ztsql_execute(sql, params)
