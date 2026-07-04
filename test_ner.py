@@ -1,11 +1,12 @@
 import asyncio
 from unittest.mock import patch, AsyncMock
 from pipeline_function.pipeline.query_understanding.ner_intent import extract_ner_and_intent
+from pipeline_function.pipeline.cache import set_cached_ner
 import httpx
 
 async def run_tests():
     print("\n--- Running NER + Resilience Tests ---")
-    
+
     # 1. Test successful LLM parsing
     good_json = '{"entities": {"persons": ["Ravi"]}, "intent": "lookup", "urgency": "analytical", "sub_intents": []}'
     with patch("pipeline_function.pipeline.catalyst_resilient_client._raw_llm_complete", new_callable=AsyncMock) as mock_llm:
@@ -13,9 +14,14 @@ async def run_tests():
         res = await extract_ner_and_intent("Find Ravi")
         assert res["entities"]["persons"][0] == "Ravi", "Failed to extract entity"
         print("✅ Successful NER extraction working")
-        
+
     # 2. Test cache hit
-    # The previous test should have cached it!
+    # BUG FIX: this used to rely on test #1 having run first in the same
+    # process to populate the cache -- an undocumented order dependency that
+    # would silently break if this test were ever run in isolation (e.g.
+    # after a future migration to real pytest test functions, which are
+    # commonly run individually or reordered). Seeds its own precondition now.
+    await set_cached_ner("find ravi", {"entities": {"persons": ["Ravi"]}, "intent": "lookup", "urgency": "analytical", "sub_intents": []})
     with patch("pipeline_function.pipeline.catalyst_resilient_client._raw_llm_complete", new_callable=AsyncMock) as mock_llm:
         res = await extract_ner_and_intent("Find Ravi")
         mock_llm.assert_not_called() # Should use cache
@@ -64,4 +70,9 @@ async def run_tests():
     print("\nAll NER Pipeline tests passed successfully! 🚀\n")
 
 if __name__ == "__main__":
+    # BUG FIX: this never loaded .env, which worked while the NoSQL cache was
+    # an in-memory mock but now needs real Catalyst credentials for
+    # get_cached_ner/set_cached_ner to reach the real NoSQL table.
+    from dotenv import load_dotenv
+    load_dotenv()
     asyncio.run(run_tests())
