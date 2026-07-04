@@ -29,8 +29,15 @@ def get_session_lock(session_id: str) -> asyncio.Lock:
 # time, because Catalyst Functions inject env vars *after* module load.
 # A module-level HEADERS dict captured os.getenv() before the env was populated,
 # producing Authorization: Zoho-oauthtoken None on every call.
+# BUG FIX: Catalyst's AppSail rejects any deployed env var whose key contains
+# the substring "CATALYST" ("environment_variables must not contain reserved
+# keywords"), so deployed env vars are set under a ZC_ prefix instead. Local
+# .env keeps the original CATALYST_ names for readability; _env() checks both.
+def _env(zc_name: str, catalyst_name: str, default: str = None) -> str:
+    return os.getenv(zc_name) or os.getenv(catalyst_name, default)
+
 def _headers() -> dict:
-    token = os.getenv("CATALYST_API_TOKEN")
+    token = _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
     if not token:
         raise EnvironmentError("CATALYST_API_TOKEN is not set")
     return {
@@ -39,7 +46,7 @@ def _headers() -> dict:
     }
 
 def _quickml_headers() -> dict:
-    token = os.getenv("CATALYST_API_TOKEN")
+    token = _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
     if not token:
         raise EnvironmentError("CATALYST_API_TOKEN is not set")
     return {
@@ -48,12 +55,12 @@ def _quickml_headers() -> dict:
         "CATALYST-ORG": "60075634347"
     }
 
-CATALYST_LLM_URL       = lambda: os.getenv("CATALYST_LLM_ENDPOINT", "")
-CATALYST_VLM_URL       = lambda: os.getenv("CATALYST_VLM_ENDPOINT", "")
-CATALYST_KB_URL        = lambda: os.getenv("CATALYST_KB_ENDPOINT", "")
-CATALYST_ASR_URL       = lambda: os.getenv("CATALYST_ASR_ENDPOINT", "")
-CATALYST_TTS_URL       = lambda: os.getenv("CATALYST_TTS_ENDPOINT", "")
-CATALYST_DATASTORE_URL = lambda: os.getenv("CATALYST_DATASTORE_URL", "")
+CATALYST_LLM_URL       = lambda: _env("ZC_LLM_ENDPOINT", "CATALYST_LLM_ENDPOINT", "")
+CATALYST_VLM_URL       = lambda: _env("ZC_VLM_ENDPOINT", "CATALYST_VLM_ENDPOINT", "")
+CATALYST_KB_URL        = lambda: _env("ZC_KB_ENDPOINT", "CATALYST_KB_ENDPOINT", "")
+CATALYST_ASR_URL       = lambda: _env("ZC_ASR_ENDPOINT", "CATALYST_ASR_ENDPOINT", "")
+CATALYST_TTS_URL       = lambda: _env("ZC_TTS_ENDPOINT", "CATALYST_TTS_ENDPOINT", "")
+CATALYST_DATASTORE_URL = lambda: _env("ZC_DATASTORE_URL", "CATALYST_DATASTORE_URL", "")
 
 async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
@@ -270,7 +277,7 @@ CATALYST_NOSQL_TABLE = "AppKeyValueStore"
 _nosql_token_cache = {"access_token": None, "expires_at": 0.0}
 
 def _nosql_base_url() -> str:
-    project_id = os.getenv("CATALYST_PROJECT_ID")
+    project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
     if not project_id:
         raise EnvironmentError("CATALYST_PROJECT_ID is not set")
     return f"https://api.catalyst.zoho.in/baas/v1/project/{project_id}/nosqltable/{CATALYST_NOSQL_TABLE}"
@@ -288,9 +295,9 @@ async def _get_nosql_access_token() -> str:
     if _nosql_token_cache["access_token"] and now < _nosql_token_cache["expires_at"]:
         return _nosql_token_cache["access_token"]
 
-    refresh_token = os.getenv("CATALYST_REFRESH_TOKEN")
-    client_id = os.getenv("CATALYST_CLIENT_ID")
-    client_secret = os.getenv("CATALYST_CLIENT_SECRET")
+    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
+    client_id = _env("ZC_CLIENT_ID", "CATALYST_CLIENT_ID")
+    client_secret = _env("ZC_CLIENT_SECRET", "CATALYST_CLIENT_SECRET")
     if refresh_token and client_id and client_secret:
         async with httpx.AsyncClient() as client:
             r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
@@ -305,7 +312,7 @@ async def _get_nosql_access_token() -> str:
             _nosql_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
             return _nosql_token_cache["access_token"]
 
-    token = os.getenv("CATALYST_ACCESS_TOKEN") or os.getenv("CATALYST_API_TOKEN")
+    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
     if not token:
         raise EnvironmentError(
             "No Catalyst NoSQL credentials configured -- set CATALYST_REFRESH_TOKEN, "

@@ -7,6 +7,3 @@ weasyprint==62.2
 jinja2==3.1.4
 sse-starlette
 python-multipart
-langgraph==1.2.7
-neo4j==5.28.4
-rapidfuzz==3.13.0
