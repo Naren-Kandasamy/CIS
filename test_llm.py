@@ -6,14 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 async def test_endpoint():
-    token = os.getenv("CATALYST_API_TOKEN")
-    if not token:
-        raise EnvironmentError("CATALYST_API_TOKEN is not set")
+    token = os.getenv("CATALYST_ACCESS_TOKEN", "1000.e30d5f19907c5f9ce57254ec9072b10b.56682135cc7086a16621cefd15147cd4")
     url = "https://api.catalyst.zoho.in/quickml/v1/project/45958000000015001/glm/chat"
     
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Zoho-oauthtoken {token}"
+        "Authorization": f"Bearer {token}",
+        "CATALYST-ORG": "60075634347"
     }
     
     payload = {
