@@ -23,6 +23,7 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
             return _fallback_intent()
 
         try:
+            print(f"\\n[DEBUG RAW LLM RESPONSE]: {raw}\\n")
             result = json.loads(raw.strip())
             await set_cached_ner(normalized_query, result)
             return result
