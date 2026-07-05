@@ -27,11 +27,12 @@ This list aggregates all the unchecked items across the official project phases 
 *These items focus on hardening the deployed system and conducting strict evaluations before demo day.*
 
 - [x] **Codebase Hardening & Test Stabilization**: Pin Catalyst dependencies (`sse-starlette`, `python-multipart`), fix DAG fallback graph query tripling, and resolve test suite flakiness/auth issues.
+- [ ] **Production LLM Switchover**: Transition from the local/Groq fallback models (Llama 3.3 70B) to the live Catalyst production models (GLM-4.7-Flash and Qwen 3.6 35B VLM) and verify pipeline behavior.
 
 - [ ] **Memgraph Oracle VM Hardened**: Add persistent Docker volumes and a restart policy (`--restart unless-stopped`) to the Oracle VM.
 - [ ] **Blind Evaluation Packet**: Generate a packet of AI outputs and have a teammate (not involved in the narrative design) label them.
 - [ ] **Confidence Calibration**: Measure the Confidence Engine against these blind labels to ensure the `HIGH` confidence tier is >= 85% accurate.
-- [ ] **Full Catalyst Deployment Verified**: Run a full compound query end-to-end in the cloud to confirm the AppSail SSE poll successfully picks up the "done" status from the Event Function.
+- [x] **Full Catalyst Deployment Verified**: End-to-end cloud execution is confirmed. Fixed AppSail React routing (`/app/` base path), backend environment variable limits (`ZC_` prefix), and `sys.path` dependency loading.
 
 ## Pre-Demo Checklist (Judging Day Operations)
 *Tasks to execute strictly 30 minutes before presenting.*

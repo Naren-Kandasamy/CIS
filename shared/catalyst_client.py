@@ -65,48 +65,7 @@ CATALYST_DATASTORE_URL = lambda: _env("ZC_DATASTORE_URL", "CATALYST_DATASTORE_UR
 async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
 
-    # BUG FIX: the Ollama/Groq dev fallbacks below (Architecture v8 line 48:
-    # "Groq + Llama 3.1 70B (offline/dev only) -- Not for production") used to
-    # activate silently off a stray LOCAL_MOCK_MODE/GROQ_API_KEY env var alone,
-    # with no log line indicating real Catalyst/Qwen was bypassed. They now
-    # require an explicit second opt-in flag and always log loudly when used,
-    # so a leftover dev env var can never silently reroute production traffic.
-    if os.getenv("ALLOW_DEV_LLM_FALLBACK") == "true":
-        if os.getenv("LOCAL_MOCK_MODE") == "true":
-            print("[DEV FALLBACK - NOT FOR PRODUCTION] Routing LLM call to local Ollama instead of Catalyst Qwen")
-            async with httpx.AsyncClient() as client:
-                try:
-                    # Assuming user has qwen or llama3 installed on local ollama
-                    r = await client.post("http://localhost:11434/api/generate", json={
-                        "model": "llama3.2", # Fallback model
-                        "system": system,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {"temperature": temperature}
-                    }, timeout=30.0)
-                    if r.status_code == 200:
-                        return r.json()["response"]
-                except Exception as e:
-                    return f"[Mock LLM Response - Local Ollama unavailable: {e}]"
 
-        groq_key = os.getenv("GROQ_API_KEY")
-        if groq_key:
-            print("[DEV FALLBACK - NOT FOR PRODUCTION] Routing LLM call to Groq (Llama 3.3 70B) instead of Catalyst Qwen")
-            async with httpx.AsyncClient() as client:
-                r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers={
-                    "Authorization": f"Bearer {groq_key}",
-                    "Content-Type": "application/json"
-                }, json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": temperature,
-                    "max_tokens": max_tokens
-                }, timeout=45.0)
-                r.raise_for_status()
-                return r.json()["choices"][0]["message"]["content"]
 
     async with httpx.AsyncClient() as client:
         r = await client.post(CATALYST_LLM_URL(), headers=_quickml_headers(), json={

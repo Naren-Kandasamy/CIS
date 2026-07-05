@@ -37,5 +37,5 @@ async def llm_complete_resilient(prompt: str, system: str, **kwargs) -> str:
                  continue
 
     raise RateLimitExhaustedError(
-        f"Qwen 14B rate limited/failed after {MAX_RETRIES} attempts"
+        f"Catalyst LLM rate limited/failed after {MAX_RETRIES} attempts"
     ) from last_error
