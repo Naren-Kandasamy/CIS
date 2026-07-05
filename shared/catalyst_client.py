@@ -45,10 +45,8 @@ def _headers() -> dict:
         "Content-Type": "application/json",
     }
 
-def _quickml_headers() -> dict:
-    token = _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
-    if not token:
-        raise EnvironmentError("CATALYST_API_TOKEN is not set")
+async def _quickml_headers() -> dict:
+    token = await _get_nosql_access_token()
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -68,7 +66,7 @@ async def llm_complete(prompt: str, system: str,
 
 
     async with httpx.AsyncClient() as client:
-        r = await client.post(CATALYST_LLM_URL(), headers=_quickml_headers(), json={
+        r = await client.post(CATALYST_LLM_URL(), headers=await _quickml_headers(), json={
             "model": "crm-di-glm47b_30b_it",
             "messages": [
                 {"role": "system", "content": system},
@@ -77,14 +75,14 @@ async def llm_complete(prompt: str, system: str,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
-            "chat_template_kwargs": {"enable_thinking": True}
+            "chat_template_kwargs": {"enable_thinking": False}
         }, timeout=45.0)
         r.raise_for_status()
         resp = r.json()
         try:
             return resp["choices"][0]["message"]["content"]
         except KeyError:
-            return resp.get("output", str(resp))
+            return resp.get("response", resp.get("output", str(resp)))
 
 async def vlm_extract(image_bytes: bytes, prompt: str, system: str) -> str:
     # BUG FIX: previously returned a hardcoded, realistic-looking fake FIR record
@@ -97,7 +95,7 @@ async def vlm_extract(image_bytes: bytes, prompt: str, system: str) -> str:
 
     image_b64 = base64.b64encode(image_bytes).decode()
     async with httpx.AsyncClient() as client:
-        r = await client.post(url, headers=_quickml_headers(), json={
+        r = await client.post(url, headers=await _quickml_headers(), json={
             "prompt": prompt,
             "model": "VL-Qwen3.6-35B-A3B",
             "images": [image_b64],
