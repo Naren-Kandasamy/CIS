@@ -79,3 +79,9 @@ test_pipeline.py
 # Demo outputs
 *.pdf
 *.mp3
+
+# Root-level UI redesign and analysis ignores
+ui-redesign/
+/*.md
+PS1_*
+.nosql_mock_db.json

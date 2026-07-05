@@ -305,7 +305,25 @@ async def _nosql_request(method: str, path: str, json_body) -> dict:
     raise last_error
 
 async def nosql_get(key: str) -> dict | None:
-    """Fetch a value from the real Catalyst NoSQL AppKeyValueStore table."""
+    """Fetch a value from the real Catalyst NoSQL AppKeyValueStore table with local fallback."""
+    project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
+    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
+    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
+    
+    if not project_id or not (token or refresh_token):
+        import json
+        import os
+        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
+        if not os.path.exists(db_path):
+            return None
+        try:
+            with open(db_path, "r") as f:
+                data = json.load(f)
+            val = data.get(key)
+            return {"value": val} if val is not None else None
+        except Exception:
+            return None
+
     resp = await _nosql_request("POST", "/item/fetch", {"keys": [{"item_key": {"S": key}}]})
     items = resp.get("data", {}).get("get") or []
     if not items:
@@ -314,12 +332,31 @@ async def nosql_get(key: str) -> dict | None:
 
 async def nosql_set(key: str, value: str, ttl: int = None):
     """
-    Upsert a value into the real Catalyst NoSQL AppKeyValueStore table.
-    ttl (seconds), if given, sets expires_at -- Catalyst auto-deletes items
-    past their expiry. Left unset by default so job status/session history
-    (which don't pass ttl) persist indefinitely; the NER cache explicitly
-    passes CACHE_TTL_SECONDS.
+    Upsert a value into the real Catalyst NoSQL AppKeyValueStore table with local fallback.
     """
+    project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
+    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
+    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
+    
+    if not project_id or not (token or refresh_token):
+        import json
+        import os
+        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
+        data = {}
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, "r") as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+        data[key] = value
+        try:
+            with open(db_path, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Failed to write to local mock NoSQL DB: {e}")
+        return
+
     item = {"item_key": {"S": key}, "item_value": {"S": value}}
     if ttl:
         item["expires_at"] = {"N": str(int(time.time()) + ttl)}
