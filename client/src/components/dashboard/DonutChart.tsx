@@ -18,8 +18,8 @@ export default function DonutChart({ data }: DonutChartProps) {
   const chartData = data && data.length > 0 ? data : DEFAULT_DATA;
   
   return (
-    <div style={{ height: '300px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px', boxSizing: 'border-box' }}>
-      <h3 style={{ color: 'white', marginBottom: '16px', fontSize: '16px', fontWeight: '500' }}>Crime Distribution</h3>
+    <div style={{ height: '300px', width: '100%', padding: '8px', boxSizing: 'border-box' }}>
+      <h3 style={{ color: 'white', marginBottom: '16px', fontSize: '15px', fontWeight: '500' }}>Crime Distribution</h3>
       <ResponsiveContainer width="100%" height="80%">
         <PieChart>
           <Pie

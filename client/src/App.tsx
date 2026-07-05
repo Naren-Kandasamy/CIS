@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, Loader2, LogOut } from 'lucide-react';
+import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, LogOut } from 'lucide-react';
 import DashboardPanel from './components/dashboard/DashboardPanel';
 import Login from './components/Login';
 
@@ -18,6 +18,16 @@ const SESSION_ID = sessionStorage.getItem("ps1_session_id") ?? (() => {
   sessionStorage.setItem("ps1_session_id", id);
   return id;
 })();
+
+const PIPELINE_STEPS = [
+  { key: 'understanding query', label: 'NER & Intent' },
+  { key: 'resolving entities', label: 'Entity Match' },
+  { key: 'planning execution', label: 'DAG Planner' },
+  { key: 'retrieving evidence', label: 'Retrieval' },
+  { key: 'confidence scoring', label: 'Confidence' },
+  { key: 'building visualization', label: 'Visualizer' },
+  { key: 'synthesizing response', label: 'Synthesis' }
+];
 
 export default function App() {
   const [authToken, setAuthToken] = useState<string | null>(() => sessionStorage.getItem("ps1_auth_token"));
@@ -246,39 +256,125 @@ export default function App() {
       <div className="ambient-bg" />
       <div className="app-container">
         {/* Sidebar */}
-        <aside className="sidebar">
-          <div className="brand">
+        <aside className="sidebar" aria-label="System Navigation">
+          <header className="brand">
             <div className="brand-icon">
               <Shield color="white" size={20} />
             </div>
             <h1>PS-1 <span>CIS</span></h1>
-          </div>
+          </header>
 
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div onClick={() => setActiveView('query')} style={{ padding: '12px', borderRadius: '12px', background: activeView === 'query' ? 'rgba(255,255,255,0.05)' : 'transparent', color: activeView === 'query' ? 'white' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-               <Search size={18} /> Active Query
-            </div>
-            <div onClick={() => setActiveView('dashboard')} style={{ padding: '12px', borderRadius: '12px', background: activeView === 'dashboard' ? 'rgba(255,255,255,0.05)' : 'transparent', color: activeView === 'dashboard' ? 'white' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-               <LayoutDashboard size={18} /> Dashboard
-            </div>
-            <div style={{ padding: '12px', borderRadius: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-               <Database size={18} /> Data Store
-            </div>
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} aria-label="Main Navigation">
+            <button
+              type="button"
+              onClick={() => setActiveView('query')}
+              style={{
+                width: '100%',
+                border: 'none',
+                textAlign: 'left',
+                font: 'inherit',
+                padding: '12px',
+                borderRadius: '12px',
+                background: activeView === 'query' ? 'rgba(255,255,255,0.05)' : 'transparent',
+                color: activeView === 'query' ? 'white' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                cursor: 'pointer'
+              }}
+              aria-current={activeView === 'query' ? 'page' : undefined}
+            >
+              <Search size={18} /> Active Query
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('dashboard')}
+              style={{
+                width: '100%',
+                border: 'none',
+                textAlign: 'left',
+                font: 'inherit',
+                padding: '12px',
+                borderRadius: '12px',
+                background: activeView === 'dashboard' ? 'rgba(255,255,255,0.05)' : 'transparent',
+                color: activeView === 'dashboard' ? 'white' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                cursor: 'pointer'
+              }}
+              aria-current={activeView === 'dashboard' ? 'page' : undefined}
+            >
+              <LayoutDashboard size={18} /> Dashboard
+            </button>
+            <button
+              type="button"
+              style={{
+                width: '100%',
+                border: 'none',
+                textAlign: 'left',
+                font: 'inherit',
+                padding: '12px',
+                borderRadius: '12px',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                cursor: 'not-allowed'
+              }}
+              disabled
+            >
+              <Database size={18} /> Data Store
+            </button>
           </nav>
 
-          <div style={{ marginTop: 'auto' }}>
+          <footer style={{ marginTop: 'auto' }}>
             {displayName && (
               <div style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                 Signed in as <strong style={{ color: 'white' }}>{displayName}</strong>
               </div>
             )}
-            <div style={{ padding: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-               <Settings size={18} /> Settings
-            </div>
-            <div onClick={handleLogout} style={{ padding: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-               <LogOut size={18} /> Sign Out
-            </div>
-          </div>
+            <button
+              type="button"
+              style={{
+                width: '100%',
+                border: 'none',
+                textAlign: 'left',
+                font: 'inherit',
+                padding: '12px',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                cursor: 'pointer',
+                background: 'transparent'
+              }}
+              aria-label="Settings"
+            >
+              <Settings size={18} /> Settings
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              style={{
+                width: '100%',
+                border: 'none',
+                textAlign: 'left',
+                font: 'inherit',
+                padding: '12px',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                cursor: 'pointer',
+                background: 'transparent'
+              }}
+              aria-label="Sign Out"
+            >
+              <LogOut size={18} /> Sign Out
+            </button>
+          </footer>
         </aside>
 
         {/* Main Content Area */}
@@ -286,69 +382,146 @@ export default function App() {
           {activeView === 'query' ? (
             <>
               <div className="chat-messages">
-            {messages.map(msg => (
-              <div key={msg.id} className={`message ${msg.role}`}>
-                <div className="message-avatar">
-                  {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="white" />}
-                </div>
-                <div className="message-content-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '100%' }}>
-                  
-                  {msg.status && (
-                    <div className="status-pill">
-                      <div className="pulse" />
-                      <span style={{ textTransform: 'capitalize' }}>{msg.status}...</span>
+                {messages.map(msg => (
+                  <div key={msg.id} className={`message ${msg.role}`}>
+                    <div className="message-avatar">
+                      {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="white" />}
                     </div>
-                  )}
-                  
-                  <div className="message-content">
-                    {msg.content || (msg.isStreaming ? <Loader2 className="animate-spin" size={16} /> : '')}
+                    <div className="message-content-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '100%' }}>
+                      
+                      {msg.status && (
+                        <div className="w-full max-w-lg mb-4 mt-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="status-pill inline-flex items-center gap-2 py-1 px-3 bg-blue-950/20 border border-blue-900/50 rounded-full text-xs text-blue-400">
+                              <div className="pulse w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                              <span className="capitalize font-medium text-[11px]">{msg.status}...</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 w-full mt-3 px-1">
+                            {PIPELINE_STEPS.map((step, idx) => {
+                              const currentStepIdx = PIPELINE_STEPS.findIndex(s => s.key === msg.status?.toLowerCase());
+                              const isCompleted = currentStepIdx > idx;
+                              const isActive = msg.status?.toLowerCase() === step.key;
+                              
+                              return (
+                                <React.Fragment key={step.key}>
+                                  <div className="flex flex-col items-center flex-1 relative group">
+                                    <div 
+                                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-all duration-300 border ${
+                                        isCompleted ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-500/30' :
+                                        isActive ? 'bg-blue-500/20 border-blue-400 text-blue-300 animate-pulse' :
+                                        'bg-zinc-900 border-zinc-800 text-zinc-500'
+                                      }`}
+                                    >
+                                      {isCompleted ? '✓' : idx + 1}
+                                    </div>
+                                    <span 
+                                      className={`text-[8px] mt-1.5 hidden md:block whitespace-nowrap transition-colors ${
+                                        isActive ? 'text-blue-400 font-medium' : isCompleted ? 'text-zinc-300' : 'text-zinc-600'
+                                      }`}
+                                    >
+                                      {step.label}
+                                    </span>
+                                  </div>
+                                  {idx < PIPELINE_STEPS.length - 1 && (
+                                    <div 
+                                      className={`h-0.5 flex-1 mx-0.5 rounded transition-all duration-300 ${
+                                        isCompleted ? 'bg-blue-600' : 'bg-zinc-850'
+                                      }`} 
+                                    />
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="message-content">
+                        {msg.content || (msg.isStreaming ? (
+                          <div className="flex flex-col gap-2 py-1">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-2 h-2 rounded-full bg-blue-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                            <div className="w-48 h-3 rounded bg-zinc-800/60 animate-pulse" />
+                            <div className="w-36 h-2.5 rounded bg-zinc-800/40 animate-pulse" />
+                          </div>
+                        ) : '')}
+                      </div>
+                      
+                      {msg.evidence && msg.evidence.length > 0 && (
+                        <div className="evidence-card" style={{ background: 'transparent', border: 'none', padding: 0 }}>
+                          <details className="evidence-details group" style={{ width: '100%' }}>
+                            <summary className="evidence-summary cursor-pointer select-none list-none flex items-center justify-between py-2 border-b border-white/10">
+                              <div className="flex items-center gap-2 text-white font-medium">
+                                <Database size={14} className="text-blue-500" />
+                                <span>Retrieved Evidence ({msg.evidence.length} Citations)</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground group-open:rotate-180 transition-transform duration-200">▼</span>
+                            </summary>
+                            <div className="evidence-content grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                              {msg.evidence.map((item, idx) => {
+                                const confidenceColor = 
+                                  item.confidence?.toLowerCase() === 'high' ? 'text-emerald-400 bg-emerald-950/20 border-emerald-800/50' :
+                                  item.confidence?.toLowerCase() === 'medium' ? 'text-amber-400 bg-amber-950/20 border-amber-800/50' :
+                                  'text-rose-400 bg-rose-950/20 border-rose-800/50';
+                                return (
+                                  <div key={idx} className="evidence-item p-3 rounded-lg border border-white/10 bg-zinc-950/50 flex flex-col gap-2">
+                                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                                      <span className="font-semibold text-xs text-blue-400">{item.fir_id || "No Case ID"}</span>
+                                      {item.confidence && (
+                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-medium ${confidenceColor}`}>
+                                          {item.confidence.toUpperCase()}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs space-y-1 text-muted-foreground">
+                                      {item.data?.crime_type && <div><strong>Type:</strong> {item.data.crime_type}</div>}
+                                      {item.data?.district && <div><strong>District:</strong> {item.data.district}</div>}
+                                      {item.data?.Date && <div><strong>Date:</strong> {item.data.Date}</div>}
+                                      {item.data?.weapon && <div><strong>Weapon:</strong> {item.data.weapon}</div>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  
-                  {msg.evidence && msg.evidence.length > 0 && (
-                    <div className="evidence-card">
-                       <div className="evidence-header">
-                         <Database size={14} /> Retrieved Evidence
-                       </div>
-                       <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-secondary)' }}>
-                         {JSON.stringify(msg.evidence, null, 2)}
-                       </pre>
-                    </div>
-                  )}
-                </div>
+                ))}
+                <div ref={messagesEndRef} />
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
 
-          <div className="input-area">
-            <form onSubmit={handleSubmit} className="input-box">
-              <button type="button" className="action-btn">
-                <Paperclip size={20} />
-              </button>
-              <input 
-                type="text" 
-                placeholder="Ask about cases, sections, or criminals..." 
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                disabled={isLoading}
-              />
-              <button 
-                type="button" 
-                className={`action-btn ${isRecording ? 'recording' : ''}`}
-                onClick={handleMicClick}
-                style={isRecording ? { color: '#ff4444', animation: 'pulse 1.5s infinite' } : {}}
-                disabled={isLoading && !isRecording}
-              >
-                <Mic size={20} />
-              </button>
-              <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading}>
-                <Send size={18} />
-              </button>
-            </form>
-          </div>
-          </>
+              <div className="input-area">
+                <form onSubmit={handleSubmit} className="input-box">
+                  <button type="button" className="action-btn" aria-label="Attach file">
+                    <Paperclip size={20} />
+                  </button>
+                  <input 
+                    type="text" 
+                    placeholder="Ask about cases, sections, or criminals..." 
+                    value={inputValue}
+                    onChange={e => setInputValue(e.target.value)}
+                    disabled={isLoading}
+                  />
+                  <button type="button" className="action-btn" aria-label="Voice input">
+                    <Mic size={20} />
+                  </button>
+                  <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading} aria-label="Send message">
+                    <Send size={18} />
+                  </button>
+                </form>
+              </div>
+            </>
           ) : (
-            <DashboardPanel visualization={messages.filter(m => m.role === 'assistant').pop()?.visualization} />
+            <DashboardPanel 
+              visualization={messages.filter(m => m.role === 'assistant').pop()?.visualization} 
+              evidence={messages.filter(m => m.role === 'assistant').pop()?.evidence}
+            />
           )}
         </main>
       </div>
