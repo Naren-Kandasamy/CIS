@@ -21,6 +21,20 @@ async def get_driver():
 async def run_query(cypher: str, params: dict = None) -> list:
     if params is None:
         params = {}
+        
+    if os.getenv("LOCAL_MOCK_MODE", "false").lower() == "true":
+        # Return mock evidence so the LLM can test reasoning logic
+        return [{
+            "fir_id": "MOCK-FIR-001",
+            "crime_no": "123/2023",
+            "district": params.get("city", "Unknown City"),
+            "crime_type": "Robbery",
+            "modus_operandi": "Suspect used a specialized glass cutter to breach the rear window of the house.",
+            "narrative": "At 2AM, the suspect approached the rear window. A specialized glass cutter was found at the scene.",
+            "date": "2023-11-14",
+            "score": 0.95
+        }]
+        
     driver = await get_driver()
     async with driver.session() as session:
         result = await session.run(cypher, params)

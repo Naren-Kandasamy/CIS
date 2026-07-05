@@ -34,8 +34,16 @@ async def write_fir_to_memgraph(fir: dict):
     try:
         # Create FIR Node
         await run_write(
-            "MERGE (f:FIR {id: $fid}) SET f.date = $date", 
-            {"fid": fir["fir_internal_id"], "date": fir["incident_date"]}
+            "MERGE (f:FIR {id: $fid}) SET f.date = $date, f.crime_no = $crime_no, f.district = $district, f.crime_type = $crime_type, f.modus_operandi = $mo, f.narrative = $narrative", 
+            {
+                "fid": fir["fir_internal_id"], 
+                "date": fir["incident_date"],
+                "crime_no": fir.get("crime_no", ""),
+                "district": fir.get("district_name", ""),
+                "crime_type": fir.get("crime_sub_head_name", ""),
+                "mo": fir.get("mo_descriptor", ""),
+                "narrative": fir.get("narrative", "")
+            }
         )
         # Create Accused Nodes and link them
         for acc in fir.get("accused_ids", []):
