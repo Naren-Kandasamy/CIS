@@ -49,6 +49,69 @@ export default function App() {
   const [activeView, setActiveView] = useState<'query' | 'dashboard'>('query');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+
+  const handleMicClick = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+          formData.append('language', 'kn'); // Default to Kannada for PS-1
+
+          try {
+            setIsLoading(true);
+            const response = await fetch('/api/transcribe', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${authToken}`
+              },
+              body: formData
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
+            } else {
+              console.error('Transcription failed:', await response.text());
+            }
+          } catch (err) {
+            console.error('Error sending audio:', err);
+          } finally {
+            setIsLoading(false);
+          }
+          
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error('Error accessing microphone:', err);
+        alert('Could not access microphone.');
+      }
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -269,7 +332,13 @@ export default function App() {
                 onChange={e => setInputValue(e.target.value)}
                 disabled={isLoading}
               />
-              <button type="button" className="action-btn">
+              <button 
+                type="button" 
+                className={`action-btn ${isRecording ? 'recording' : ''}`}
+                onClick={handleMicClick}
+                style={isRecording ? { color: '#ff4444', animation: 'pulse 1.5s infinite' } : {}}
+                disabled={isLoading && !isRecording}
+              >
                 <Mic size={20} />
               </button>
               <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading}>
