@@ -129,41 +129,41 @@ export function RecentConversations({
 
 	return (
 		<div
-			className={cn("flex flex-col bg-[#13131a]/40 border border-white/5 rounded-2xl shadow-xl backdrop-blur-md gap-5", className)}
+			className={cn("flex flex-col bg-card border border-border rounded-2xl shadow-sm gap-5", className)}
 			style={{ padding: '28px' }}
 		>
 			<div className="space-y-1">
-				<h3 className="text-white text-lg font-semibold">Recent Citations</h3>
-				<p className="text-zinc-400 text-sm">
+				<h3 className="text-foreground text-lg font-semibold">Recent Citations</h3>
+				<p className="text-muted-foreground text-sm">
 					Historical crime evidence loaded in scope.
 				</p>
 			</div>
 			<div className="overflow-x-auto">
 				<Table>
-					<TableHeader className="border-white/5">
-						<TableRow className="hover:bg-transparent border-white/5">
-							<TableHead className="text-zinc-400 font-bold text-xs uppercase tracking-wider py-3.5 pl-1">Case Reference</TableHead>
-							<TableHead className="text-zinc-400 font-bold text-xs uppercase tracking-wider py-3.5">Crime Category</TableHead>
-							<TableHead className="text-zinc-400 font-bold text-xs uppercase tracking-wider py-3.5">District</TableHead>
-							<TableHead className="text-zinc-400 font-bold text-xs uppercase tracking-wider py-3.5">Incident Date</TableHead>
-							<TableHead className="text-zinc-400 font-bold text-xs uppercase tracking-wider py-3.5">Weapon Involved</TableHead>
-							<TableHead className="text-zinc-400 font-bold text-xs uppercase tracking-wider py-3.5 pl-4 text-left">Confidence</TableHead>
+					<TableHeader className="border-border">
+						<TableRow className="hover:bg-transparent border-border">
+							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Case Reference</TableHead>
+							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Crime Category</TableHead>
+							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">District</TableHead>
+							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Incident Date</TableHead>
+							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Weapon Involved</TableHead>
+							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Confidence</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{caseRows.map((r, idx) => (
-							<TableRow className="hover:bg-white/5 border-white/5 transition-colors duration-150" key={idx}>
-								<TableCell className="py-3.5 pl-1">
+							<TableRow className="hover:bg-muted/50 border-border transition-colors duration-150" key={idx}>
+								<TableCell className="px-4 py-6 text-left">
 									<div className="flex items-center gap-2">
-										<Shield className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-										<span className="font-semibold text-[13px] text-white">{r.firId}</span>
+										<Shield className="h-3.5 w-3.5 text-primary shrink-0" />
+										<span className="font-semibold text-[13px] text-foreground">{r.firId}</span>
 									</div>
 								</TableCell>
-								<TableCell className="py-3.5 text-[13.5px] text-zinc-300 font-medium">{r.crimeType}</TableCell>
-								<TableCell className="py-3.5 text-[13.5px] text-zinc-300">{r.district}</TableCell>
-								<TableCell className="py-3.5 text-[12.5px] text-zinc-400 font-mono">{r.date}</TableCell>
-								<TableCell className="py-3.5 text-[13.5px] text-zinc-300">{r.weapon}</TableCell>
-								<TableCell className="py-3.5 pl-4 text-left">
+								<TableCell className="px-4 py-6 text-left text-[13.5px] text-foreground/90 font-medium">{r.crimeType}</TableCell>
+								<TableCell className="px-4 py-6 text-left text-[13.5px] text-foreground/90">{r.district}</TableCell>
+								<TableCell className="px-4 py-6 text-left text-[12.5px] text-muted-foreground font-mono">{r.date}</TableCell>
+								<TableCell className="px-4 py-6 text-left text-[13.5px] text-foreground/90">{r.weapon}</TableCell>
+								<TableCell className="px-4 py-6 text-left">
 									<span className={cn("text-xs font-bold uppercase tracking-wider", getConfidenceTextColor(r.confidence))}>
 										{r.confidence}
 									</span>
