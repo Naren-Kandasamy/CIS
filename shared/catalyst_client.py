@@ -310,7 +310,7 @@ async def nosql_get(key: str) -> dict | None:
     token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
     refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
     
-    if not project_id or not (token or refresh_token):
+    if _env("MOCK_NOSQL_ONLY", "") == "true" or not project_id or not (token or refresh_token):
         import json
         import os
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
@@ -338,7 +338,7 @@ async def nosql_set(key: str, value: str, ttl: int = None):
     token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
     refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
     
-    if not project_id or not (token or refresh_token):
+    if _env("MOCK_NOSQL_ONLY", "") == "true" or not project_id or not (token or refresh_token):
         import json
         import os
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
