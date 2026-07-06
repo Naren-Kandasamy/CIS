@@ -58,17 +58,17 @@ export function DashboardStats({ visualization }: { visualization?: any }) {
     <>
       {crimeStats.map((s) => (
         <div 
-          className="bg-[#13131a]/40 border border-white/5 rounded-2xl shadow-xl backdrop-blur-md flex flex-col gap-3.5 hover:border-white/10 transition-all duration-300"
+          className="bg-card border border-border rounded-2xl shadow-sm flex flex-col justify-between h-full hover:border-border/80 hover:shadow-md transition-all duration-300 gap-3.5"
           style={{ padding: '16px 20px' }}
           key={s.label}
         >
           <div>
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest block leading-normal">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block leading-normal">
               {s.label}
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <p className="font-bold text-3xl text-white tabular-nums tracking-tight leading-none">
+            <p className="font-extrabold text-3xl text-foreground tabular-nums tracking-tight leading-none">
               {s.value}
             </p>
             <div className="flex items-center gap-1.5 text-xs mt-1.5">
@@ -76,7 +76,7 @@ export function DashboardStats({ visualization }: { visualization?: any }) {
                 <DeltaIcon />
                 <DeltaValue />
               </Delta>
-              <span className="text-zinc-500 text-xs">{s.footnote}</span>
+              <span className="text-foreground/80 text-[13px] font-bold">{s.footnote}</span>
             </div>
           </div>
         </div>
