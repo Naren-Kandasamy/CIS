@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
-import { LabelList, Pie, PieChart } from "recharts";
+import { LabelList, Pie, PieChart, Cell } from "recharts";
 import {
 	Card,
 	CardContent,
@@ -11,8 +11,6 @@ import {
 import {
 	type ChartConfig,
 	ChartContainer,
-	ChartLegend,
-	ChartLegendContent,
 	ChartTooltip,
 	ChartTooltipContent,
 } from "@/components/ui/chart";
@@ -103,18 +101,18 @@ export function ChannelBreakdownChart({
 
 	return (
 		<div
-			className={cn("flex flex-col bg-[#13131a]/40 border border-white/5 rounded-2xl shadow-xl backdrop-blur-md gap-5", className)}
+			className={cn("flex flex-col bg-card border border-border rounded-2xl shadow-sm gap-5", className)}
 			style={{ padding: '28px' }}
 		>
 			<div className="space-y-1">
-				<h3 className="text-white text-lg font-semibold">Crime Distribution</h3>
-				<p className="text-zinc-400 text-sm">
+				<h3 className="text-foreground text-lg font-semibold">Crime Distribution</h3>
+				<p className="text-muted-foreground text-sm">
 					Breakdown of incidents by category.
 				</p>
 			</div>
-			<div className="flex-1 min-h-[220px] flex items-center justify-center w-full">
+			<div className="flex-1 min-h-[220px] flex flex-col items-center justify-center w-full">
 				<ChartContainer
-					className="mx-auto h-[200px] w-[200px]"
+					className="mx-auto aspect-square h-[200px] w-[200px]"
 					config={chartConfig}
 				>
 					<PieChart>
@@ -122,14 +120,14 @@ export function ChannelBreakdownChart({
 							cursor={false}
 							content={
 								<ChartTooltipContent
-									className="bg-zinc-950 border border-white/10 text-white text-xs py-1.5 px-2.5 rounded-lg"
+									className="bg-card border border-border text-foreground text-xs py-1.5 px-2.5 rounded-lg"
 									formatter={(value, name) => {
 										const configEntry = chartConfig[name as keyof typeof chartConfig];
 										const label = configEntry ? configEntry.label : String(name);
 										return (
-											<div className="flex items-center gap-1.5 text-xs text-white">
+											<div className="flex items-center gap-1.5 text-xs text-foreground">
 												<span className="font-semibold capitalize">{label}:</span>
-												<span className="font-mono text-zinc-300">{value}%</span>
+												<span className="font-mono text-muted-foreground">{value}%</span>
 											</div>
 										);
 									}}
@@ -141,10 +139,14 @@ export function ChannelBreakdownChart({
 							data={chartData}
 							dataKey="share"
 							innerRadius={55}
+							outerRadius={80}
 							nameKey="channel"
 							strokeWidth={3}
 							stroke="var(--card)"
 						>
+							{chartData.map((entry, index) => (
+								<Cell key={`cell-${index}`} fill={entry.fill} />
+							))}
 							<LabelList
 								dataKey="share"
 								formatter={(label) => {
@@ -152,15 +154,28 @@ export function ChannelBreakdownChart({
 									return Number.isFinite(n) ? `${n}%` : String(label ?? "");
 								}}
 								position="outside"
-								className="fill-zinc-400 text-[10px] font-semibold"
+								fill="var(--foreground)"
+								className="text-[10px] font-bold"
 							/>
 						</Pie>
-						<ChartLegend
-							className="-translate-y-2 flex-wrap gap-x-2.5 gap-y-1.5 text-zinc-400 text-xs capitalize font-semibold"
-							content={<ChartLegendContent nameKey="channel" />}
-						/>
 					</PieChart>
 				</ChartContainer>
+				{/* Custom Legend stacked in a single column */}
+				<div className="flex flex-col gap-2 mt-6 text-foreground text-sm capitalize font-semibold w-fit mx-auto">
+					{chartData.map((entry, index) => {
+						const configEntry = chartConfig[entry.channel as keyof typeof chartConfig];
+						const label = configEntry ? configEntry.label : entry.channel;
+						return (
+							<div key={index} className="flex items-center gap-2">
+								<div
+									className="h-2.5 w-2.5 rounded-[2px] shrink-0"
+									style={{ backgroundColor: entry.fill }}
+								/>
+								<span>{label}</span>
+							</div>
+						);
+					})}
+				</div>
 			</div>
 		</div>
 	);
