@@ -273,10 +273,11 @@ export default function App() {
                 border: 'none',
                 textAlign: 'left',
                 font: 'inherit',
+                fontWeight: '700',
                 padding: '12px',
                 borderRadius: '12px',
-                background: activeView === 'query' ? 'rgba(255,255,255,0.05)' : 'transparent',
-                color: activeView === 'query' ? 'white' : 'var(--text-secondary)',
+                background: activeView === 'query' ? 'rgba(50, 98, 115, 0.08)' : 'transparent',
+                color: activeView === 'query' ? 'var(--primary)' : 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
@@ -294,10 +295,11 @@ export default function App() {
                 border: 'none',
                 textAlign: 'left',
                 font: 'inherit',
+                fontWeight: '700',
                 padding: '12px',
                 borderRadius: '12px',
-                background: activeView === 'dashboard' ? 'rgba(255,255,255,0.05)' : 'transparent',
-                color: activeView === 'dashboard' ? 'white' : 'var(--text-secondary)',
+                background: activeView === 'dashboard' ? 'rgba(50, 98, 115, 0.08)' : 'transparent',
+                color: activeView === 'dashboard' ? 'var(--primary)' : 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
@@ -314,6 +316,7 @@ export default function App() {
                 border: 'none',
                 textAlign: 'left',
                 font: 'inherit',
+                fontWeight: '700',
                 padding: '12px',
                 borderRadius: '12px',
                 background: 'transparent',
@@ -332,7 +335,7 @@ export default function App() {
           <footer style={{ marginTop: 'auto' }}>
             {displayName && (
               <div style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                Signed in as <strong style={{ color: 'white' }}>{displayName}</strong>
+                Signed in as <strong style={{ color: 'var(--primary)' }}>{displayName}</strong>
               </div>
             )}
             <button
@@ -385,15 +388,15 @@ export default function App() {
                 {messages.map(msg => (
                   <div key={msg.id} className={`message ${msg.role}`}>
                     <div className="message-avatar">
-                      {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="white" />}
+                      {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="var(--accent-primary)" />}
                     </div>
                     <div className="message-content-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '100%' }}>
                       
                       {msg.status && (
                         <div className="w-full max-w-lg mb-4 mt-2">
                           <div className="flex items-center justify-between mb-2">
-                            <div className="status-pill inline-flex items-center gap-2 py-1 px-3 bg-blue-950/20 border border-blue-900/50 rounded-full text-xs text-blue-400">
-                              <div className="pulse w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                            <div className="status-pill inline-flex items-center gap-2 py-1 px-3 bg-primary/10 border border-primary/20 rounded-full text-xs text-primary">
+                              <div className="pulse w-1.5 h-1.5 rounded-full bg-[#ff9f1c] animate-ping" />
                               <span className="capitalize font-medium text-[11px]">{msg.status}...</span>
                             </div>
                           </div>
@@ -408,16 +411,16 @@ export default function App() {
                                   <div className="flex flex-col items-center flex-1 relative group">
                                     <div 
                                       className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-all duration-300 border ${
-                                        isCompleted ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-500/30' :
-                                        isActive ? 'bg-blue-500/20 border-blue-400 text-blue-300 animate-pulse' :
-                                        'bg-zinc-900 border-zinc-800 text-zinc-500'
+                                        isCompleted ? 'bg-[#326273] border-[#326273] text-white shadow-sm' :
+                                        isActive ? 'bg-[#ffbf69]/20 border-[#ff9f1c] text-[#ff9f1c] animate-pulse' :
+                                        'bg-muted border-border text-muted-foreground'
                                       }`}
                                     >
                                       {isCompleted ? '✓' : idx + 1}
                                     </div>
                                     <span 
                                       className={`text-[8px] mt-1.5 hidden md:block whitespace-nowrap transition-colors ${
-                                        isActive ? 'text-blue-400 font-medium' : isCompleted ? 'text-zinc-300' : 'text-zinc-600'
+                                        isActive ? 'text-[#ff9f1c] font-semibold' : isCompleted ? 'text-[#326273] font-medium' : 'text-muted-foreground'
                                       }`}
                                     >
                                       {step.label}
@@ -426,7 +429,7 @@ export default function App() {
                                   {idx < PIPELINE_STEPS.length - 1 && (
                                     <div 
                                       className={`h-0.5 flex-1 mx-0.5 rounded transition-all duration-300 ${
-                                        isCompleted ? 'bg-blue-600' : 'bg-zinc-850'
+                                        isCompleted ? 'bg-[#326273]' : 'bg-border'
                                       }`} 
                                     />
                                   )}
@@ -441,12 +444,12 @@ export default function App() {
                         {msg.content || (msg.isStreaming ? (
                           <div className="flex flex-col gap-2 py-1">
                             <div className="flex items-center gap-1.5 mb-1">
-                              <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <span className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <span className="w-2 h-2 rounded-full bg-blue-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+                              <span className="w-2 h-2 rounded-full bg-[#326273] animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-2 h-2 rounded-full bg-[#ff9f1c] animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-2 h-2 rounded-full bg-[#ffbf69] animate-bounce" style={{ animationDelay: '300ms' }} />
                             </div>
-                            <div className="w-48 h-3 rounded bg-zinc-800/60 animate-pulse" />
-                            <div className="w-36 h-2.5 rounded bg-zinc-800/40 animate-pulse" />
+                            <div className="w-48 h-3 rounded bg-muted/60 animate-pulse" />
+                            <div className="w-36 h-2.5 rounded bg-muted/40 animate-pulse" />
                           </div>
                         ) : '')}
                       </div>
@@ -454,9 +457,9 @@ export default function App() {
                       {msg.evidence && msg.evidence.length > 0 && (
                         <div className="evidence-card" style={{ background: 'transparent', border: 'none', padding: 0 }}>
                           <details className="evidence-details group" style={{ width: '100%' }}>
-                            <summary className="evidence-summary cursor-pointer select-none list-none flex items-center justify-between py-2 border-b border-white/10">
-                              <div className="flex items-center gap-2 text-white font-medium">
-                                <Database size={14} className="text-blue-500" />
+                            <summary className="evidence-summary cursor-pointer select-none list-none flex items-center justify-between py-2 border-b border-border">
+                              <div className="flex items-center gap-2 text-foreground font-medium">
+                                <Database size={14} className="text-primary" />
                                 <span>Retrieved Evidence ({msg.evidence.length} Citations)</span>
                               </div>
                               <span className="text-xs text-muted-foreground group-open:rotate-180 transition-transform duration-200">▼</span>
@@ -464,13 +467,13 @@ export default function App() {
                             <div className="evidence-content grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                               {msg.evidence.map((item, idx) => {
                                 const confidenceColor = 
-                                  item.confidence?.toLowerCase() === 'high' ? 'text-emerald-400 bg-emerald-950/20 border-emerald-800/50' :
-                                  item.confidence?.toLowerCase() === 'medium' ? 'text-amber-400 bg-amber-950/20 border-amber-800/50' :
-                                  'text-rose-400 bg-rose-950/20 border-rose-800/50';
+                                  item.confidence?.toLowerCase() === 'high' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                                  item.confidence?.toLowerCase() === 'medium' ? 'text-amber-700 bg-amber-50 border-amber-200' :
+                                  'text-rose-700 bg-rose-50 border-rose-200';
                                 return (
-                                  <div key={idx} className="evidence-item p-3 rounded-lg border border-white/10 bg-zinc-950/50 flex flex-col gap-2">
-                                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                                      <span className="font-semibold text-xs text-blue-400">{item.fir_id || "No Case ID"}</span>
+                                  <div key={idx} className="evidence-item p-3 rounded-lg border border-border bg-card shadow-sm flex flex-col gap-2">
+                                    <div className="flex items-center justify-between border-b border-border pb-2">
+                                      <span className="font-semibold text-xs text-primary">{item.fir_id || "No Case ID"}</span>
                                       {item.confidence && (
                                         <span className={`text-[9px] px-2 py-0.5 rounded-full border font-medium ${confidenceColor}`}>
                                           {item.confidence.toUpperCase()}

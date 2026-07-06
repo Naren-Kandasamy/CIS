@@ -29,8 +29,8 @@ export default function NetworkGraph({ elements }: NetworkGraphProps) {
 
   return (
     <div style={{ height: '400px', width: '100%', padding: '8px', boxSizing: 'border-box' }}>
-      <h3 style={{ color: 'white', marginBottom: '16px', fontSize: '15px', fontWeight: '500' }}>Entity Network</h3>
-      <div style={{ height: 'calc(100% - 40px)', width: '100%', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', overflow: 'hidden' }}>
+      <h3 style={{ color: 'var(--foreground)', marginBottom: '16px', fontSize: '15px', fontWeight: '500' }}>Entity Network</h3>
+      <div style={{ height: 'calc(100% - 40px)', width: '100%', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
         <CytoscapeComponent 
           elements={graphElements} 
           layout={{ name: 'cose' }}
@@ -39,10 +39,10 @@ export default function NetworkGraph({ elements }: NetworkGraphProps) {
             {
               selector: 'node',
               style: {
-                'background-color': '#4287f5',
+                'background-color': '#ffbf69',
                 'label': 'data(label)',
-                'color': '#fff',
-                'text-outline-color': '#222',
+                'color': '#100b00',
+                'text-outline-color': '#ffffff',
                 'text-outline-width': 2,
                 'font-size': '12px'
               }
@@ -50,30 +50,32 @@ export default function NetworkGraph({ elements }: NetworkGraphProps) {
             {
               selector: 'node.person',
               style: {
-                'background-color': '#f54242',
+                'background-color': '#ff9f1c',
                 'shape': 'ellipse'
               }
             },
             {
               selector: 'node.fir',
               style: {
-                'background-color': '#42f569',
-                'shape': 'rectangle'
+                'background-color': '#326273',
+                'shape': 'rectangle',
+                'color': '#ffffff',
+                'text-outline-color': '#326273'
               }
             },
             {
               selector: 'edge',
               style: {
                 'width': 2,
-                'line-color': '#555',
-                'target-arrow-color': '#555',
+                'line-color': '#326273',
+                'target-arrow-color': '#326273',
                 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier',
                 'label': 'data(label)',
-                'color': '#aaa',
+                'color': '#326273',
                 'font-size': '10px',
                 'text-background-opacity': 1,
-                'text-background-color': '#222',
+                'text-background-color': '#ffffff',
                 'text-background-padding': '2px'
               }
             }
