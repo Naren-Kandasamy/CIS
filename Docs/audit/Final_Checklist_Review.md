@@ -13,29 +13,29 @@ This list aggregates all the unchecked items across the official project phases 
 - [x] **API Keys & LLM Connection**: Renew the `CATALYST_API_TOKEN` and confirm a Qwen 14B test call from the pipeline Function returns valid JSON in the cloud.
 - [x] **KB Initialization**: Upload the first batch of FIR documents into the Catalyst KB and ensure they are searchable.
 - [x] **Function Memory Limit**: Configure pipeline Function memory explicitly at 512MB (`catalyst functions:config --memory 512`) to prevent out-of-memory errors.
-- [ ] **Prompt Injection Denylist (Layer 0a)**: Add a regex-based denylist to the `QueryRequest` model in `query.py` to block Cypher/SQL injection keywords before reaching the LLM.
+- [x] **Prompt Injection Denylist (Layer 0a)**: Add a regex-based denylist to the `QueryRequest` model in `query.py` to block Cypher/SQL injection keywords before reaching the LLM.
 
 ## Phase 2: Core Pipeline Integration
 *These items finalize the integration of external Catalyst services into the core application logic.*
 
-- [ ] **Voice/ASR Integration**: Test and wire the frontend `VoiceButton` directly to the live Catalyst Kannada ASR endpoint (replacing the local mock).
+- [x] **Voice/ASR Integration**: Test and wire the frontend `VoiceButton` directly to the live Catalyst Kannada ASR endpoint (replacing the local mock).
 - [x] **Full KB & ZTSQL Hydration**: Load the entire 5K FIR dataset into the Catalyst Knowledge Base and the ZTSQL Datastore.
-- [ ] **Qwen VLM for Scanned FIR OCR (Layer 0b)**: Create an `/api/upload` endpoint with strict MIME/size validation to accept FIR images and extract fields via the Qwen 3.6 35B VLM.
+- [x] **Qwen VLM for Scanned FIR OCR (Layer 0b)**: Create an `/api/upload` endpoint with strict MIME/size validation to accept FIR images and extract fields via the Qwen 3.6 35B VLM.
 
 ## Phase 3: DAG Planner + Full Dataset
 *All items in this phase (DAG Planner, Chaos Tests, Visualization UI, Dataset generation) were successfully completed and verified during local development!*
-- [ ] **DAG Planner Urgency Handling (Layer 2)**: Inject the `urgency` variable into the `DAG_PLANNER_SYSTEM` prompt in `dag_planner.py` to correctly cap graph depth and disable viz steps for `field_urgent` queries.
+- [x] **DAG Planner Urgency Handling (Layer 2)**: Inject the `urgency` variable into the `DAG_PLANNER_SYSTEM` prompt in `dag_planner.py` to correctly cap graph depth and disable viz steps for `field_urgent` queries.
 
 ## Phase 4: Robustness + Production Readiness
 *These items focus on hardening the deployed system and conducting strict evaluations before demo day.*
 
 - [x] **Codebase Hardening & Test Stabilization**: Pin Catalyst dependencies (`sse-starlette`, `python-multipart`), fix DAG fallback graph query tripling, and resolve test suite flakiness/auth issues.
-- [ ] **Production LLM Switchover**: Transition from the local/Groq fallback models (Llama 3.3 70B) to the live Catalyst production models (GLM-4.7-Flash and Qwen 3.6 35B VLM) and verify pipeline behavior.
+- [x] **Production LLM Switchover**: Transition from the local/Groq fallback models (Llama 3.3 70B) to the live Catalyst production models (GLM-4.7-Flash and Qwen 3.6 35B VLM) and verify pipeline behavior.
 
 - [x] **Memgraph Oracle VM Hardened**: Add persistent Docker volumes and a restart policy (`--restart unless-stopped`) to the Oracle VM.
-- [ ] **Blind Evaluation Packet**: Generate a packet of AI outputs and have a teammate (not involved in the narrative design) label them.
+- [x] **Blind Evaluation Packet**: Generate a packet of AI outputs and have a teammate (not involved in the narrative design) label them.
 - [ ] **Confidence Calibration**: Measure the Confidence Engine against these blind labels to ensure the `HIGH` confidence tier is >= 85% accurate.
-- [ ] **Confidence Engine OCR Penalty (Layer 4)**: Ensure any evidence extracted via the Qwen VLM carries an `ocr_extracted: true` flag, applying a 0.90 multiplier to its confidence score.
+- [x] **Confidence Engine OCR Penalty (Layer 4)**: Ensure any evidence extracted via the Qwen VLM carries an `ocr_extracted: true` flag, applying a 0.90 multiplier to its confidence score.
 - [x] **Full Catalyst Deployment Verified**: End-to-end cloud execution is confirmed. Fixed AppSail React routing (`/app/` base path), backend environment variable limits (`ZC_` prefix), and `sys.path` dependency loading.
 
 ## Pre-Demo Checklist (Judging Day Operations)

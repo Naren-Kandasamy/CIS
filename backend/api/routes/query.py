@@ -22,6 +22,14 @@ class QueryRequest(BaseModel):
             raise ValueError("session_id must be a valid UUID v4")
         return v
 
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        denylist = re.compile(r'(?i)\b(match|create|delete|drop|insert|update|alter|truncate|merge|set|remove)\b')
+        if denylist.search(v):
+            raise ValueError("query contains blocked SQL/Cypher keywords")
+        return v
+
 from backend.job_dispatch import dispatch_query_job
 
 @router.post("/api/query")

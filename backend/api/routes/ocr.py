@@ -6,7 +6,7 @@ router = APIRouter()
 
 ALLOWED_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"]
 
-@router.post("/api/ocr")
+@router.post("/api/upload")
 async def extract_ocr(image: UploadFile = File(...)):
     # BUG FIX: /api/ocr matches neither the middleware's "/transcribe" nor
     # "/upload" path checks, so there was no size enforcement anywhere --
