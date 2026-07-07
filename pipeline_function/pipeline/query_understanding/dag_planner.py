@@ -11,9 +11,14 @@ Each step: step_id, type, operation, params, depends_on (list of step_ids).
     Output ONLY valid JSON array. No preamble."""
 
 async def build_dag(intent_object: dict) -> list:
+    urgency = intent_object.get("urgency", "normal")
+    system_prompt = DAG_PLANNER_SYSTEM
+    if urgency == "field_urgent":
+        system_prompt += "\n    URGENCY is field_urgent. Cap graph depth and DISABLE viz steps."
+
     prompt = f"Intent object:\n{json.dumps(intent_object)}"
     try:
-        raw = await llm_complete(prompt=prompt, system=DAG_PLANNER_SYSTEM,
+        raw = await llm_complete(prompt=prompt, system=system_prompt,
                                   temperature=0.0, max_tokens=800)
     except Exception as e:
         print(f"[DAG Error] LLM call failed: {e}")

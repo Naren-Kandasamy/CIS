@@ -511,7 +511,13 @@ export default function App() {
                     onChange={e => setInputValue(e.target.value)}
                     disabled={isLoading}
                   />
-                  <button type="button" className="action-btn" aria-label="Voice input">
+                  <button 
+                    type="button" 
+                    className="action-btn" 
+                    aria-label="Voice input"
+                    onClick={handleMicClick}
+                    style={isRecording ? { color: 'var(--accent-primary)', opacity: 0.8 } : {}}
+                  >
                     <Mic size={20} />
                   </button>
                   <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading} aria-label="Send message">
