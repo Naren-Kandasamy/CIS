@@ -52,11 +52,10 @@ function Delta({
 			) : (
 				<div
 					className={cn(
-						"inline-flex items-center gap-1 tabular-nums font-bold",
+						"inline-flex items-center gap-1 text-muted-foreground tabular-nums",
 						"[&_svg]:size-3 [&_svg]:shrink-0",
-						value > 0 ? "text-emerald-600" : "",
-						value < 0 ? "text-red-500" : "",
-						value === 0 ? "text-muted-foreground" : "",
+						value > 0 ? "text-emerald-600 dark:text-emerald-400" : "",
+						value < 0 ? "text-rose-600 dark:text-rose-400" : "",
 						className
 					)}
 					data-slot="delta"

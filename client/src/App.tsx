@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, LogOut } from 'lucide-react';
 import DashboardPanel from './components/dashboard/DashboardPanel';
 import Login from './components/Login';
+import EntityDrawer from './components/dashboard/EntityDrawer';
+import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
 
 interface Message {
   id: string;
@@ -58,6 +60,70 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeView, setActiveView] = useState<'query' | 'dashboard'>('query');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { selectedEntity, openEntity, closeDrawer } = useEntityDrawer();
+
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+
+  const handleMicClick = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+          formData.append('language', 'kn'); // Default to Kannada for PS-1
+
+          try {
+            setIsLoading(true);
+            const response = await fetch('/api/transcribe', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${authToken}`
+              },
+              body: formData
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
+            } else {
+              console.error('Transcription failed:', await response.text());
+            }
+          } catch (err) {
+            console.error('Error sending audio:', err);
+          } finally {
+            setIsLoading(false);
+          }
+          
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error('Error accessing microphone:', err);
+        alert('Could not access microphone.');
+      }
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -196,7 +262,7 @@ export default function App() {
         <aside className="sidebar" aria-label="System Navigation">
           <header className="brand">
             <div className="brand-icon">
-              <Shield color="white" size={20} />
+              <Shield color="var(--accent-primary)" size={20} />
             </div>
             <h1>PS-1 <span>CIS</span></h1>
           </header>
@@ -210,11 +276,10 @@ export default function App() {
                 border: 'none',
                 textAlign: 'left',
                 font: 'inherit',
-                fontWeight: '700',
                 padding: '12px',
                 borderRadius: '12px',
-                background: activeView === 'query' ? 'rgba(50, 98, 115, 0.08)' : 'transparent',
-                color: activeView === 'query' ? 'var(--primary)' : 'var(--text-secondary)',
+                background: activeView === 'query' ? 'var(--sidebar-accent)' : 'transparent',
+                color: activeView === 'query' ? 'var(--text-primary)' : 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
@@ -232,11 +297,10 @@ export default function App() {
                 border: 'none',
                 textAlign: 'left',
                 font: 'inherit',
-                fontWeight: '700',
                 padding: '12px',
                 borderRadius: '12px',
-                background: activeView === 'dashboard' ? 'rgba(50, 98, 115, 0.08)' : 'transparent',
-                color: activeView === 'dashboard' ? 'var(--primary)' : 'var(--text-secondary)',
+                background: activeView === 'dashboard' ? 'var(--sidebar-accent)' : 'transparent',
+                color: activeView === 'dashboard' ? 'var(--text-primary)' : 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
@@ -253,7 +317,6 @@ export default function App() {
                 border: 'none',
                 textAlign: 'left',
                 font: 'inherit',
-                fontWeight: '700',
                 padding: '12px',
                 borderRadius: '12px',
                 background: 'transparent',
@@ -272,7 +335,7 @@ export default function App() {
           <footer style={{ marginTop: 'auto' }}>
             {displayName && (
               <div style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                Signed in as <strong style={{ color: 'var(--primary)' }}>{displayName}</strong>
+                Signed in as <strong style={{ color: 'var(--text-primary)' }}>{displayName}</strong>
               </div>
             )}
             <button
@@ -325,16 +388,16 @@ export default function App() {
                 {messages.map(msg => (
                   <div key={msg.id} className={`message ${msg.role}`}>
                     <div className="message-avatar">
-                      {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="var(--accent-primary)" />}
+                      {msg.role === 'assistant' ? <Shield size={20} color="var(--accent-primary)" /> : <Search size={20} color="white" />}
                     </div>
                     <div className="message-content-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '100%' }}>
                       
                       {msg.status && (
                         <div className="w-full max-w-lg mb-4 mt-2">
                           <div className="flex items-center justify-between mb-2">
-                            <div className="status-pill inline-flex items-center gap-2 py-1 px-3 bg-primary/10 border border-primary/20 rounded-full text-xs text-primary">
-                              <div className="pulse w-1.5 h-1.5 rounded-full bg-[#ff9f1c] animate-ping" />
-                              <span className="capitalize font-medium text-[11px]">{msg.status}...</span>
+                            <div className="status-pill inline-flex items-center gap-2 py-1 px-3">
+                              <div className="pulse w-1.5 h-1.5 rounded-full animate-ping" style={{ background: 'var(--accent-primary)' }} />
+                              <span className="uppercase font-medium text-[11px]">{msg.status}...</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-1 w-full mt-3 px-1">
@@ -347,27 +410,26 @@ export default function App() {
                                 <React.Fragment key={step.key}>
                                   <div className="flex flex-col items-center flex-1 relative group">
                                     <div 
-                                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-all duration-300 border ${
-                                        isCompleted ? 'bg-[#326273] border-[#326273] text-white shadow-sm' :
-                                        isActive ? 'bg-[#ffbf69]/20 border-[#ff9f1c] text-[#ff9f1c] animate-pulse' :
-                                        'bg-muted border-border text-muted-foreground'
-                                      }`}
+                                      className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-all duration-300 border"
+                                      style={
+                                        isCompleted ? { background: 'var(--accent-primary)', borderColor: 'var(--accent-primary)', color: 'var(--bg-secondary)' } :
+                                        isActive ? { background: 'var(--accent-glow)', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' } :
+                                        { background: 'var(--bg-tertiary)', borderColor: 'var(--glass-border)', color: 'var(--text-tertiary)' }
+                                      }
                                     >
                                       {isCompleted ? '✓' : idx + 1}
                                     </div>
                                     <span 
-                                      className={`text-[8px] mt-1.5 hidden md:block whitespace-nowrap transition-colors ${
-                                        isActive ? 'text-[#ff9f1c] font-semibold' : isCompleted ? 'text-[#326273] font-medium' : 'text-muted-foreground'
-                                      }`}
+                                      className={`text-[8px] mt-1.5 hidden md:block whitespace-nowrap transition-colors ${isActive ? 'font-medium' : ''}`}
+                                      style={{ color: isActive ? 'var(--accent-primary)' : isCompleted ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}
                                     >
                                       {step.label}
                                     </span>
                                   </div>
                                   {idx < PIPELINE_STEPS.length - 1 && (
                                     <div 
-                                      className={`h-0.5 flex-1 mx-0.5 rounded transition-all duration-300 ${
-                                        isCompleted ? 'bg-[#326273]' : 'bg-border'
-                                      }`} 
+                                      className="h-0.5 flex-1 mx-0.5 rounded transition-all duration-300"
+                                      style={{ background: isCompleted ? 'var(--accent-primary)' : 'var(--glass-border)' }}
                                     />
                                   )}
                                 </React.Fragment>
@@ -381,47 +443,63 @@ export default function App() {
                         {msg.content || (msg.isStreaming ? (
                           <div className="flex flex-col gap-2 py-1">
                             <div className="flex items-center gap-1.5 mb-1">
-                              <span className="w-2 h-2 rounded-full bg-[#326273] animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <span className="w-2 h-2 rounded-full bg-[#ff9f1c] animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <span className="w-2 h-2 rounded-full bg-[#ffbf69] animate-bounce" style={{ animationDelay: '300ms' }} />
+                              <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0ms' }} />
+                              <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-secondary)', animationDelay: '150ms' }} />
+                              <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-gold)', animationDelay: '300ms' }} />
                             </div>
-                            <div className="w-48 h-3 rounded bg-muted/60 animate-pulse" />
-                            <div className="w-36 h-2.5 rounded bg-muted/40 animate-pulse" />
+                            <div className="w-48 h-3 rounded animate-pulse" style={{ background: 'var(--glass-border)' }} />
+                            <div className="w-36 h-2.5 rounded animate-pulse" style={{ background: 'var(--glass-border)' }} />
                           </div>
                         ) : '')}
                       </div>
                       
                       {msg.evidence && msg.evidence.length > 0 && (
-                        <div className="evidence-card" style={{ background: 'transparent', border: 'none', padding: 0 }}>
+                        <div className="evidence-card">
                           <details className="evidence-details group" style={{ width: '100%' }}>
-                            <summary className="evidence-summary cursor-pointer select-none list-none flex items-center justify-between py-2 border-b border-border">
-                              <div className="flex items-center gap-2 text-foreground font-medium">
-                                <Database size={14} className="text-primary" />
+                            <summary className="evidence-summary cursor-pointer select-none list-none flex items-center justify-between" style={{ borderBottom: 'none' }}>
+                              <div className="evidence-header flex items-center gap-2 text-sm">
+                                <Database size={14} style={{ color: 'var(--accent-secondary)' }} />
                                 <span>Retrieved Evidence ({msg.evidence.length} Citations)</span>
                               </div>
-                              <span className="text-xs text-muted-foreground group-open:rotate-180 transition-transform duration-200">▼</span>
+                              <span className="text-xs group-open:rotate-180 transition-transform duration-200" style={{ color: 'var(--text-tertiary)' }}>▼</span>
                             </summary>
                             <div className="evidence-content grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                               {msg.evidence.map((item, idx) => {
                                 const confidenceColor = 
-                                  item.confidence?.toLowerCase() === 'high' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-                                  item.confidence?.toLowerCase() === 'medium' ? 'text-amber-700 bg-amber-50 border-amber-200' :
-                                  'text-rose-700 bg-rose-50 border-rose-200';
+                                  item.confidence?.toLowerCase() === 'high' ? 'text-emerald-800 bg-emerald-100 border-emerald-300' :
+                                  item.confidence?.toLowerCase() === 'medium' ? 'text-amber-800 bg-amber-100 border-amber-300' :
+                                  'text-rose-800 bg-rose-100 border-rose-300';
                                 return (
-                                  <div key={idx} className="evidence-item p-3 rounded-lg border border-border bg-card shadow-sm flex flex-col gap-2">
-                                    <div className="flex items-center justify-between border-b border-border pb-2">
-                                      <span className="font-semibold text-xs text-primary">{item.fir_id || "No Case ID"}</span>
+                                  <div
+                                    key={idx}
+                                    className="evidence-item p-3 rounded-sm flex flex-col gap-2 entity-clickable"
+                                    style={{ border: '1px solid var(--paper-line)', background: 'var(--bg-primary)', cursor: 'pointer' }}
+                                    onClick={() => openEntity({
+                                      type: 'fir',
+                                      id: item.fir_id ?? `evidence-${idx}`,
+                                      label: item.fir_id ?? 'Case File',
+                                      data: item.data ?? {},
+                                      evidenceItems: [item],
+                                    })}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') openEntity({ type: 'fir', id: item.fir_id ?? `evidence-${idx}`, label: item.fir_id ?? 'Case File', data: item.data ?? {}, evidenceItems: [item] }); }}
+                                    aria-label={`View details for ${item.fir_id ?? 'case'}`}
+                                  >
+                                    <div className="flex items-center justify-between pb-2" style={{ borderBottom: '1px dashed var(--paper-line)' }}>
+                                      <span className="dossier-id font-semibold text-xs">{item.fir_id || "No Case ID"}</span>
                                       {item.confidence && (
                                         <span className={`text-[9px] px-2 py-0.5 rounded-full border font-medium ${confidenceColor}`}>
                                           {item.confidence.toUpperCase()}
                                         </span>
                                       )}
                                     </div>
-                                    <div className="text-xs space-y-1 text-muted-foreground">
+                                    <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
                                       {item.data?.crime_type && <div><strong>Type:</strong> {item.data.crime_type}</div>}
                                       {item.data?.district && <div><strong>District:</strong> {item.data.district}</div>}
                                       {item.data?.Date && <div><strong>Date:</strong> {item.data.Date}</div>}
                                       {item.data?.weapon && <div><strong>Weapon:</strong> {item.data.weapon}</div>}
+                                      <div className="text-[9px] mt-1" style={{ color: 'var(--text-tertiary)', fontFamily: 'IBM Plex Mono, monospace' }}>Click to expand →</div>
                                     </div>
                                   </div>
                                 );
@@ -465,6 +543,8 @@ export default function App() {
           )}
         </main>
       </div>
+      {/* App-level entity drawer — works from both query and dashboard views */}
+      <EntityDrawer entity={selectedEntity} onClose={closeDrawer} />
     </>
   );
 }
