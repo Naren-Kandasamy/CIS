@@ -10,7 +10,7 @@ fi
 
 echo "Starting PS-1 Backend (Port 8000)..."
 # Start the FastAPI backend
-.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 echo "Starting PS-1 Frontend (Port 5173)..."
