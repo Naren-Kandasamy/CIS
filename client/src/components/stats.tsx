@@ -58,17 +58,17 @@ export function DashboardStats({ visualization }: { visualization?: any }) {
     <>
       {crimeStats.map((s) => (
         <div 
-          className="bg-card border border-border rounded-2xl shadow-sm flex flex-col justify-between h-full hover:border-border/80 hover:shadow-md transition-all duration-300 gap-3.5"
+          className="dossier-stat-card flex flex-col gap-3.5"
           style={{ padding: '16px 20px' }}
           key={s.label}
         >
           <div>
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block leading-normal">
+            <span className="dossier-stat-label text-xs font-semibold uppercase tracking-widest block leading-normal">
               {s.label}
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <p className="font-extrabold text-3xl text-foreground tabular-nums tracking-tight leading-none">
+            <p className="dossier-stat-value font-normal text-3xl tabular-nums tracking-tight leading-none">
               {s.value}
             </p>
             <div className="flex items-center gap-1.5 text-xs mt-1.5">
@@ -76,7 +76,7 @@ export function DashboardStats({ visualization }: { visualization?: any }) {
                 <DeltaIcon />
                 <DeltaValue />
               </Delta>
-              <span className="text-foreground/80 text-[13px] font-bold">{s.footnote}</span>
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{s.footnote}</span>
             </div>
           </div>
         </div>

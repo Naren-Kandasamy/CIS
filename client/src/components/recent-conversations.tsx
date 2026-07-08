@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
+import type { SelectedEntity } from "../hooks/useEntityDrawer";
 import { Badge } from "@/components/ui/badge";
 import {
 	Card,
@@ -76,23 +77,25 @@ function statusColor(confidence: string): string {
 function getConfidenceTextColor(confidence: string): string {
 	const c = confidence.toLowerCase();
 	if (c === "high") {
-		return "text-emerald-400";
+		return "text-emerald-700";
 	}
 	if (c === "medium") {
-		return "text-amber-400";
+		return "text-amber-700";
 	}
-	return "text-rose-400";
+	return "text-rose-700";
 }
 
 interface RecentConversationsProps extends ComponentProps<typeof Card> {
   visualization?: any;
   evidence?: any[];
+  onRowClick?: (entity: SelectedEntity) => void;
 }
 
 export function RecentConversations({
 	className,
   visualization,
   evidence,
+  onRowClick,
 	...props
 }: RecentConversationsProps) {
   
@@ -129,41 +132,46 @@ export function RecentConversations({
 
 	return (
 		<div
-			className={cn("flex flex-col bg-card border border-border rounded-2xl shadow-sm gap-5", className)}
+			className={cn("dossier-panel flex flex-col gap-5", className)}
 			style={{ padding: '28px' }}
 		>
 			<div className="space-y-1">
-				<h3 className="text-foreground text-lg font-semibold">Recent Citations</h3>
-				<p className="text-muted-foreground text-sm">
+				<h3 className="dossier-panel-title text-base">Recent Citations</h3>
+				<p className="dossier-panel-subtitle text-sm">
 					Historical crime evidence loaded in scope.
 				</p>
 			</div>
 			<div className="overflow-x-auto">
 				<Table>
-					<TableHeader className="border-border">
-						<TableRow className="hover:bg-transparent border-border">
-							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Case Reference</TableHead>
-							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Crime Category</TableHead>
-							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">District</TableHead>
-							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Incident Date</TableHead>
-							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Weapon Involved</TableHead>
-							<TableHead className="text-muted-foreground font-bold text-xs uppercase tracking-wider px-4 py-6 text-left">Confidence</TableHead>
+					<TableHeader>
+						<TableRow className="dossier-row hover:bg-transparent">
+							<TableHead className="dossier-table-head font-semibold text-xs uppercase tracking-wider py-3.5 pl-1">Case Reference</TableHead>
+							<TableHead className="dossier-table-head font-semibold text-xs uppercase tracking-wider py-3.5">Crime Category</TableHead>
+							<TableHead className="dossier-table-head font-semibold text-xs uppercase tracking-wider py-3.5">District</TableHead>
+							<TableHead className="dossier-table-head font-semibold text-xs uppercase tracking-wider py-3.5">Incident Date</TableHead>
+							<TableHead className="dossier-table-head font-semibold text-xs uppercase tracking-wider py-3.5">Weapon Involved</TableHead>
+							<TableHead className="dossier-table-head font-semibold text-xs uppercase tracking-wider py-3.5 pl-4 text-left">Confidence</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{caseRows.map((r, idx) => (
-							<TableRow className="hover:bg-muted/50 border-border transition-colors duration-150" key={idx}>
-								<TableCell className="px-4 py-6 text-left">
+							<TableRow
+								className="dossier-row transition-colors duration-150 entity-clickable"
+								key={idx}
+								style={{ cursor: onRowClick ? 'pointer' : undefined }}
+								onClick={() => onRowClick?.({ type: 'fir', id: r.firId, label: r.firId, data: { crime_type: r.crimeType, district: r.district, date: r.date, weapon: r.weapon, crime_no: r.firId }, evidenceItems: evidence ? evidence.filter(e => (e.fir_id ?? '') === r.firId) : [] })}
+							>
+								<TableCell className="py-3.5 pl-1">
 									<div className="flex items-center gap-2">
-										<Shield className="h-3.5 w-3.5 text-primary shrink-0" />
-										<span className="font-semibold text-[13px] text-foreground">{r.firId}</span>
+										<Shield className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-secondary)' }} />
+										<span className="dossier-id font-semibold text-[13px]">{r.firId}</span>
 									</div>
 								</TableCell>
-								<TableCell className="px-4 py-6 text-left text-[13.5px] text-foreground/90 font-medium">{r.crimeType}</TableCell>
-								<TableCell className="px-4 py-6 text-left text-[13.5px] text-foreground/90">{r.district}</TableCell>
-								<TableCell className="px-4 py-6 text-left text-[12.5px] text-muted-foreground font-mono">{r.date}</TableCell>
-								<TableCell className="px-4 py-6 text-left text-[13.5px] text-foreground/90">{r.weapon}</TableCell>
-								<TableCell className="px-4 py-6 text-left">
+								<TableCell className="py-3.5 text-[13.5px] font-medium" style={{ color: 'var(--text-primary)' }}>{r.crimeType}</TableCell>
+								<TableCell className="py-3.5 text-[13.5px]" style={{ color: 'var(--text-secondary)' }}>{r.district}</TableCell>
+								<TableCell className="dossier-mono py-3.5 text-[12.5px]">{r.date}</TableCell>
+								<TableCell className="py-3.5 text-[13.5px]" style={{ color: 'var(--text-secondary)' }}>{r.weapon}</TableCell>
+								<TableCell className="py-3.5 pl-4 text-left">
 									<span className={cn("text-xs font-bold uppercase tracking-wider", getConfidenceTextColor(r.confidence))}>
 										{r.confidence}
 									</span>

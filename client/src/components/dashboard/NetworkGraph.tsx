@@ -1,7 +1,13 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
+import type { SelectedEntity } from '../../hooks/useEntityDrawer';
+import { resolveLinkedNodes, matchEvidenceByFirId } from '../../hooks/useEntityDrawer';
+
 interface NetworkGraphProps {
   elements?: any[];
+  onNodeClick?: (entity: SelectedEntity) => void;
+  /** Full evidence array so the drawer can show narrative detail */
+  evidence?: any[];
 }
 
 const DEFAULT_ELEMENTS = [
@@ -13,7 +19,7 @@ const DEFAULT_ELEMENTS = [
   { data: { id: 'p3', label: 'Anand Swamy', type: 'person' }, classes: 'person' },
   { data: { id: 'loc1', label: 'Belagavi', type: 'location' } },
   { data: { id: 'loc2', label: 'Bengaluru City', type: 'location' } },
-  
+
   // Edges
   { data: { source: 'p1', target: 'fir1', label: 'Accused' } },
   { data: { source: 'p2', target: 'fir1', label: 'Conspirator' } },
@@ -23,59 +29,111 @@ const DEFAULT_ELEMENTS = [
   { data: { source: 'p1', target: 'p2', label: 'Associate' } }
 ];
 
-export default function NetworkGraph({ elements }: NetworkGraphProps) {
-  // Use provided elements or default to mockup data if none provided
+export default function NetworkGraph({ elements, onNodeClick, evidence }: NetworkGraphProps) {
   const graphElements = elements && elements.length > 0 ? elements : DEFAULT_ELEMENTS;
+  const cyRef = useRef<any>(null);
+
+  // Attach tap listener whenever elements or callback changes
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !onNodeClick) return;
+
+    const handleTap = (evt: any) => {
+      const node = evt.target;
+      const data = node.data();
+      const nodeId: string = data.id;
+      const rawType: string = data.type ?? 'fir';
+      const type = (['person', 'fir', 'location'].includes(rawType) ? rawType : 'fir') as SelectedEntity['type'];
+
+      const linkedNodes = resolveLinkedNodes(nodeId, graphElements);
+
+      // Match evidence items for this node
+      let evidenceItems: any[] = [];
+      if (type === 'fir' && evidence) {
+        evidenceItems = matchEvidenceByFirId(nodeId, evidence);
+      } else if (type === 'person' && evidence) {
+        // For a person, collect evidence for all linked FIR nodes
+        for (const ln of linkedNodes.filter(n => n.type === 'fir')) {
+          evidenceItems.push(...matchEvidenceByFirId(ln.id, evidence));
+        }
+      }
+
+      onNodeClick({ type, id: nodeId, label: data.label ?? nodeId, data, evidenceItems, linkedNodes });
+    };
+
+    cy.on('tap', 'node', handleTap);
+    return () => {
+      cy.removeListener('tap', 'node', handleTap);
+    };
+  }, [graphElements, onNodeClick, evidence]);
 
   return (
-    <div style={{ height: '400px', width: '100%', padding: '8px', boxSizing: 'border-box' }}>
-      <h3 style={{ color: 'var(--foreground)', marginBottom: '16px', fontSize: '15px', fontWeight: '500' }}>Entity Network</h3>
-      <div style={{ height: 'calc(100% - 40px)', width: '100%', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-        <CytoscapeComponent 
-          elements={graphElements} 
+    <div style={{ height: '360px', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ height: '100%', width: '100%', border: '1px solid var(--glass-border)', borderRadius: '2px', overflow: 'hidden', background: 'var(--bg-primary)' }}>
+        <CytoscapeComponent
+          elements={graphElements}
           layout={{ name: 'cose' }}
           style={{ width: '100%', height: '100%' }}
+          cy={(cy) => { cyRef.current = cy; }}
           stylesheet={[
             {
               selector: 'node',
               style: {
-                'background-color': '#ffbf69',
+                'background-color': '#4a5a7a',
                 'label': 'data(label)',
-                'color': '#100b00',
-                'text-outline-color': '#ffffff',
+                'color': '#241d14',
+                'text-outline-color': '#e9e1cd',
                 'text-outline-width': 2,
-                'font-size': '12px'
-              }
+                'font-size': '12px',
+                'font-family': 'IBM Plex Mono, monospace',
+                'cursor': 'pointer',
+                'transition-property': 'background-color, border-width, border-color',
+                'transition-duration': '0.15s',
+              } as any
+            },
+            {
+              selector: 'node:hover',
+              style: {
+                'border-width': 3,
+                'border-color': '#a9791f',
+              } as any
+            },
+            {
+              selector: 'node:selected',
+              style: {
+                'border-width': 3,
+                'border-color': '#8a2a24',
+                'background-color': '#b03b35',
+              } as any
             },
             {
               selector: 'node.person',
               style: {
-                'background-color': '#ff9f1c',
+                'background-color': '#8a2a24',
                 'shape': 'ellipse'
               }
             },
             {
               selector: 'node.fir',
               style: {
-                'background-color': '#326273',
-                'shape': 'rectangle',
-                'color': '#ffffff',
-                'text-outline-color': '#326273'
+                'background-color': '#2f4a3c',
+                'shape': 'rectangle'
               }
             },
             {
               selector: 'edge',
               style: {
-                'width': 2,
-                'line-color': '#326273',
-                'target-arrow-color': '#326273',
+                'width': 1.5,
+                'line-color': '#8a7d67',
+                'target-arrow-color': '#8a7d67',
                 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier',
                 'label': 'data(label)',
-                'color': '#326273',
+                'color': '#5c5140',
                 'font-size': '10px',
+                'font-family': 'IBM Plex Mono, monospace',
                 'text-background-opacity': 1,
-                'text-background-color': '#ffffff',
+                'text-background-color': '#e9e1cd',
                 'text-background-padding': '2px'
               }
             }
