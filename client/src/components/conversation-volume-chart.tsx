@@ -65,7 +65,7 @@ export function ConversationVolumeChart({
 	return (
 		<div
 			className={cn(
-				"shadow-sm md:col-span-2 lg:col-span-3 bg-card border border-border rounded-2xl flex flex-col gap-6",
+				"dossier-panel shadow-none md:col-span-2 lg:col-span-3 flex flex-col gap-6",
 				className
 			)}
 			style={{ padding: '28px' }}
@@ -73,13 +73,13 @@ export function ConversationVolumeChart({
 			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div className="min-w-0 space-y-1">
 					<div className="flex flex-wrap items-center gap-2">
-						<h3 className="text-foreground text-lg font-semibold">Crime Trends</h3>
+						<h3 className="dossier-panel-title text-base">Crime Trends</h3>
 						<Delta value={12.4} variant="badge">
 							<DeltaIcon variant="trend" />
 							<DeltaValue />
 						</Delta>
 					</div>
-					<p className="text-muted-foreground text-sm">
+					<p className="dossier-panel-subtitle text-sm">
 						Monthly registered incident counts in selected window.
 					</p>
 				</div>
@@ -95,32 +95,32 @@ export function ConversationVolumeChart({
 							<linearGradient id={idAreaGradient} x1="0" x2="0" y1="0" y2="1">
 								<stop
 									offset="0%"
-									stopColor="var(--primary)"
-									stopOpacity={0.4}
+									stopColor="#8a2a24"
+									stopOpacity={0.35}
 								/>
 								<stop
 									offset="60%"
-									stopColor="var(--primary)"
-									stopOpacity={0.1}
+									stopColor="#8a2a24"
+									stopOpacity={0.08}
 								/>
 								<stop
 									offset="100%"
-									stopColor="var(--primary)"
+									stopColor="#8a2a24"
 									stopOpacity={0}
 								/>
 							</linearGradient>
 						</defs>
-						<CartesianGrid className="stroke-border/40" vertical={false} />
+						<CartesianGrid stroke="var(--paper-line)" vertical={false} />
 						<XAxis
 							axisLine={false}
 							dataKey="date"
 							tickLine={false}
 							tickMargin={8}
-              tick={{ className: "text-muted-foreground text-[11px] font-semibold" }}
+              tick={{ className: "text-[11px] font-semibold", fill: "var(--text-secondary)" }}
 						/>
 						<YAxis
 							axisLine={false}
-							tick={{ className: "tabular-nums text-muted-foreground text-[10px]" }}
+							tick={{ className: "tabular-nums text-[10px]", fill: "var(--text-tertiary)" }}
 							tickLine={false}
 							tickMargin={8}
 							width={28}
@@ -128,7 +128,7 @@ export function ConversationVolumeChart({
 						<ChartTooltip
 							content={
 								<ChartTooltipContent
-									className="min-w-32 bg-card border border-border text-foreground"
+									className="dossier-tooltip min-w-32"
 									indicator="line"
 								/>
 							}
@@ -138,7 +138,7 @@ export function ConversationVolumeChart({
 							dataKey="conversations"
 							dot={true}
 							fill={`url(#${idAreaGradient})`}
-							stroke="var(--primary)"
+							stroke="#8a2a24"
 							strokeWidth={2}
 							type="natural"
 						/>
