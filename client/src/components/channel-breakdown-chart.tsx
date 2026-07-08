@@ -103,7 +103,7 @@ export function ChannelBreakdownChart({
 
 	return (
 		<div
-			className={cn("dossier-panel flex flex-col gap-5", className)}
+			className={cn("dossier-panel dossier-tape relative flex flex-col gap-5", className)}
 			style={{ padding: '28px' }}
 		>
 			<div className="space-y-1">

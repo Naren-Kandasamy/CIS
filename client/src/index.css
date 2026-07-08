@@ -227,22 +227,32 @@ body {
 }
 
 .message-content {
-  background: var(--bg-secondary);
+  background-color: var(--sidebar);
+  background-image:
+    /* Slight darkening overlay for color distinction */
+    linear-gradient(rgba(43,33,20,0.03), rgba(43,33,20,0.05)),
+    /* Grid/Grain - more pronounced */
+    repeating-linear-gradient(0deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(90deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    /* Folds - stronger highlights and shadows */
+    linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.4) 32%, rgba(0,0,0,0.06) 34%, transparent 40%),
+    linear-gradient(-75deg, transparent 60%, rgba(255,255,255,0.35) 65%, rgba(0,0,0,0.08) 68%, transparent 75%),
+    /* Edge vignette */
+    radial-gradient(circle at 50% 50%, transparent 60%, rgba(0,0,0,0.09) 100%);
   border: 1px solid var(--glass-border);
-  border-left: 3px solid var(--accent-secondary);
   padding: 16px 20px;
-  border-radius: 2px;
+  border-radius: 3px;
   font-size: 0.95rem;
   line-height: 1.55;
   color: var(--text-primary);
-  box-shadow: 1px 2px 0 rgba(43, 33, 20, 0.08);
+  box-shadow: 
+    inset 0 0 10px rgba(0,0,0,0.04),
+    inset 1px 1px 2px rgba(255,255,255,0.6),
+    2px 3px 6px rgba(43, 33, 20, 0.12);
   position: relative;
 }
 
 .message.user .message-content {
-  background: var(--bg-secondary);
-  border-left: none;
-  border-right: 3px solid var(--accent-primary);
   color: var(--text-primary);
 }
 
@@ -532,6 +542,41 @@ body {
   position: relative;
 }
 
+.dossier-paperclip::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 24px;
+  width: 24px;
+  height: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233a2f1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  transform: rotate(-10deg);
+  z-index: 20;
+  filter: drop-shadow(2px 3px 2px rgba(43,33,20,0.3));
+  pointer-events: none;
+}
+
+.dossier-tape::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-1deg);
+  width: 100px;
+  height: 24px;
+  background-color: rgba(222, 213, 185, 0.9);
+  background-image: 
+    linear-gradient(rgba(255,255,255,0.1), rgba(0,0,0,0.05)),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 2px, rgba(0,0,0,0.03) 3px, transparent 4px);
+  box-shadow: 0 1px 3px rgba(43,33,20,0.15);
+  border-left: 2px dashed rgba(43,33,20,0.15);
+  border-right: 2px dashed rgba(43,33,20,0.15);
+  z-index: 20;
+  pointer-events: none;
+}
+
 .dossier-panel::after {
   content: '';
   position: absolute;
@@ -556,12 +601,21 @@ body {
 }
 
 .dossier-stat-card {
-  background: var(--bg-secondary);
+  background-color: var(--sidebar);
+  background-image:
+    linear-gradient(rgba(43,33,20,0.03), rgba(43,33,20,0.05)),
+    repeating-linear-gradient(0deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(90deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.4) 42%, rgba(0,0,0,0.06) 44%, transparent 50%),
+    linear-gradient(-60deg, transparent 70%, rgba(255,255,255,0.3) 73%, rgba(0,0,0,0.08) 75%, transparent 80%),
+    radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(0,0,0,0.1) 100%);
   border: 1px solid var(--glass-border);
-  border-top: 3px solid var(--accent-primary);
-  border-radius: 2px;
-  box-shadow: 1px 2px 0 rgba(43, 33, 20, 0.08);
-  transition: transform 0.15s ease;
+  border-radius: 3px;
+  box-shadow: 
+    inset 0 0 10px rgba(0,0,0,0.04),
+    inset 1px 1px 2px rgba(255,255,255,0.6),
+    2px 3px 6px rgba(43, 33, 20, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .dossier-stat-card:hover {
@@ -570,7 +624,8 @@ body {
 
 .dossier-stat-label {
   font-family: 'IBM Plex Mono', monospace;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .dossier-stat-value {

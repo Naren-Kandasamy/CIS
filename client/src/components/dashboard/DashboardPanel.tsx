@@ -71,7 +71,7 @@ export default function DashboardPanel({ visualization, evidence }: DashboardPan
         />
 
         {/* Active Suspects Quicklist */}
-        <div className="dossier-panel flex flex-col lg:col-span-1 justify-between h-auto gap-4" style={{ padding: '20px' }}>
+        <div className="dossier-panel dossier-paperclip flex flex-col lg:col-span-1 justify-between h-auto gap-4" style={{ padding: '20px' }}>
           <div>
             <h3 className="dossier-panel-title text-base mb-1">Key Suspects</h3>
             <p className="dossier-panel-subtitle text-xs mb-4">Top linked co-accused entities.</p>
@@ -121,7 +121,7 @@ export default function DashboardPanel({ visualization, evidence }: DashboardPan
       </div>
 
       {/* Network Graph & Map — graph node clicks show inline panel right beside the graph */}
-      <div className="dossier-panel" style={{ padding: '28px' }}>
+      <div className="dossier-panel dossier-paperclip" style={{ padding: '28px' }}>
         <h3 className="dossier-panel-title text-base mb-1">Entity Relation Network</h3>
         <p className="dossier-panel-subtitle text-xs mb-3">
           Click any node to inspect — Cytoscape network model mapping cases, co-accused, and modus operandi.
@@ -148,7 +148,7 @@ export default function DashboardPanel({ visualization, evidence }: DashboardPan
       </div>
 
       {/* Crime Map in its own card below */}
-      <div className="dossier-panel" style={{ padding: '28px' }}>
+      <div className="dossier-panel dossier-paperclip" style={{ padding: '28px' }}>
         <h3 className="dossier-panel-title text-base mb-1">Geospatial Distribution</h3>
         <p className="dossier-panel-subtitle text-xs mb-4">Leaflet geolocations mapping incident crime scenes.</p>
         <CrimeMap markers={visualization?.leaflet?.markers} />
