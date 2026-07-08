@@ -65,7 +65,7 @@ export function ConversationVolumeChart({
 	return (
 		<div
 			className={cn(
-				"dossier-panel shadow-none md:col-span-2 lg:col-span-3 flex flex-col gap-6",
+				"dossier-panel dossier-tape relative shadow-none md:col-span-2 lg:col-span-3 flex flex-col gap-6",
 				className
 			)}
 			style={{ padding: '28px' }}
