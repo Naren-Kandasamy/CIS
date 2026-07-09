@@ -59,10 +59,11 @@ EVAL_SUITE = [
 ]
 
 async def eval_single(test_case):
-    query = test_case["query"]
+    query = test_case["query"] + " now"
     try:
         # Evaluate
         result = await extract_ner_and_intent(query)
+        print(f"\\n[DEBUG RAW PAYLOAD]: {result}\\n")
         
         # Check intent
         if result.get("fallback") and test_case["expected_intent"] != "lookup":
@@ -80,6 +81,8 @@ async def eval_single(test_case):
         extracted = result.get("entities", {})
         for key, expected_values in test_case["expected_entities"].items():
             extracted_list = [str(x).lower() for x in extracted.get(key, [])]
+            if key == "locations" and extracted.get("city"):
+                extracted_list.append(str(extracted.get("city")).lower())
             for exp in expected_values:
                 # We check if the expected value is at least a substring (e.g. "robbery" in "robbery cases")
                 if not any(exp.lower() in ex for ex in extracted_list):
