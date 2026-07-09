@@ -34,8 +34,9 @@ async def resolving_entities_node(state: AgentState):
     await state["write_status_callback"](state["job_id"], status="resolving_entities")
     intent_obj = state["intent_obj"]
     
-    crime_types = intent_obj["entities"].get("crime_types", [])
-    ipc_sections = intent_obj["entities"].get("ipc_sections", [])
+    entities = intent_obj.get("entities", {})
+    crime_types = entities.get("crime_types", [])
+    ipc_sections = entities.get("ipc_sections", [])
     
     import asyncio
     crime_results, section_results = await asyncio.gather(
@@ -46,6 +47,8 @@ async def resolving_entities_node(state: AgentState):
     resolved_crimes = [r for r in crime_results if r]
     resolved_sections = [r for r in section_results if r]
              
+    if "entities" not in intent_obj:
+        intent_obj["entities"] = {}
     intent_obj["entities"]["resolved_crime_sub_heads"] = resolved_crimes
     intent_obj["entities"]["resolved_act_sections"] = resolved_sections
     return {"intent_obj": intent_obj}
