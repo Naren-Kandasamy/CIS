@@ -38,6 +38,21 @@ This list aggregates all the unchecked items across the official project phases 
 - [x] **Confidence Engine OCR Penalty (Layer 4)**: Ensure any evidence extracted via the Qwen VLM carries an `ocr_extracted: true` flag, applying a 0.90 multiplier to its confidence score.
 - [x] **Full Catalyst Deployment Verified**: End-to-end cloud execution is confirmed. Fixed AppSail React routing (`/app/` base path), backend environment variable limits (`ZC_` prefix), and `sys.path` dependency loading.
 
+## Phase 5: Extended Investigative Capabilities & Refinements
+*These items reflect the recent senior-investigator roadmap and architecture addendums for advanced reasoning, feedback loops, and data source integration.*
+
+- [ ] **Negative Evidence & Exclusion Tracking**: Implement `EXCLUDED_FROM` relationships and contradiction tracking to safely demote ruled-out suspects. *(Consult: `Docs/PS1_Negative_Evidence_Exclusion_Tracking.md`)*
+- [ ] **Reasoning Feedback Loop**: Implement methodology-scoped trust weighting (slow-moving cross-session scoreboard) and instant same-session penalty. *(Consult: `Docs/PS1_Reasoning_Feedback_Loop.md`)*
+- [ ] **Evidence-Language Detection**: Add offline language detection (`langdetect`) and conditional translation for FIR narratives at ingestion. *(Consult: `Docs/PS1_Evidence_Language_Detection.md`)*
+- [ ] **Zia-Native Voice & Language Layer v2**: Upgrade to the actual Catalyst Zia endpoints for ASR, TTS, and Translation (replacing generic placeholders). *(Consult: `Docs/PS1_Voice_Language_Layer_v2.md`)*
+- [ ] **Shared Proactive Alert Primitive**: Build `ReviewQueueItem` schema and API for proactive push notifications. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 1)*
+- [ ] **CDR & Financial Trail Integration**: Build the pluggable data source provider pattern, `CALLED`/`TRANSFERRED` edges, and inject synthetic layering/burner patterns. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 2)*
+- [ ] **Proactive Cold-Case Matching**: Extend `SHARED_MO` ingestion to flag open/cold cases with high similarity to new FIRs via the review queue. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 3)*
+- [ ] **Confidence Engine "Contradicted" State**: Log HIGH/MEDIUM confidence claims and flag them as contradicted if new evidence/exclusion records surface later. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 4)*
+- [ ] **Vehicle/ANPR Cross-Referencing**: Ingest synthetic ANPR plate reads and cross-check against a wanted-vehicle registry. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 5)*
+- [ ] **RBAC / Jurisdiction Scoping**: Add an `OfficerProfile` and default queries to home-district scope unless overridden or rank is elevated. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 6)*
+- [ ] **Hypothesis Workspace**: Allow officers to log investigative theories (`HypothesisRecord`) and run deterministic checks for new supporting/contradicting evidence. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 7)*
+
 ## Pre-Demo Checklist (Judging Day Operations)
 *Tasks to execute strictly 30 minutes before presenting.*
 
