@@ -1,0 +1,21 @@
+,Query,AI_Response,Internal_Confidence_Tier,Human_Label_Score,Scoring_Rationale
+195,Show me all cases involving Section 363 of the IPC.,"**ANALYTICAL SYNTHESIS**
+
+The retrieved evidence indicates a cluster of criminal incidents across Karnataka, primarily involving theft and robbery offenses. The data suggests a pattern of opportunistic theft targeting valuables such as gold bangles and chains in Mysuru, Hubballi, and Belagavi, often occurring at unattended roadside shops or vehicles. Additionally, there is evidence of violent crimes, specifically assaults in Belagavi and Mangaluru, and robberies in Mysuru and Mangaluru involving weapon threats or physical force. The investigation status varies, with some cases pending identification of accused parties and others involving ongoing digital forensics.
+
+**EVIDENCE SUMMARY**
+
+*   **Mysuru (Theft):** Incident on 2024-06-13 involving the theft of gold bangles from a roadside shop (FIR ID: 521c266b-b3a6-4832-80ae-40242ad06874).
+*   **Mysuru (Robbery):** Incident on 2020-03-15 involving a gang robbery at a highway bypass (FIR ID: 2ee81d50-49c1-45e0-8b65-98ec2070c7ae).
+*   **Belagavi (Assault):** Incident on 2023-08-26 involving assault with a wooden stick (FIR ID: dd1a545c-f600-4892-a4d5-c7b307668031).
+*   **Hubballi (Fraud):** Incident on 2022-10-18 involving job placement fraud (FIR ID: 9a17cb86-649b-4cf3-ad4f-9e0248a1f9f4).
+*   **Hubballi (Theft):** Incident on 2021-10-11 involving theft of a toolbox from a railway station (FIR ID: 71756cf7-c1e6-4687-a0ef-65ebb50b84ae).
+*   **Belagavi (Theft):** Incident on 2024-04-06 involving theft of a gold chain (FIR ID: 4d3dc092-8d46-4f21-9fd9-c46028d22edc).
+*   **Mangaluru (Assault):** Incident on 2020-10-15 involving assault with a stone (FIR ID: 81c29945-b280-4d95-b972-37b0e24c2f64).
+*   **Hubballi (Theft):** Incident on 2024-06-25 involving theft of gold bangles from an auto-rickshaw (FIR ID: 05220427-35d0-4a78-847b-0e332b01acee).
+*   **Mangaluru (Robbery):** Incident on 2024-10-30 involving robbery via physical force (FIR ID: cab3b31c-4402-4c3e-9d8a-44f838a9424c).
+*   **Belagavi (Theft):** Incident on 2023-09-11 involving theft of a laptop bag (FIR ID: 41eea98a-f973-49a8-8fe6-aac1df917fa1).
+
+All outputs require officer verification before action.",UNKNOWN,0.0,presents unrelated case data without ever addressing or disclaiming IPC section 363
+450,Which accused has the highest page rank score in Mysuru?,ERROR: Job timed out waiting for pipeline response,UNKNOWN,0.0,"pipeline/system error, no substantive answer given"
+767,Are there any cases involving a iron rod in Hubballi?,ERROR: Job timed out waiting for pipeline response,UNKNOWN,0.0,"pipeline/system error, no substantive answer given"
