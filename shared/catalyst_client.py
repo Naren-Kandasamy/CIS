@@ -79,10 +79,12 @@ async def llm_complete(prompt: str, system: str,
         }, timeout=45.0)
         r.raise_for_status()
         resp = r.json()
-        try:
+        if "choices" in resp:
             return resp["choices"][0]["message"]["content"]
-        except KeyError:
-            return resp.get("response", resp.get("output", str(resp)))
+        elif "response" in resp:
+            return resp["response"]
+        else:
+            return resp.get("output", str(resp))
 
 async def vlm_extract(image_bytes: bytes, prompt: str, system: str) -> str:
     # BUG FIX: previously returned a hardcoded, realistic-looking fake FIR record
