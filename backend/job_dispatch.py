@@ -89,20 +89,29 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
     """Local-dev-only pipeline runner. Replaced by Catalyst Signals in production."""
     from pipeline_function.pipeline.langgraph_router import run_langgraph_pipeline
     try:
-        # BUG FIX: the read-modify-write on session history below is now
-        # serialized per session_id, closing the lost-update race where two
-        # concurrent queries in the same session each read the same snapshot
-        # and the one finishing last silently discarded the other's turn.
+        # RC-02 FIX: previously held the session lock for the ENTIRE pipeline
+        # duration (30-60s including LLM calls), which completely blocked any
+        # second query in the same session until the first finished. The lock
+        # only needs to guard the history read-modify-write, not the pipeline
+        # execution itself. Split into two narrow critical sections instead.
+
+        # --- Narrow lock: read history snapshot before pipeline ---
         async with get_session_lock(session_id):
             history_doc = await nosql_get(f"history:{session_id}")
             history = json.loads(history_doc["value"]) if history_doc else []
 
-            await run_langgraph_pipeline(job_id, query, write_job_status, history)
+        # Run the pipeline WITHOUT holding the session lock
+        await run_langgraph_pipeline(job_id, query, write_job_status, history)
 
+        # --- Narrow lock: write updated history after pipeline ---
+        async with get_session_lock(session_id):
             job = await read_job_status(job_id)
             if job and job.get("status") == "done":
+                # Re-read history inside the lock to catch concurrent updates
+                history_doc = await nosql_get(f"history:{session_id}")
+                history = json.loads(history_doc["value"]) if history_doc else []
                 history.append({"q": query, "a": job["result"]["answer"]})
-                history = history[-10:] # Cap history to 10
+                history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
 
     except Exception as e:
@@ -118,3 +127,4 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
             await write_job_status(job_id, status="failed", error=str(e))
         except Exception as write_error:
             print(f"[Local pipeline error] Also failed to write failed status: {write_error}")
+

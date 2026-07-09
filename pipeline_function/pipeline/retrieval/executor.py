@@ -26,6 +26,40 @@ async def run_graph_step(step, state):
     entities = intent.get("entities", {})
     
     city = entities.get("city", "")
+    
+    # Handle Algorithmic Queries
+    if step.get("operation") == "pagerank":
+        # Execute Degree Centrality / Mock PageRank based on FIR counts
+        cypher = """
+        MATCH (p:Person)-[:ACCUSED_IN]->(f:FIR)
+        """
+        params = {}
+        if city:
+            cypher += "WHERE toLower(f.district) CONTAINS toLower($city)\n"
+            params["city"] = city
+            
+        cypher += """
+        WITH p, count(f) as rank
+        ORDER BY rank DESC LIMIT 5
+        RETURN p.id as person_id, rank
+        """
+        
+        print(f"Executing Algorithmic Cypher: {cypher} with params {params}")
+        results = await run_query(cypher, params)
+        
+        formatted = []
+        for row in results:
+            formatted.append({
+                "fir_id": f"Person: {row['person_id']}",
+                "score": 0.99,
+                "path": f"Algorithm: PageRank/Centrality",
+                "metadata": {
+                    "Accused ID": row["person_id"],
+                    "Page Rank Score": str(row["rank"]),
+                    "district": city
+                }
+            })
+        return formatted
     locations = entities.get("locations", [])
     if isinstance(locations, str): locations = [locations]
     
@@ -44,7 +78,7 @@ async def run_graph_step(step, state):
         # Split locations into words for more robust matching (e.g. "narrow gullies" matches "narrow gully")
         words = []
         for loc in locations:
-            words.extend([w for w in loc.split() if len(w) > 3])  # skip small words like 'in', 'at'
+            words.extend([w for w in loc.split() if len(w) >= 3])  # skip only 1-2 char words like 'in', 'at'
         if not words:
             words = locations
             
@@ -56,12 +90,18 @@ async def run_graph_step(step, state):
                 
         
     if crime_types:
-        # Match any of the extracted crime types
-        types_clause = " OR ".join([f"toLower(f.crime_type) CONTAINS toLower($ctype_{i})" for i in range(len(crime_types))])
+        # Match any of the extracted crime types against type, MO, and narrative using keywords
+        words = []
+        for ct in crime_types:
+            words.extend([w for w in ct.split() if len(w) >= 3])
+        if not words:
+            words = crime_types
+
+        types_clause = " OR ".join([f"(toLower(f.crime_type) CONTAINS toLower($ctype_{i}) OR toLower(f.modus_operandi) CONTAINS toLower($ctype_{i}) OR toLower(f.narrative) CONTAINS toLower($ctype_{i}))" for i in range(len(words))])
         if types_clause:
             cypher += f" AND ({types_clause})"
-            for i, ct in enumerate(crime_types):
-                params[f"ctype_{i}"] = ct
+            for i, word in enumerate(words):
+                params[f"ctype_{i}"] = word
                 
     if weapon:
         cypher += " AND (toLower(f.modus_operandi) CONTAINS toLower($weapon) OR toLower(f.narrative) CONTAINS toLower($weapon))"

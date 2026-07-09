@@ -3,6 +3,7 @@ import os
 import base64
 import time
 import asyncio
+from collections import OrderedDict
 
 # BUG FIX: general-purpose keyed lock registry, used both to guard the
 # session-history read-modify-write race (two concurrent queries in the same
@@ -14,13 +15,27 @@ import asyncio
 # the NoSQL item, which the Catalyst REST API's condition syntax for this SDK
 # version did not accept in testing). Bounded so a long-running warm container
 # with many distinct sessions/queries doesn't grow this unboundedly.
-_locks: dict = {}
+# BUG-06 FIX: switched from plain dict + bulk clear() to OrderedDict with LRU
+# eviction. The old bulk clear() had a narrow race: if a coroutine held a lock
+# from _locks and the dict hit _LOCKS_MAX, a concurrent call would clear ALL
+# entries (including the held lock), allowing another coroutine to create a
+# fresh uncontested lock for the same key and enter the critical section
+# simultaneously. LRU eviction only removes the OLDEST unused entry.
+_locks: OrderedDict = OrderedDict()
 _LOCKS_MAX = 2000
+# BUG-04 FIX: file-level lock for local mock NoSQL to prevent concurrent
+# asyncio tasks from doing read-modify-write races on .nosql_mock_db.json
+_MOCK_DB_LOCK = asyncio.Lock()
 
 def get_lock(key: str) -> asyncio.Lock:
-    if len(_locks) > _LOCKS_MAX:
-        _locks.clear()
-    return _locks.setdefault(key, asyncio.Lock())
+    if key in _locks:
+        _locks.move_to_end(key)  # mark as recently used
+        return _locks[key]
+    if len(_locks) >= _LOCKS_MAX:
+        _locks.popitem(last=False)  # evict oldest (LRU), not all
+    lock = asyncio.Lock()
+    _locks[key] = lock
+    return lock
 
 def get_session_lock(session_id: str) -> asyncio.Lock:
     return get_lock(f"session:{session_id}")
@@ -319,8 +334,9 @@ async def nosql_get(key: str) -> dict | None:
         if not os.path.exists(db_path):
             return None
         try:
-            with open(db_path, "r") as f:
-                data = json.load(f)
+            async with _MOCK_DB_LOCK:
+                with open(db_path, "r") as f:
+                    data = json.load(f)
             val = data.get(key)
             return {"value": val} if val is not None else None
         except Exception:
@@ -344,19 +360,20 @@ async def nosql_set(key: str, value: str, ttl: int = None):
         import json
         import os
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
-        data = {}
-        if os.path.exists(db_path):
+        async with _MOCK_DB_LOCK:
+            data = {}
+            if os.path.exists(db_path):
+                try:
+                    with open(db_path, "r") as f:
+                        data = json.load(f)
+                except Exception:
+                    pass
+            data[key] = value
             try:
-                with open(db_path, "r") as f:
-                    data = json.load(f)
-            except Exception:
-                pass
-        data[key] = value
-        try:
-            with open(db_path, "w") as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            print(f"Failed to write to local mock NoSQL DB: {e}")
+                with open(db_path, "w") as f:
+                    json.dump(data, f, indent=2)
+            except Exception as e:
+                print(f"Failed to write to local mock NoSQL DB: {e}")
         return
 
     item = {"item_key": {"S": key}, "item_value": {"S": value}}

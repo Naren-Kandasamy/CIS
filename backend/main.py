@@ -27,6 +27,10 @@ async def lifespan(app: FastAPI):
     await init_nosql_client()
     yield
     await close_nosql_client()
+    # BUG-05 FIX: close the Memgraph driver on app shutdown to release
+    # the connection pool back to Memgraph instead of leaking it.
+    from shared.graph_client import close as close_graph_driver
+    await close_graph_driver()
 
 app = FastAPI(lifespan=lifespan)
 

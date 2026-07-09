@@ -6,7 +6,9 @@ Given a structured intent object, generate an execution plan as a JSON array of 
 Each step: step_id, type, operation, params, depends_on (list of step_ids).
     IMPORTANT: `type` MUST be exactly one of: "graph", "rag", or "sql". 
     Use "graph" for standard crime/evidence/network lookups. 
-    Use "rag" when the intent is `similarity_search` or when searching for a specific modus operandi narrative.
+    Use "rag" for semantic KB similarity search — ALWAYS include a rag step alongside graph for any lookup or graph_search intent. RAG is the safety net for when graph data is sparse.
+    For intent="lookup" or "graph_search": ALWAYS include BOTH a "graph" step AND a "rag" step running in parallel (depends_on: []).
+    For intent="similarity_search": use rag only.
     Steps with no unmet dependencies run in parallel.
     Output ONLY valid JSON array. No preamble."""
 
@@ -46,4 +48,5 @@ def _default_plan(intent: dict) -> list:
     # never meant to be retrieval steps here.
     return [
         {"step_id": 1, "type": "graph", "operation": "mo_search", "params": {}, "depends_on": []},
+        {"step_id": 2, "type": "rag",   "operation": "kb_search",  "params": {"top_k": 10}, "depends_on": []},
     ]
