@@ -153,18 +153,38 @@ async def building_visualization_node(state: AgentState):
             
         donut_data = [{"name": k, "value": v} for k, v in crime_counts.items()]
         
-        # Leaflet Map Data (Markers)
+        # BUG FIX: district_coords previously used police-division names
+        # ("HUBBALLI DHARWAD CITY") but FIR nodes store plain district names
+        # ("Hubballi"). Used a prefix/contains match to be resilient to both.
         district_coords = {
+            "HUBBALLI": (15.3647, 75.1240),
+            "DHARWAD":  (15.3647, 75.1240),
             "BELAGAVI": (15.8497, 74.4977),
-            "BENGALURU CITY": (12.9716, 77.5946),
-            "MYSURU CITY": (12.2958, 76.6394),
-            "MANGALURU CITY": (12.8715, 74.8524),
-            "HUBBALLI DHARWAD CITY": (15.3647, 75.1240)
+            "BENGALURU": (12.9716, 77.5946),
+            "BANGALORE": (12.9716, 77.5946),
+            "MYSURU":   (12.2958, 76.6394),
+            "MYSORE":   (12.2958, 76.6394),
+            "MANGALURU": (12.8715, 74.8524),
+            "MANGALORE": (12.8715, 74.8524),
+            "KALABURAGI": (17.3297, 76.8343),
+            "GULBARGA":  (17.3297, 76.8343),
+            "SHIVAMOGGA": (13.9299, 75.5681),
+            "DAVANGERE": (14.4644, 75.9218),
+            "BALLARI":   (15.1394, 76.9214),
+            "BELLARY":   (15.1394, 76.9214),
+            "TUMAKURU":  (13.3379, 77.1173),
         }
+        def _get_coords(district_raw: str):
+            d = district_raw.upper()
+            for key, coords in district_coords.items():
+                if key in d or d in key:
+                    return coords
+            return (12.9716, 77.5946)  # default: Bengaluru
+
         map_markers = []
         for i, item in enumerate(evidence_obj.items[:10]):
-            district = item.metadata.get('district', '').upper()
-            base_lat, base_lng = district_coords.get(district, (12.9716, 77.5946))
+            district = item.metadata.get('district', '')
+            base_lat, base_lng = _get_coords(district)
             jitter_lat = (i % 3) * 0.005
             jitter_lng = (i % 4) * 0.005
             map_markers.append({

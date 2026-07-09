@@ -28,11 +28,15 @@ class EvidenceObject:
     confidence_caveats:  list[str] = field(default_factory=list)
 
     def add_rag_results(self, rag_response: dict):
+        # BUG-07 FIX: use .get() with fallbacks so a real Catalyst KB response
+        # that uses slightly different key names (e.g. "document_id" instead of
+        # "fir_id", "relevance" instead of "score") doesn't cause a hard KeyError.
         for hit in rag_response.get("results", []):
             self.items.append(EvidenceItem(
-                fir_id=hit["fir_id"], relevance_score=hit["score"],
+                fir_id=hit.get("fir_id") or hit.get("document_id") or hit.get("id", "unknown"),
+                relevance_score=hit.get("score") or hit.get("relevance") or hit.get("similarity", 0.5),
                 sources=["rag"], convergent=False,
-                evidence_path=None, similarity_reason=hit.get("excerpt"),
+                evidence_path=None, similarity_reason=hit.get("excerpt") or hit.get("text"),
                 confidence="medium", metadata=hit.get("metadata", {})
             ))
 

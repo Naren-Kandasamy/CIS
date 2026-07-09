@@ -4,6 +4,7 @@ import DashboardPanel from './components/dashboard/DashboardPanel';
 import Login from './components/Login';
 import EntityDrawer from './components/dashboard/EntityDrawer';
 import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   id: string;
@@ -442,7 +443,9 @@ export default function App() {
                       )}
                       
                       <div className="message-content">
-                        {msg.content || (msg.isStreaming ? (
+                        {msg.content ? (
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        ) : (msg.isStreaming ? (
                           <div className="flex flex-col gap-2 py-1">
                             <div className="flex items-center gap-1.5 mb-1">
                               <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0ms' }} />
