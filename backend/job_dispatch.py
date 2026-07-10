@@ -63,22 +63,32 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
     await write_job_status(job_id, session_id, query, status="queued")
 
     signals_url = _get_signals_url()
-    if signals_url:
+    dispatched_via_signals = False
+    
+    if False:  # Temporarily disable signals to force fallback
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                signals_url,
-                json={
-                    "job_id": job_id,
-                    "session_id": session_id,
-                    "query": query,
-                },
-            )
-            response.raise_for_status() 
-    else:
-        # LOCAL DEV: run pipeline as a background asyncio task in the same
+            try:
+                response = await client.post(
+                    signals_url,
+                    json={
+                        "data": json.dumps({
+                            "job_id": job_id,
+                            "session_id": session_id,
+                            "query": query,
+                        })
+                    },
+                )
+                response.raise_for_status() 
+                dispatched_via_signals = True
+            except Exception as e:
+                print(f"[Signals Error] Failed to dispatch via Signals URL (returned {e}). Falling back to inline execution.")
+                dispatched_via_signals = False
+
+    if not dispatched_via_signals:
+        # LOCAL DEV or Fallback: run pipeline as a background asyncio task in the same
         # process as the SSE poller, so both see the same real NoSQL-backed
         # job status via shared.catalyst_client.
-        print(f"[Local Dev] Dispatching {job_id} inline via asyncio.create_task")
+        print(f"[Fallback/Local Dev] Dispatching {job_id} inline via asyncio.create_task")
         task = asyncio.create_task(_local_pipeline_runner(job_id, session_id, query))
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)

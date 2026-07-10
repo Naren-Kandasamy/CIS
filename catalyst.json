@@ -7,9 +7,12 @@
     "ignore": [],
     "source": "functions"
   },
-  "app_sail": {
-    "source": "backend"
-  },
+  "appsail": [
+    {
+      "name": "backend",
+      "source": "backend"
+    }
+  ],
   "client": {
     "source": "client/dist"
   },

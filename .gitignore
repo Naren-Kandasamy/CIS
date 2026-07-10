@@ -86,3 +86,6 @@ ui-redesign/
 PS1_*
 !Docs/PS1_*
 .nosql_mock_db.json
+# Pre-bundled pip packages (generated, never commit)
+backend/.packages/
+.packages/

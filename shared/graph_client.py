@@ -23,6 +23,8 @@ async def run_query(cypher: str, params: dict = None) -> list:
         params = {}
         
     if os.getenv("LOCAL_MOCK_MODE", "false").lower() == "true":
+        if os.getenv("X_ZOHO_CATALYST_LISTEN_PORT"):
+            raise EnvironmentError("LOCAL_MOCK_MODE=true must NOT be set in a deployed environment.")
         # Return mock evidence so the LLM can test reasoning logic
         return [{
             "fir_id": "MOCK-FIR-001",

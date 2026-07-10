@@ -32,7 +32,7 @@ async def warm_connections():
 # BUG FIX: warm_connections() was previously defined but never called, so the
 # Memgraph connection was never pre-warmed on cold start. Called here, matching
 # pipeline_function/main.py.
-asyncio.run(warm_connections())
+_warmed_up = False
 
 def handler(event, context):
     """
@@ -40,6 +40,13 @@ def handler(event, context):
     event from the Custom Publisher here. Runs the full LangGraph pipeline
     inside this single invocation.
     """
+    global _warmed_up
+    if not _warmed_up:
+        try:
+            asyncio.run(warm_connections())
+        except Exception as e:
+            print(f"Warm-up failed (non-fatal): {e}")
+        _warmed_up = True
     raw_data = event.get_raw_data()
     job_data = raw_data['events'][0]['data']
 
@@ -64,18 +71,23 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
         return
 
     try:
-        # BUG FIX: serializes the history read-modify-write per session_id,
-        # closing the lost-update race between concurrent same-session queries.
+        # --- Narrow lock: read history snapshot before pipeline ---
         async with get_session_lock(session_id):
             history_doc = await nosql_get(f"history:{session_id}")
             history = json.loads(history_doc["value"]) if history_doc else []
 
-            await run_langgraph_pipeline(job_id, query, write_job_status, history)
+        # Run the pipeline WITHOUT holding the session lock
+        await run_langgraph_pipeline(job_id, query, write_job_status, history)
 
+        # --- Narrow lock: write updated history after pipeline ---
+        async with get_session_lock(session_id):
             job = await read_job_status(job_id)
             if job and job.get("status") == "done":
+                # Re-read history inside the lock to catch concurrent updates
+                history_doc = await nosql_get(f"history:{session_id}")
+                history = json.loads(history_doc["value"]) if history_doc else []
                 history.append({"q": query, "a": job["result"]["answer"]})
-                history = history[-10:]  # Cap history to 10 to prevent memory leak
+                history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
 
     except Exception as e:

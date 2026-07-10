@@ -39,8 +39,9 @@ async def stream_job_status(job_id: str):
         # LLM retry windows (can be 5-8s per retry attempt).
         yield {"event": "ping", "data": json.dumps({"t": round(elapsed, 1)})}
 
-        await asyncio.sleep(SSE_POLL_INTERVAL)
-        elapsed += SSE_POLL_INTERVAL
+        poll_interval = min(0.5 * (2 ** int(elapsed // 15)), 5.0)
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
 
     # BUG FIX: without this guard, a job that never transitions to done/failed
     # (e.g. pipeline Function silently crashed without writing status) would

@@ -1,8 +1,8 @@
 def build_fallback_response(evidence) -> str:
     """Fallback response when LLM synthesis fails or rate limits are exhausted."""
     return (
-        "[Mock Response — LLM unavailable locally] "
-        f"Query understood: intent='{evidence.intent}'. "
-        f"Evidence retrieved: {len(evidence.items)} item(s). "
-        "Connect to Catalyst Qwen API for a real synthesized response."
+        f"Analysis engine temporarily unavailable. "
+        f"Evidence retrieved for your query: {len(evidence.items)} record(s) found "
+        f"(intent: {evidence.intent}). Please retry your query. "
+        "All outputs require officer verification before action."
     )
