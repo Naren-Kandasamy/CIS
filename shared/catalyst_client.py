@@ -25,7 +25,17 @@ _locks: OrderedDict = OrderedDict()
 _LOCKS_MAX = 2000
 # BUG-04 FIX: file-level lock for local mock NoSQL to prevent concurrent
 # asyncio tasks from doing read-modify-write races on .nosql_mock_db.json
-_MOCK_DB_LOCK = asyncio.Lock()
+_MOCK_DB_LOCK: asyncio.Lock | None = None
+
+def _get_mock_db_lock() -> asyncio.Lock:
+    global _MOCK_DB_LOCK
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return asyncio.Lock()
+    if _MOCK_DB_LOCK is None or getattr(_MOCK_DB_LOCK, '_loop', None) is not loop:
+        _MOCK_DB_LOCK = asyncio.Lock()
+    return _MOCK_DB_LOCK
 
 def get_lock(key: str) -> asyncio.Lock:
     if key in _locks:
@@ -141,25 +151,8 @@ async def kb_upload(document_id: str, content: str, metadata: dict):
 async def kb_search(query: str, top_k: int = 10) -> dict:
     url = CATALYST_KB_URL()
     if not url:
-        # Mock RAG response for the trap scenario
-        if "smiley face" in query.lower() or "glass cutter" in query.lower():
-            print(f"[Mock KB] Returning trap scenario matches for query: {query}")
-            return {
-                "results": [
-                    {
-                        "fir_id": "TRAP-FIR-001",
-                        "excerpt": "A burglary occurred in Belagavi where the suspect broke in through the rear window using a specialized glass cutter and left a calling card with a smiley face.",
-                        "score": 0.88,
-                        "metadata": {"crime_no": "199991234202100001", "district": "Belagavi"}
-                    },
-                    {
-                        "fir_id": "TRAP-FIR-002",
-                        "excerpt": "A burglary occurred in Kalaburagi where the suspect broke in through the rear window using a specialized glass cutter and left a calling card with a smiley face.",
-                        "score": 0.86,
-                        "metadata": {"crime_no": "199995678202400002", "district": "Kalaburagi"}
-                    }
-                ]
-            }
+        print("[WARNING] ZC_KB_ENDPOINT not configured — RAG step returning zero results. "
+              "Set ZC_KB_ENDPOINT in your AppSail/Function environment.")
         return {"results": []}
     async with httpx.AsyncClient() as client:
         r = await client.post(url + "/search", headers=_headers(),
@@ -334,7 +327,7 @@ async def nosql_get(key: str) -> dict | None:
         if not os.path.exists(db_path):
             return None
         try:
-            async with _MOCK_DB_LOCK:
+            async with _get_mock_db_lock():
                 with open(db_path, "r") as f:
                     data = json.load(f)
             val = data.get(key)
@@ -360,7 +353,7 @@ async def nosql_set(key: str, value: str, ttl: int = None):
         import json
         import os
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
-        async with _MOCK_DB_LOCK:
+        async with _get_mock_db_lock():
             data = {}
             if os.path.exists(db_path):
                 try:
