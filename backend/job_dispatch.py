@@ -65,9 +65,10 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
     signals_url = _get_signals_url()
     dispatched_via_signals = False
     
-    if False:  # Temporarily disable signals to force fallback
+    if signals_url:  # Use Catalyst Signals when URL is configured
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
+                print(f"[Signals] POSTing job {job_id} to Signals URL...")
                 response = await client.post(
                     signals_url,
                     json={
@@ -78,11 +79,14 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
                         })
                     },
                 )
-                response.raise_for_status() 
+                response.raise_for_status()
+                print(f"[Signals] ✅ Dispatch succeeded — HTTP {response.status_code} for job {job_id}")
                 dispatched_via_signals = True
             except Exception as e:
-                print(f"[Signals Error] Failed to dispatch via Signals URL (returned {e}). Falling back to inline execution.")
+                print(f"[Signals] ❌ Dispatch FAILED for job {job_id}: {type(e).__name__}: {e} — falling back to inline runner")
                 dispatched_via_signals = False
+    else:
+        print(f"[Signals] ⚠️  ZC_SIGNALS_PUBLISHER_URL not set — running inline fallback for job {job_id}")
 
     if not dispatched_via_signals:
         # LOCAL DEV or Fallback: run pipeline as a background asyncio task in the same
