@@ -22,8 +22,25 @@ async def close_nosql_client():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Lightweight -- just confirm NoSQL client + Signals publisher URL are configured.
-    # No Memgraph handshake, no LLM ping -- those now live in pipeline_function/.
+    # --- Startup probes: print to DevOps Application logs ---
+    # Check NoSQL auth first — if this fails every nosql_get/set will fail
+    # silently and every query will hang in QUEUED state forever.
+    try:
+        from shared.catalyst_client import nosql_set, nosql_get
+        await nosql_set("health:startup", "ok")
+        result = await nosql_get("health:startup")
+        print(f"[STARTUP] ✅ NoSQL health check passed: {result}")
+    except Exception as e:
+        print(f"[STARTUP] ❌ NoSQL health check FAILED — all queries will hang: {e}")
+
+    # Check Signals URL — if missing, fallback inline runner is used which
+    # may timeout long queries inside the AppSail event loop.
+    signals_url = os.getenv("ZC_SIGNALS_PUBLISHER_URL") or os.getenv("CATALYST_SIGNALS_PUBLISHER_URL")
+    if signals_url:
+        print(f"[STARTUP] ✅ Signals URL is configured.")
+    else:
+        print(f"[STARTUP] ⚠️  ZC_SIGNALS_PUBLISHER_URL is NOT SET — pipeline will run inline (may timeout).")
+
     await init_nosql_client()
     yield
     await close_nosql_client()
