@@ -37,6 +37,9 @@ This list aggregates all the unchecked items across the official project phases 
 - [ ] **Confidence Calibration**: Measure the Confidence Engine against these blind labels to ensure the `HIGH` confidence tier is >= 85% accurate.
 - [x] **Confidence Engine OCR Penalty (Layer 4)**: Ensure any evidence extracted via the Qwen VLM carries an `ocr_extracted: true` flag, applying a 0.90 multiplier to its confidence score.
 - [x] **Full Catalyst Deployment Verified**: End-to-end cloud execution is confirmed. Fixed AppSail React routing (`/app/` base path), backend environment variable limits (`ZC_` prefix), and `sys.path` dependency loading.
+- [x] **Serverless Asyncio Event Loop Hardening**: Removed global Neo4j driver caching in `graph_client.py` to prevent background task crashes across ephemeral function invocations.
+- [x] **Catalyst Environment Synchronization**: Removed empty `env_variables` in `catalyst-config.json` to prevent deployment wiping of UI variables, fixing the silent NoSQL mock-database fallback bug.
+- [x] **Signals Payload Deserialization**: Implemented robust stringified JSON unwrapping in the serverless handler to prevent `TypeError` crashes on webhook delivery.
 
 ## Phase 5: Extended Investigative Capabilities & Refinements
 *These items reflect the recent senior-investigator roadmap and architecture addendums for advanced reasoning, feedback loops, and data source integration.*
@@ -59,3 +62,7 @@ This list aggregates all the unchecked items across the official project phases 
 - [ ] **Keep-Warm Uptime Service**: Configure an external pinging service (like UptimeRobot) to hit the AppSail `/health` endpoint every 4 minutes to prevent the 5-minute cold start sleep.
 - [ ] **Production Publisher Check**: Confirm `CATALYST_SIGNALS_PUBLISHER_URL` in AppSail's `.env` points at the PRODUCTION publisher URL, not the dev URL.
 - [ ] **Live System Health Checks**: Confirm Oracle VM connection, Catalyst KB searchability, and run a test compound query.
+- [ ] **Zia Environment Check**: Confirm `CATALYST_ORG_ID` is set correctly for the production Catalyst org, not a dev org.
+- [ ] **VoiceButton Default**: Ensure the language picker defaults to a sensible value (e.g., Kannada) rather than requiring manual selection every time.
+- [ ] **Trust-Weight Environment Lock**: Confirm the `trust:` keys in Catalyst NoSQL are NOT accidentally wiped between dev and prod environments.
+- [ ] **Live Feedback E2E Test**: Run through one citation confirm + one citation correct live, end-to-end, before judging starts to confirm the penalties apply visibly.
