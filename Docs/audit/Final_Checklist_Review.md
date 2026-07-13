@@ -55,6 +55,9 @@ This list aggregates all the unchecked items across the official project phases 
 - [ ] **Vehicle/ANPR Cross-Referencing**: Ingest synthetic ANPR plate reads and cross-check against a wanted-vehicle registry. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 5)*
 - [ ] **RBAC / Jurisdiction Scoping**: Add an `OfficerProfile` and default queries to home-district scope unless overridden or rank is elevated. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 6)*
 - [ ] **Hypothesis Workspace**: Allow officers to log investigative theories (`HypothesisRecord`) and run deterministic checks for new supporting/contradicting evidence. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 7)*
+- [ ] **Case & Session Management**: Implement the multi-officer case container model (Cases containing Sessions) replacing the anonymous per-refresh session logic. *(Consult: `Docs/PS1_Case_Session_Management.md`)*
+- [ ] **RBAC Middleware Exposure**: Patch `backend/api/middleware/rbac.py` to explicitly inject `session["username"]` into ASGI `scope["state"]`. **Why**: Required so that downstream case/session routes know *who* is making the request to verify case ownership.
+- [ ] **Collaborator Validation**: Ensure `POST /api/cases/{case_id}/collaborators` explicitly calls `get_user(body.username)`. **Why**: Without this, typo'd usernames will silently write to the database and the intended officer will never receive access to the case.
 
 ## Pre-Demo Checklist (Judging Day Operations)
 *Tasks to execute strictly 30 minutes before presenting.*

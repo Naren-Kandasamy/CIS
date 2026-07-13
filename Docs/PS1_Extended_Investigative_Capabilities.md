@@ -622,88 +622,102 @@ async def ingest_and_check_anpr(plate_number: str, start, end):
 
 ---
 
-## 6. Item 6 — RBAC / Jurisdiction Scoping
+## 6. Item 6 — RBAC / Jurisdiction Scoping (The 3D Access Matrix)
 
 ### 6.1 Current State vs. Target State
 
 | Aspect | Current | Target |
 |---|---|---|
-| Access control | None — Architecture v8's own gap table already flags this as hardcoded/missing | Officer profile with home district + rank; default query scope filtered to home district unless rank is elevated or an explicit, logged cross-jurisdiction override is used |
+| Access control | None — Architecture v8's own gap table already flags this as hardcoded/missing | The **3D Access Matrix**: Officer profile contains Rank, Geography (District/Unit), and Department. Access is not a binary "God Mode vs. Invite Only"; it balances implicit oversight (Pull) with explicit alerts (Push). |
 
-This is intentionally a **lightweight hackathon-scope version**, not a full identity/authorization system — the goal is to demonstrate the *shape* of the real requirement, per the earlier discussion, not to build production-grade auth in the time available.
+This replaces the naive "rank grants total visibility" model with a realistic law-enforcement structure. Just because two officers work at the same station doesn't mean the Cyber Crimes Inspector oversees a routine traffic collision.
 
-### 6.2 Architecture
+### 6.2 Architecture (Push vs. Pull)
 
 ```python
 # shared/models.py
 class OfficerProfile(BaseModel):
     officer_id: str
     name: str
-    rank: str            # "constable" | "inspector" | "sp" | "admin"
+    rank: str            # "constable" | "inspector" | "dysp" | "sp"
     home_district: str
     unit_id: str
+    department: str      # "law_order" | "cyber" | "narcotics" | "financial"
 ```
 
-```
-Layer 3 -- Retrieval
-    Query construction (Cypher/ZTSQL/KB filters) gets a district
-    WHERE-clause injected based on the officer's scope, UNLESS their
-    rank is elevated (inspector+) or they explicitly invoke a logged
-    cross-jurisdiction override.
-```
+**1. The "Pull" (Implicit Oversight)**
+A supervisor natively searches and views cases in their `home_district` AND their `department`. These cases do not clutter their active dashboard, but are queryable for audits.
+**Compartmentalization:** If a case is flagged as `is_sensitive=True` (e.g. internal affairs), "Pull" access is broken. It becomes strictly invite-only, breaking the implicit hierarchy.
+
+**2. The "Push" (Elevation)**
+When an IO needs a supervisor's attention, they click `[ ⬆ Elevate for Review ]`. This drops a `ReviewQueueItem` directly onto the Supervisor's active dashboard. The supervisor only gets alerted when their attention is actively requested.
 
 ### 6.3 Implementation
 
 ```python
 # shared/rbac_engine.py
 
-ELEVATED_RANKS = {"inspector", "sp", "admin"}
+ELEVATED_RANKS = {"inspector", "dysp", "sp"}
 
-async def get_officer_scope(officer_id: str) -> str | None:
+async def get_officer_scope(officer_id: str) -> dict:
     """
-    Returns a district name to filter queries by, or None for
-    unrestricted access (elevated ranks).
+    Returns the required District and Department filters for an officer.
     """
     officer = await get_officer_profile(officer_id)  # simple NoSQL lookup
-    if officer.rank in ELEVATED_RANKS:
-        return None
-    return officer.home_district
+    
+    # Even elevated ranks only see their department natively.
+    scope = {
+        "department": officer.department,
+        "district": officer.home_district
+    }
+    
+    # Exceptions like SPs might oversee all departments in a district.
+    if officer.rank == "sp":
+        scope["department"] = None  # No department filter
+        
+    return scope
 
 
-async def apply_district_filter(cypher_query: str, params: dict,
-                                 officer_id: str,
-                                 cross_jurisdiction_reason: str | None = None) -> tuple[str, dict]:
+async def apply_jurisdiction_filter(cypher_query: str, params: dict,
+                                    officer_id: str,
+                                    cross_jurisdiction_reason: str | None = None) -> tuple[str, dict]:
     scope = await get_officer_scope(officer_id)
-    if scope is None:
-        return cypher_query, params  # elevated rank -- no filter
 
     if cross_jurisdiction_reason:
         # Explicit override -- logged, not silently allowed
         await log_cross_jurisdiction_access(officer_id, cross_jurisdiction_reason)
         return cypher_query, params
 
-    # Inject district filter -- exact clause depends on where FIR.district
-    # sits in your existing Cypher query structure
-    filtered_query = cypher_query.replace(
-        "MATCH (f:FIR)", "MATCH (f:FIR {district: $officer_district})"
-    )
-    params["officer_district"] = scope
+    # Inject district and department filters.
+    # [VERIFY] This replace logic is a placeholder. Integrate this properly into the Retrieval query builder.
+    filter_clause = "MATCH (f:FIR {district: $officer_district"
+    if scope["department"]:
+        filter_clause += ", crime_type: $officer_department"
+    filter_clause += "})"
+    
+    filtered_query = cypher_query.replace("MATCH (f:FIR)", filter_clause)
+    
+    params["officer_district"] = scope["district"]
+    if scope["department"]:
+        params["officer_department"] = scope["department"]
+        
     return filtered_query, params
 ```
 
-`[VERIFY]` The naive `.replace()` on the Cypher query string above is a placeholder illustrating intent — the real integration point should inject the district filter properly into whatever query-builder abstraction the retrieval layer actually uses, not string-replace raw Cypher. Flag this clearly to Antigravity as needing the real query construction code, not this simplified stand-in.
+`[VERIFY]` The naive `.replace()` on the Cypher query string above is a placeholder illustrating intent — the real integration point should inject the district/department filters properly into whatever query-builder abstraction the retrieval layer actually uses.
 
 ### 6.4 Testing / Migration
 
-- [ ] A constable-rank officer's query is scoped to only their home district's FIRs
-- [ ] An inspector-rank officer's query is unrestricted
-- [ ] A constable using an explicit cross-jurisdiction override with a reason gets unrestricted results for that query, and the override is logged
-- [ ] No override, no elevated rank → district-scoped, no silent full access
+- [ ] A constable's query is scoped to only their home district's FIRs within their department.
+- [ ] An Inspector (Cyber) cannot implicitly query cases in the Narcotics department, despite their elevated rank.
+- [ ] An SP (Superintendent) can query across all departments in their district.
+- [ ] A constable using an explicit cross-jurisdiction override with a reason gets unrestricted results for that query, and the override is logged.
+- [ ] Sensitive cases (`is_sensitive=True`) are omitted from all implicit queries unless the officer is an explicit collaborator.
 
-1. Build `shared/models.py` addition (`OfficerProfile`)
-2. Build `shared/rbac_engine.py`
-3. Wire `apply_district_filter` into the actual query-construction code path — `[VERIFY]` real integration point first, per the note above
-4. Seed a handful of demo `OfficerProfile` records for the hackathon demo (different ranks/districts) to actually show this working
+1. Build `shared/models.py` addition (`OfficerProfile`).
+2. Build `shared/rbac_engine.py`.
+3. Wire `apply_jurisdiction_filter` into the actual query-construction code path.
+4. Seed a handful of demo `OfficerProfile` records (different ranks/districts/departments) to show this 3D matrix working during the judging demo.
 
 ---
 
