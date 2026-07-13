@@ -44,6 +44,7 @@ This mirrors the same principle already used elsewhere in this project (see `PS1
 4. **Reuse the existing lock primitive; don't invent a second locking system.** `get_session_lock` already exists and already works correctly for the session-history race condition (see the `RC-02 FIX` comment already in `job_dispatch.py`, which narrowed the lock's scope for exactly this reason). Case-level metadata gets its own lock key, same underlying mechanism, not a new subsystem.
 5. **Additive only.** No existing NoSQL key pattern (`user:`, `session:`, `history:`, `job:`, `cache:`) is renamed or restructured. New key prefixes (`case:`, `case_sessions:`, `user_cases:`) sit alongside them.
 6. **The server assigns `session_id`, not the client.** This is a necessary behavior change, not just an addition — today `client/src/App.tsx` generates its own UUID with no server involvement at all, which is exactly why there's no ownership record right now. Session creation becomes a real POST call.
+7. **Intelligence is shared explicitly, not implicitly.** While sessions are isolated, officers can "pin" high-value findings to a shared "Case Board." This bridges the gap between personal scratchpads and collaborative investigation without introducing real-time co-editing.
 
 ---
 
@@ -105,6 +106,22 @@ Simple list of session IDs under this case. Read once when a case is expanded in
 Index for "which cases does this user have access to" — this is the single query the sidebar needs on load. Kept as a separate index (rather than scanning every `case:*` key, which the NoSQL client has no primitive for anyway — recall `PS1_Evidence_Language_Detection.md` Section 2's table already noted the mock/real NoSQL layer only supports exact-key fetch, no scan) — updated in two places: when a user creates a case, and when they're added as a collaborator (Section 5.3).
 
 **Why a separate index instead of just reading `collaborators` off every case:** there's no way to enumerate "every case" cheaply (no scan primitive, per `shared/catalyst_client.py`'s `nosql_get`/`nosql_set` being exact-key only). `user_cases:{username}` is the answer to "what should I be able to list," populated at write time rather than computed at read time.
+
+### 4.5 `case_board:{case_id}` (The Shared Intelligence Layer)
+
+```json
+[
+  {
+    "pinned_by": "si1",
+    "pinned_at": 1783879500.0,
+    "source_session_id": "s_1a2b3c",
+    "content_type": "evidence",
+    "content": { "fir_id": "FIR123", "edge_type": "SHARED_MO", "summary": "Used glass cutter" }
+  }
+]
+```
+
+A chronologically ordered list of vital findings manually pinned by collaborators from their isolated sessions. This acts as the shared ground-truth "corkboard" for the investigation.
 
 ---
 
@@ -204,6 +221,10 @@ async def add_collaborator(case_id: str, body: AddCollaboratorRequest, request: 
         # KSP case-handling actually works day-to-day before treating this
         # as final -- it's a policy assumption, not a technical one.
 
+        from shared.auth import get_user
+        if not await get_user(body.username):
+            raise HTTPException(404, "Officer not found in system")
+
         if body.username not in case["collaborators"]:
             case["collaborators"].append(body.username)
             await nosql_set(f"case:{case_id}", json.dumps(case))
@@ -217,7 +238,7 @@ async def add_collaborator(case_id: str, body: AddCollaboratorRequest, request: 
     return case
 ```
 
-`[VERIFY]` Should there be a check that `body.username` is a real, existing user (i.e. call `get_user()` from `shared/auth.py` first)? As written, this would silently add a typo'd username to the collaborators list with no error. Recommend adding that check before this ships — flagged here rather than silently fixed, since it's a one-line addition but changes error-handling behavior worth a deliberate decision, not an assumption.
+**Implementation Note:** The `get_user()` check is explicitly added above to prevent silent failures where a typo'd username is added to the database, preventing the intended officer from getting access.
 
 ### 5.4 New shared primitive — `get_case_lock` in `shared/catalyst_client.py`
 
@@ -242,9 +263,15 @@ def get_case_lock(case_id: str) -> asyncio.Lock:
 
 `[VERIFY]` Confirm the exact current implementation of `get_session_lock` in `shared/catalyst_client.py` before adding this — the snippet above assumes a simple per-key `asyncio.Lock()` dict, matching what `backend/job_dispatch.py`'s usage implies, but the real implementation should be read directly (it wasn't fully reproduced in the files reviewed for this doc) to make sure `get_case_lock` actually mirrors it, including any cross-process caveats already noted elsewhere in this codebase (AppSail vs pipeline Function running as separate processes — an in-memory `asyncio.Lock` only guards within one process; `[VERIFY]` whether that's already a known accepted limitation for `get_session_lock` too, in which case `get_case_lock` inherits the same limitation consistently rather than introducing a new one).
 
-### 5.5 `[VERIFY]` — How `request.state.username` actually gets set
+### 5.5 Modifying `backend/api/middleware/rbac.py` to expose `request.state.username`
 
-Section 5.1–5.3 above assume the RBAC middleware attaches the authenticated username somewhere accessible to route handlers (`request.state.username`). Looking at `backend/api/middleware/rbac.py`, the middleware currently validates the Bearer token against `get_session()` and enforces rank — but the exact mechanism by which a downstream route handler *reads* the resulting username needs to be confirmed against the full file (not fully shown in the excerpt reviewed for this doc). If it's not currently exposed to route handlers at all, that's a small addition to the middleware (attaching the resolved session dict to `scope["state"]` or equivalent) needed before any of Section 5's routes can work — flagged explicitly so this isn't assumed to already exist.
+**Critical Fix Required:** The current middleware successfully validates the token but throws the session data away. It must be patched to expose the user to the route handlers, otherwise every new route above will crash with an `AttributeError`.
+
+Add these two lines to `rbac.py` just before `await self.app(scope, receive, send)`:
+```python
+        scope.setdefault("state", {})
+        scope["state"]["username"] = session["username"]
+```
 
 ### 5.6 `POST /api/cases/{case_id}/sessions` — Start a new session under a case
 
@@ -361,6 +388,39 @@ async def _authorize_and_stamp_session(session_id: str, username: str, query_tex
 
 `[VERIFY]` This adds two extra `nosql_get`/`nosql_set` round-trips to the hot path of every single query. Given the existing pipeline already has documented latency concerns (Signals stall risk, per `job_dispatch.py`'s own fallback-path comments), confirm this overhead is acceptable, or consider making the "stamp session/case activity" write fire-and-forget (`asyncio.create_task`, not awaited inline) rather than blocking the query response on it — flagged as a genuine tradeoff, not resolved in this doc, since it depends on how tight the existing latency budget actually is.
 
+### 5.10 `POST /api/cases/{case_id}/board` & `GET /api/cases/{case_id}/board`
+
+```python
+class PinItemRequest(BaseModel):
+    source_session_id: str
+    content_type: str
+    content: dict
+
+@router.post("/api/cases/{case_id}/board")
+async def pin_to_case_board(case_id: str, body: PinItemRequest, request: Request):
+    username = request.state.username
+    # (Standard collaborator check here)
+    
+    async with get_case_lock(case_id):
+        board_doc = await nosql_get(f"case_board:{case_id}")
+        board = json.loads(board_doc["value"]) if board_doc else []
+        board.append({
+            "pinned_by": username,
+            "pinned_at": time.time(),
+            "source_session_id": body.source_session_id,
+            "content_type": body.content_type,
+            "content": body.content
+        })
+        await nosql_set(f"case_board:{case_id}", json.dumps(board))
+    return {"status": "pinned"}
+
+@router.get("/api/cases/{case_id}/board")
+async def get_case_board(case_id: str, request: Request):
+    # (Standard collaborator check here)
+    board_doc = await nosql_get(f"case_board:{case_id}")
+    return {"board": json.loads(board_doc["value"]) if board_doc else []}
+```
+
 ---
 
 ## 6. Frontend Changes
@@ -384,7 +444,12 @@ Sits above the existing Query/Dashboard nav buttons in the sidebar (`client/src/
 - "+ New case" → small form (title, optional crime no / district) → `POST /api/cases` → immediately `POST /api/cases/{case_id}/sessions` to start the first session under it.
 - "+ New session" (within an expanded case) → `POST /api/cases/{case_id}/sessions`, clears the chat thread to start fresh under the same case.
 
-### 6.3 Collaborator management — minimal v1
+### 6.3 Shared Intelligence UI (The Case Board)
+
+- When an officer views an AI response with Evidence Citations, a `[ 📌 Pin to Case ]` button appears alongside the feedback controls. Clicking it posts to `POST /api/cases/{case_id}/board`.
+- When viewing a Case in the sidebar, a **"Case Board"** tab sits above the Session list, fetching `GET /api/cases/{case_id}/board`. This renders the shared corkboard of all pinned evidence, creating an immediate, collaborative summary of the investigation's current state.
+
+### 6.4 Collaborator management — minimal v1
 
 A small "+ Add officer" affordance on an expanded case (visible only to existing collaborators, enforced both client-side for UX and server-side for actual security per Section 5.3) — a single username text input, calling `POST /api/cases/{case_id}/collaborators`. No user-search/autocomplete for v1; officer must know the exact username. `[VERIFY]` whether a simple `GET /api/users?prefix=...` lookup is worth adding for v1.1 — out of scope for this doc's minimum viable version.
 
