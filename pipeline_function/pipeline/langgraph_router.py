@@ -82,7 +82,7 @@ async def retrieving_evidence_node(state: AgentState):
 async def confidence_scoring_node(state: AgentState):
     await state["write_status_callback"](state["job_id"], status="confidence_scoring")
     evidence_obj = state["evidence"]
-    evidence_obj = run_confidence_engine(evidence_obj)
+    evidence_obj = await run_confidence_engine(evidence_obj)
     return {"evidence": evidence_obj}
 
 async def building_visualization_node(state: AgentState):
@@ -228,6 +228,8 @@ async def synthesizing_response_node(state: AgentState):
             "confidence": item.confidence,
             "relevance_score": item.relevance_score,
             "flags": item.confidence_flags,
+            "excluded": item.excluded,
+            "exclusion_reason": item.exclusion_reason,
             "data": item.metadata
         })
 
@@ -300,6 +302,9 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
                 "fir_id": item.fir_id,
                 "confidence": item.confidence,
                 "relevance_score": item.relevance_score,
+                "excluded": item.excluded,
+                "exclusion_reason": item.exclusion_reason,
+                "exclusion_type": item.exclusion_type,
                 "data": item.metadata
             })
 
