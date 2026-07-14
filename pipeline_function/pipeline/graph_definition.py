@@ -67,7 +67,7 @@ async def run_pipeline_stages(input_state: dict, config: dict):
         
         # 4. Confidence Engine
         yield "scoring_evidence", {"status": "Scoring evidence..."}
-        evidence = run_confidence_engine(evidence)
+        evidence = await run_confidence_engine(evidence)
         state.evidence = evidence
         
         # 5. Synthesis
