@@ -107,9 +107,17 @@ async def run_graph_step(step, state):
         cypher += " AND (toLower(f.modus_operandi) CONTAINS toLower($weapon) OR toLower(f.narrative) CONTAINS toLower($weapon))"
         params["weapon"] = weapon
         
-    # Return top relevant FIRs
-    cypher += " RETURN f.id as fir_id, f.crime_no as crime_no, f.district as district, f.crime_type as crime_type, f.modus_operandi as modus_operandi, f.narrative as narrative, f.date as date LIMIT 10"
-    
+    # Return top relevant FIRs, along with any Accused linked via ACCUSED_IN --
+    # needed so exclusion demotion (confidence_engine.py) can tell which
+    # accused persons an evidence item is about. OPTIONAL MATCH so FIRs with
+    # no linked Accused still come back (empty accused_ids, not dropped).
+    cypher += """
+ WITH f
+ OPTIONAL MATCH (a:Accused)-[:ACCUSED_IN]->(f)
+ WITH f, collect(DISTINCT a.id) AS accused_ids
+ RETURN f.id as fir_id, f.crime_no as crime_no, f.district as district, f.crime_type as crime_type, f.modus_operandi as modus_operandi, f.narrative as narrative, f.date as date, accused_ids
+ LIMIT 10"""
+
     print(f"Executing Cypher: {cypher} with params {params}")
     # BUG FIX: this used to catch every exception and return [] here,
     # indistinguishable from "the query legitimately found nothing" --
@@ -132,7 +140,8 @@ async def run_graph_step(step, state):
                 "modus_operandi": row["modus_operandi"],
                 "narrative": row["narrative"],
                 "Date": row.get("date", ""),
-                "district": row.get("district", "")
+                "district": row.get("district", ""),
+                "accused_ids": row.get("accused_ids") or []
             }
         })
     return formatted
