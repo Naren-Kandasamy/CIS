@@ -67,6 +67,14 @@ def get_lock(key: str) -> asyncio.Lock:
 def get_session_lock(session_id: str) -> asyncio.Lock:
     return get_lock(f"session:{session_id}")
 
+def get_case_lock(case_id: str) -> asyncio.Lock:
+    # Same registry as get_session_lock (LRU eviction + per-event-loop
+    # staleness guard already handled by get_lock) -- guards case-metadata
+    # read-modify-write (collaborator adds, activity stamps), a distinct
+    # critical section from session-history writes, keyed separately so two
+    # cases never block on each other.
+    return get_lock(f"case:{case_id}")
+
 # BUG FIX: env vars must be read lazily (via helper) rather than at module-import
 # time, because Catalyst Functions inject env vars *after* module load.
 # A module-level HEADERS dict captured os.getenv() before the env was populated,
