@@ -6,6 +6,7 @@
 - `PS1_Voice_Language_Layer_v2.md` — Zia ASR/TTS/Translation, replacing the generic "Catalyst Kannada NLP" placeholder
 - `PS1_Evidence_Language_Detection.md` — ingestion-time language tagging of FIR evidence + retrieval-time fallback
 - `PS1_Reasoning_Feedback_Loop.md` — methodology-scoped trust weighting, giving Layer 7's feedback claim an actual mechanism
+- `PS1_Integrity_AntiCorruption_Layer_v1.md` — hash-chained audit logging, named-entity search logging, sensitive-case downgrade governance, and the Vigilance Cell oversight role (§23 below); companion to `PS1_RBAC_Case_Access_v1.md`, which is not folded in here and remains the source of truth for case visibility rules
 
 **Why consolidate now:** the three addenda were written and reviewed as standalone documents, each correctly scoped to one problem. But they all touch the same pipeline, and two of them (Voice/Language and Evidence-Language) share a dependency (`translate_text`, `VIABLE_LANGUAGES`) that only makes sense read together. Left as four separate files, Antigravity would have to manually reconcile section numbers, node names, and env vars across documents before writing a line of code. This v9 is that reconciliation, done once, so the addenda can be retired as standalone build references.
 
@@ -27,6 +28,10 @@ This section exists because the user's instruction was explicit: additions/chang
 | A6 | `shared/language_utils.py`, `shared/feedback_models.py`, `shared/feedback_engine.py` | §17 (Shared Library) | New modules required by A2–A4 |
 | A7 | New API route `/api/feedback/correction` | §12, §17 | Entry point for A4/A5 |
 | A8 | `langdetect` dependency | §17, §5 | Local, deterministic language ID — no LLM call, no network round trip |
+| A9 | Hash-chained audit log (each entry's hash includes the previous entry's) + read-access logging, not just writes | §23 | Per-record SHA-256 (v8) proves an entry wasn't edited; it doesn't prove one wasn't deleted outright. Chaining closes that gap |
+| A10 | `SearchLog` — named-entity (person/vehicle/property) search logging, officer-attributed | §23 | Closes the "unauthorized lookup" gap (searching a specific person with no case behind it) without requiring a case object to exist first |
+| A11 | `is_sensitive` downgrade governance + `vigilance_cell` oversight role | §23 | Raising a case's protection is low-risk and stays open to any collaborator; lowering it is the actual abuse vector, so it's carved out to a role outside the case's own chain of command, modeled on KSP's real Vigilance wing |
+| A12 | Append-only evidence versioning (FIRs/evidence never mutated in place, only superseded) | §23 | Generalizes A2's "never overwrite the original narrative, preserve alongside the translation" principle from a language-layer-specific rule to all evidentiary fields |
 
 ### Changes (existing v8 content modified, not replaced wholesale)
 
@@ -106,7 +111,8 @@ Combine:
 | Graph hosting | Oracle Cloud Free Tier ARM VM (4GB) | Always free, Docker-ready |
 | Structured DB | Catalyst Data Store (ZTSQL) | Replaces PostgreSQL |
 | Session memory | Catalyst NoSQL | Per-conversation state; now also holds ephemeral same-session correction penalties `[NEW — A4]` |
-| Audit logs | Catalyst NoSQL | Tamper-evident with SHA-256 hash |
+| Audit logs | Catalyst NoSQL | Hash-**chained**, not just per-entry hashed `[CHANGED — A9]` — each entry's hash includes the previous entry's, so deletion or reordering of a past entry is detectable, not just alteration. Now also logs reads (case views, evidence views, `is_sensitive` toggles), not only writes |
+| `SearchLog` `[NEW — A10]` | Catalyst NoSQL | One row per named-entity (person/vehicle/property) search: `officer_id`, `timestamp`, `query_target_type`, `query_target_id`, nullable `linked_case_id`, optional `reason`. Does not block or require a case — just guarantees a trail |
 | Correction library / trust scoreboard `[NEW — A4]` | Catalyst NoSQL | `CorrectionEvent` (append-only) + `MethodologyTrust` (updated in place) — no new infrastructure, new keys in the existing store |
 
 ### Application Layer
@@ -661,7 +667,7 @@ def is_viable(language_code: str | None) -> bool:
 
 ### Nodes (unchanged from v8 — Accused, FIR, Location, Victim, Complainant, Vehicle, Phone, Gang, CrimeType)
 
-### `FIRSchema` — New Language Fields `[NEW — A2]`
+### `FIRSchema` — New Language Fields `[NEW — A2]` and Access-Control Fields `[NEW — A11]`
 
 Additive only — no existing field removed or renamed, no conflict with the real-schema reconciliation already done in v8 §22.
 
@@ -680,6 +686,14 @@ class FIRSchema(BaseModel):
     mo_descriptor_language: Optional[str] = None
     mo_descriptor_original: Optional[str] = None
     mo_descriptor_is_translated: bool = False
+
+    # --- NEW: access control (A11, per PS1_RBAC_Case_Access_v1.md Sec 4a) ---
+    department: Optional[str] = None   # explicit org vertical (cyber/narcotics/law_order/...) --
+                                        # NOT derived from crime_head_id/crime_sub_head_id, which
+                                        # is a crime-taxonomy field, not an org-chart field. Set at
+                                        # creation from the creating officer's own department;
+                                        # editable on reassignment to a specialized unit.
+    is_sensitive: bool = False         # governs Pull visibility -- see Architecture v9 Sec 23 (A11)
 ```
 
 ### ZTSQL Schema Addition
@@ -691,6 +705,8 @@ ALTER TABLE cases ADD COLUMN narrative_is_translated BOOLEAN DEFAULT FALSE;
 ALTER TABLE cases ADD COLUMN mo_descriptor_language VARCHAR(8);
 ALTER TABLE cases ADD COLUMN mo_descriptor_original TEXT;
 ALTER TABLE cases ADD COLUMN mo_descriptor_is_translated BOOLEAN DEFAULT FALSE;
+ALTER TABLE cases ADD COLUMN department VARCHAR(32);
+ALTER TABLE cases ADD COLUMN is_sensitive BOOLEAN DEFAULT FALSE;
 ```
 
 `[VERIFY]` Confirm ZTSQL's actual `ALTER TABLE` support and column-count limits — this is genuinely new ground, the project hasn't previously needed a schema migration on an already-populated table.
@@ -943,9 +959,70 @@ async def _apply_session_penalty(session_id: str, edge_id: str):
 
 ---
 
-## 23. RBAC + Audit Logging
+## 23. RBAC + Audit Logging `[CHANGED — adds A9–A12]`
 
-*(Unchanged from v8.)*
+Base RBAC (rank/case visibility) is unchanged from v8 and is governed in full by
+`PS1_RBAC_Case_Access_v1.md` — this section does not restate that model. What's new here is
+the integrity layer *on top of* access control: access control answers "can they see it,"
+this section answers "if they can see it — or shouldn't be able to, but try anyway — is it
+invisible, permanent, or unaccountable."
+
+### `[NEW — A9]` Hash-chained audit log
+v8's SHA-256 hash on each audit entry proves that entry wasn't edited after the fact. It
+does not prove an entry wasn't deleted outright — nothing in the v8 design forces a gap in
+the log to be noticed. Fix: each new entry's hash is computed over its own content **plus**
+the previous entry's hash. Deleting or reordering any past entry breaks every hash
+computed after it, making tampering detectable by recomputing the chain rather than
+requiring someone to spot a missing row by inspection.
+
+Reads are now logged into the same chain, not only writes: viewing another officer's
+session, viewing a case's evidence, viewing the Case Board, and every `is_sensitive` toggle
+in either direction. Knowing *who looked at* something is as important as knowing who
+changed it.
+
+### `[NEW — A10]` Named-entity search logging
+Not every query needs a case behind it — pattern-level browsing ("recent thefts in this
+area") is normal, low-risk work with no logging burden beyond what's already logged for any
+query. The risk is narrower: searching for one specific named person, vehicle, or property.
+`SearchLog` (see §3 Data Layer) captures officer, target, timestamp, and — if applicable —
+the case it was searched under, for every such lookup. It does not block a search or require
+a case to exist; it just guarantees a trail, which is what makes an unexplained lookup
+investigable later rather than invisible.
+
+### `[NEW — A11]` `is_sensitive` downgrade governance + `vigilance_cell` role
+Per `PS1_RBAC_Case_Access_v1.md` §3: any collaborator can raise a case's `is_sensitive`
+flag; only a `vigilance_cell` role can lower it, and every downgrade is a mandatory
+`ReviewQueueItem`, never silent. `is_sensitive` and `department` are now real fields on
+`FIRSchema` (§15) rather than referenced-but-undefined — the earlier gap where A11's
+`rbac.py` code assumed fields that didn't exist anywhere in the schema is closed.
+`vigilance_cell` is modeled on KSP's real Vigilance wing
+(distinct from the ISD, which is intelligence/counter-terrorism-focused, and the SPCA,
+which is an external judge-chaired body) — a role outside the normal chain of command, so a
+senior officer abusing otherwise-legitimate access can't also be the one reviewing that
+abuse. It reads the full hash-chained log across all districts/departments and is itself
+logged with the same rigor as any other role — no exemptions.
+
+Cross-jurisdiction override (`cross_jurisdiction_reason`) is unchanged in mechanism from
+Item 6 of `PS1_Extended_Investigative_Capabilities.md`, with one fix: the reason field is
+now mandatory to invoke the override, not optional.
+
+### `[NEW — A12]` Append-only evidence
+Generalizes A2's ingestion-time principle ("never overwrite the original narrative,
+preserve it alongside the translation") from a language-layer-specific rule to a hard rule
+for all evidentiary fields: FIRs, evidence items, and audit entries are never mutated in
+place, only superseded, with the prior version's hash preserved. Same spirit as the Case
+Session doc's "closed, not deleted" for cases, extended to evidence.
+
+### Explicitly out of scope for the hackathon
+Anomaly detection on correction-ratio gaming (a supervisor systematically rejecting
+accurate evidence connections to suppress a pattern) is a real vector but is **not** being
+built — it needs a real baseline population and usage volume to be statistically
+meaningful, and building a detector on top of the already-unvalidated
+`MIN_SAMPLES_FOR_NARROW_SCOPE`/`PRIOR_STRENGTH` constants (§19a) would compound one
+unvalidated model on another. Everything needed to investigate this later is captured for
+free once A9's hash-chain exists (correction events, override frequency, search logs are
+all already recorded) — this is named as a known, forensically-traceable risk, not solved,
+consistent with this document's existing honest-narration principle (§30).
 
 ---
 
@@ -1011,6 +1088,8 @@ async def _apply_session_penalty(session_id: str, edge_id: str):
 | **`[NEW]` Zia ASR/TTS/Translate field accuracy** | Validated only against console model cards, not real Kanglish recordings | Load-test against real KSP Kanglish audio; same "real query logs" gap as NER, same fix applies |
 | **`[NEW]` Zia response JSON key assumptions** | Inferred from model card prose (`transcript`, `translated_text`), not a captured sample | Capture real Sample Request/Response tab before Phase 1 build completes |
 | **`[NEW]` Trust-weight tuning under real load** | `PRIOR_STRENGTH`, `MIN_SAMPLES_FOR_NARROW_SCOPE` are starting guesses, untested against real officer correction volume | Re-tune both constants once real correction/confirmation volume exists post-hackathon |
+| **`[NEW]` Correction-ratio anomaly detection (A11's gaming vector)** | Not built — named as a known risk, fully loggable via A9's hash-chain, not detected | Build once real correction volume exists to establish a department-level baseline |
+| **`[NEW]` `vigilance_cell` dual-control** | Single-officer role as designed; no built-in check on the oversight role itself | Confirm with someone who understands actual KSP Vigilance workflow whether high-impact actions need two-person sign-off |
 
 ---
 
@@ -1031,6 +1110,11 @@ async def _apply_session_penalty(session_id: str, edge_id: str):
 - [ ] `[VERIFY]` Exact current confidence-formula location and evidence-ranking function name, for the trust-weight splice points
 - [ ] Re-tune `MIN_SAMPLES_FOR_NARROW_SCOPE` and `PRIOR_STRENGTH` based on realistic officer interaction volume — starting guesses, not measured
 - [ ] Consider seeding synthetic (genuinely representative, not fabricated-to-impress) correction history before judging day, so the narrow-scope fallback has a chance to activate live rather than only showing the neutral prior
+
+**New from Integrity & Anti-Corruption Layer:**
+- [ ] Confirm whether `vigilance_cell` needs dual-control (two-officer sign-off) on high-impact actions — no real institutional grounding for this yet, flagged rather than guessed at
+- [ ] Reconcile `PS1_RBAC_Case_Access_v1.md`'s access model (Pull/Push/sensitive) into this document as the canonical case-visibility source, if/when it's folded in the way the other three addenda were
+- [ ] `[VERIFY]` Whether Catalyst NoSQL supports the hash-chain's sequential-write requirement cleanly (each new entry needs the previous entry's hash at write time) without introducing a write-ordering bottleneck under concurrent audit events
 
 **Other:**
 - [ ] Begin Phase 1 implementation incorporating all three addenda — the Signals gate was already passed in v8; this revision adds three capabilities on top of an otherwise-unchanged hosting/retrieval/confidence foundation

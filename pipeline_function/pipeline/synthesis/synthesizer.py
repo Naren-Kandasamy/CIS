@@ -2,6 +2,7 @@ from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_re
 from pipeline_function.pipeline.catalyst_resilient_client import RateLimitExhaustedError
 from pipeline_function.pipeline.synthesis.fallback import build_fallback_response
 from pipeline_function.pipeline.evidence import EvidenceObject
+from shared.claim_logger import log_claim
 
 import logging
 
@@ -73,6 +74,20 @@ Generate {'concise bullet (3-5)' if evidence.urgency == 'field_urgent' else 'ful
         logger.warning(f"Synthesis failed with LLM error, falling back to static generation: {e}")
         text = build_fallback_response(evidence)
         text += partial_notice
+
+    # --- 4. Log Claims for Contradiction Tracking ---
+    for item in evidence.items:
+        if item.confidence.upper() in {"HIGH", "MEDIUM"}:
+            accused_id = item.accused_ids[0] if item.accused_ids else None
+            # Do not block the synthesis return waiting for the DB write
+            import asyncio
+            asyncio.create_task(log_claim(
+                fir_id=item.fir_id,
+                accused_id=accused_id,
+                evidence_ref=item.evidence_path,
+                confidence_tier=item.confidence.upper(),
+                snippet=item.similarity_reason or "Generic match"
+            ))
 
     return {
         "text": text,
