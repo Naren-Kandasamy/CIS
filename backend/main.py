@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 load_dotenv()
 
-from backend.api.routes import query, health, transcribe, graph, tts, ocr, export, auth, exclusions, cases, sessions, translate, feedback, review_queue
+from backend.api.routes import query, health, transcribe, graph, tts, ocr, export, auth, exclusions, cases, sessions
 from backend.api.middleware.input_validator import InputValidationMiddleware
 from backend.api.middleware.rbac import RBACMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,22 +58,6 @@ ALLOWED_ORIGINS = os.getenv(
     "http://localhost:5173,http://127.0.0.1:5173"
 ).split(",")
 
-# BUG FIX (defense-in-depth): allow_credentials=True combined with a literal
-# "*" origin is invalid per the CORS spec, but Starlette's CORSMiddleware
-# doesn't reject that combination -- it silently falls back to dynamically
-# reflecting whatever Origin header the request sent, which is functionally
-# "any site may make credentialed requests." The current default value is a
-# safe, narrow allowlist, but nothing stops CORS_ALLOWED_ORIGINS from being
-# set to "*" in some future deployment config by someone copying a "quick
-# fix" pattern. Fail loudly instead of silently degrading into an open CORS
-# policy.
-if "*" in ALLOWED_ORIGINS:
-    raise EnvironmentError(
-        "CORS_ALLOWED_ORIGINS must not be '*' -- combined with allow_credentials=True "
-        "this effectively allows any origin to make authenticated requests. "
-        "List explicit origins instead."
-    )
-
 app.add_middleware(InputValidationMiddleware)
 app.add_middleware(RBACMiddleware)
 # BUG FIX: Catalyst's own AppSail gateway independently reflects the request's
@@ -104,6 +88,3 @@ app.include_router(auth.router)
 app.include_router(exclusions.router)
 app.include_router(cases.router)
 app.include_router(sessions.router)
-app.include_router(translate.router)
-app.include_router(feedback.router)
-app.include_router(review_queue.router)

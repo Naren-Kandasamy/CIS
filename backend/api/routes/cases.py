@@ -15,7 +15,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from shared.catalyst_client import nosql_get, nosql_set, get_case_lock, get_lock
+from shared.catalyst_client import nosql_get, nosql_set, get_case_lock
 from shared.auth import get_user
 
 router = APIRouter()
@@ -37,45 +37,18 @@ class PinItemRequest(BaseModel):
     content: dict
 
 
-async def _require_collaborator(case_id: str, username: str) -> dict:
-    # BUG FIX: this used to raise a distinct 404 ("Case not found") vs 403
-    # ("Not a collaborator") -- letting any authenticated officer use the
-    # status code as an existence oracle to enumerate valid case_ids they
-    # aren't authorized on (case_id = f"c_{secrets.token_hex(4)}", only 32
-    # bits of entropy). Both "doesn't exist" and "exists but you're not on
-    # it" now return the identical 403, so the two are indistinguishable
-    # from the caller's side. No caller needs the distinction: every route
-    # below only wants "may this officer proceed," never "does this case
-    # exist independent of who's asking."
+async def _get_case_or_404(case_id: str) -> dict:
     doc = await nosql_get(f"case:{case_id}")
     if not doc:
-        raise HTTPException(403, "Not authorized for this case")
-    case = json.loads(doc["value"])
+        raise HTTPException(404, "Case not found")
+    return json.loads(doc["value"])
+
+
+async def _require_collaborator(case_id: str, username: str) -> dict:
+    case = await _get_case_or_404(case_id)
     if username not in case["collaborators"]:
-        raise HTTPException(403, "Not authorized for this case")
+        raise HTTPException(403, "Not a collaborator on this case")
     return case
-
-
-async def _add_case_to_user_index(username: str, case_id: str):
-    # BUG FIX: this read-modify-write of user_cases:{username} used to run
-    # completely unlocked in create_case, and in add_collaborator it ran
-    # under only the per-CASE lock (get_case_lock), not one keyed to this
-    # target user -- so two concurrent add_collaborator calls adding the
-    # same officer to two DIFFERENT cases (different case locks, so both
-    # proceed concurrently) could each read the same stale user_cases:bob
-    # snapshot and the later write would silently drop the earlier one's
-    # case_id, with case:{id}.collaborators still correctly listing bob
-    # (protected by its own case lock) but GET /api/cases never showing him
-    # that case -- unrecoverable via retry, since re-adding a collaborator
-    # who's already listed on the case document is a no-op. Lock keyed to
-    # the target user closes both the create_case and add_collaborator
-    # races on this specific index.
-    async with get_lock(f"user_cases:{username}"):
-        doc = await nosql_get(f"user_cases:{username}")
-        case_ids = json.loads(doc["value"]) if doc else []
-        if case_id not in case_ids:
-            case_ids.append(case_id)
-            await nosql_set(f"user_cases:{username}", json.dumps(case_ids))
 
 
 @router.post("/api/cases")
@@ -97,7 +70,11 @@ async def create_case(body: CreateCaseRequest, request: Request):
     }
     await nosql_set(f"case:{case_id}", json.dumps(case))
     await nosql_set(f"case_sessions:{case_id}", json.dumps([]))
-    await _add_case_to_user_index(username, case_id)
+
+    user_cases_doc = await nosql_get(f"user_cases:{username}")
+    user_cases = json.loads(user_cases_doc["value"]) if user_cases_doc else []
+    user_cases.append(case_id)
+    await nosql_set(f"user_cases:{username}", json.dumps(user_cases))
 
     return case
 
@@ -130,13 +107,11 @@ async def add_collaborator(case_id: str, body: AddCollaboratorRequest, request: 
             case["collaborators"].append(body.username)
             await nosql_set(f"case:{case_id}", json.dumps(case))
 
-    # BUG FIX: moved outside the get_case_lock(case_id) block and into
-    # _add_case_to_user_index's own get_lock(f"user_cases:{username}") --
-    # this update touches the TARGET user's index, not this case's document,
-    # so guarding it with only the case lock let two concurrent
-    # add_collaborator calls for the same officer on two different cases
-    # race each other (see _add_case_to_user_index's docstring above).
-    await _add_case_to_user_index(body.username, case_id)
+            target_cases_doc = await nosql_get(f"user_cases:{body.username}")
+            target_cases = json.loads(target_cases_doc["value"]) if target_cases_doc else []
+            if case_id not in target_cases:
+                target_cases.append(case_id)
+                await nosql_set(f"user_cases:{body.username}", json.dumps(target_cases))
 
     return case
 

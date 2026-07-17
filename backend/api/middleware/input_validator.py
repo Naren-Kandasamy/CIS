@@ -7,16 +7,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 MAX_TEXT_QUERY_LEN = 500
 MAX_AUDIO_SIZE_BYTES = 5 * 1024 * 1024
 MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024
-# BUG FIX: ExportRequest's own Pydantic limits (query<=2000, answer<=20000,
-# evidence<=50 items -- see backend/api/routes/export.py) assume a JSON body
-# that can legitimately exceed the generic 2048-byte cap below. That blanket
-# cap silently made those already-reviewed limits unreachable: any real
-# report (a multi-paragraph synthesized answer alone routinely exceeds 2KB)
-# got a 413 before the route, or Pydantic, ever ran. This is a generous
-# ceiling sized to fit the route's own declared limits, not a rubber stamp --
-# still far below anything resource-exhausting, and still enforced fail-fast
-# here before any body bytes are read.
-MAX_EXPORT_SIZE_BYTES = 256 * 1024
 
 # Denylist for SQL, Cypher, and Prompt Injection
 # Highly specific to avoid false positives on natural language words like "match" or "update"
@@ -50,26 +40,12 @@ class InputValidationMiddleware:
             try:
                 length = int(content_length)
                 path = scope.get("path", "")
-                # BUG FIX: these are now exclusive branches (path match alone
-                # picks the branch, not "path match AND over that branch's own
-                # limit") -- previously a request matching /transcribe or
-                # /upload/ocr but UNDER its own dedicated limit still fell
-                # through into the generic 2048-byte JSON check below whenever
-                # it happened to also be JSON, which none of these routes are
-                # (multipart uploads), so it was latent rather than active,
-                # but /export/pdf below is JSON and would have hit exactly
-                # this fallthrough.
-                if path.endswith("/transcribe"):
-                    if length > MAX_AUDIO_SIZE_BYTES:
-                        return await self._send_error(scope, receive, send, 413, "Audio upload exceeds 5MB limit")
+                if path.endswith("/transcribe") and length > MAX_AUDIO_SIZE_BYTES:
+                    return await self._send_error(scope, receive, send, 413, "Audio upload exceeds 5MB limit")
                 # BUG FIX: /ocr matched neither /transcribe nor /upload, so
                 # image uploads had no fail-fast size guard at all.
-                elif path.endswith("/upload") or path.endswith("/ocr"):
-                    if length > MAX_DOC_SIZE_BYTES:
-                        return await self._send_error(scope, receive, send, 413, "Document upload exceeds 10MB limit")
-                elif path.endswith("/export/pdf"):
-                    if length > MAX_EXPORT_SIZE_BYTES:
-                        return await self._send_error(scope, receive, send, 413, "Export payload exceeds size limit")
+                elif (path.endswith("/upload") or path.endswith("/ocr")) and length > MAX_DOC_SIZE_BYTES:
+                    return await self._send_error(scope, receive, send, 413, "Document upload exceeds 10MB limit")
                 elif b"application/json" in content_type and length > 2048:
                     return await self._send_error(scope, receive, send, 413, "Payload too large")
             except ValueError:
@@ -78,24 +54,12 @@ class InputValidationMiddleware:
         # 2. Pattern & length checks for text queries
         if scope["method"] in ["POST", "PUT", "PATCH"] and b"application/json" in content_type:
             if scope.get("path", "").endswith("/query"):
-                # BUG FIX (resource exhaustion, unaudited by the workflow --
-                # its audit agent for this file errored out): this loop
-                # buffered the entire body into memory with no size cap of
-                # its own. The earlier Content-Length-based check (section 1
-                # above) only fires when a Content-Length header is present
-                # and honest -- a request using chunked transfer encoding
-                # (which omits Content-Length) skips that check entirely and
-                # this loop would then buffer an unbounded body before ever
-                # reaching the MAX_TEXT_QUERY_LEN check below. Same bug class
-                # already fixed on /api/transcribe, /api/upload, /api/tts via
-                # bounded UploadFile.read() calls; cap the raw read here too.
+                # Read the body
                 body = b""
                 more_body = True
                 while more_body:
                     message = await receive()
                     body += message.get("body", b"")
-                    if len(body) > MAX_TEXT_QUERY_LEN + 2048:  # query text + JSON/session_id overhead
-                        return await self._send_error(scope, receive, send, 413, "Payload too large")
                     more_body = message.get("more_body", False)
 
                 try:

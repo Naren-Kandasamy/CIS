@@ -32,14 +32,7 @@ class RBACMiddleware:
             return
 
         headers = dict(scope.get("headers", []))
-        # BUG FIX: plain .decode() defaults to strict UTF-8 decoding, which
-        # raises an unhandled UnicodeDecodeError on a malformed/non-UTF8
-        # Authorization header byte sequence (HTTP header values are
-        # ISO-8859-1 by spec -- a client can send arbitrary bytes) instead of
-        # the clean 401 every other invalid-token shape gets. errors="replace"
-        # degrades a malformed header to a token that simply won't match any
-        # real session, following the normal "missing/invalid" path below.
-        auth_header = headers.get(b"authorization", b"").decode(errors="replace")
+        auth_header = headers.get(b"authorization", b"").decode()
         token = auth_header[len("Bearer "):] if auth_header.startswith("Bearer ") else None
 
         if not token:

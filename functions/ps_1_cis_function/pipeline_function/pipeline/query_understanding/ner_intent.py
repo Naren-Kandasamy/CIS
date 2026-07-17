@@ -1,9 +1,7 @@
-import json, re, logging
+import json, re
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient as llm_complete
 from pipeline_function.pipeline.cache import get_cached_ner, set_cached_ner, get_ner_cache_lock
 from shared.ner_prompt import build_ner_prompt, NER_INTENT_SYSTEM
-
-logger = logging.getLogger(__name__)
 
 async def extract_ner_and_intent(normalized_query: str) -> dict:
     # BUG FIX: the cache check-then-LLM-call-then-set sequence used to have
@@ -25,26 +23,13 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
             return _fallback_intent()
 
         try:
-            # BUG FIX: the raw LLM response echoes back sensitive case entities
-            # (persons, locations, weapon, FIR IDs) extracted from the officer's
-            # query. It was unconditionally printed to stdout on every call, so
-            # anyone with log/observability access (broader than officers with a
-            # valid session) could read it. logger.debug() is gated by the
-            # standard logging level (suppressed unless DEBUG is enabled).
-            logger.debug(f"\\n[DEBUG RAW LLM RESPONSE]: {raw}\\n")
+            print(f"\\n[DEBUG RAW LLM RESPONSE]: {raw}\\n")
             result = json.loads(raw.strip())
             # BUG-03 FIX: normalize entities for deterministic city detection
             result = _normalize_entities(result)
             await set_cached_ner(normalized_query, result)
             return result
-        # BUG FIX: only json.JSONDecodeError was caught here, but a type-confused
-        # LLM response (e.g. entities.locations containing objects/numbers
-        # instead of strings, or 'entities'/'result' not being the expected
-        # dict/list shape) can still make json.loads succeed while
-        # _normalize_entities raises AttributeError/TypeError/KeyError, which
-        # then propagated out of extract_ner_and_intent uncaught instead of
-        # degrading to the fallback intent. Catch those too.
-        except (json.JSONDecodeError, TypeError, AttributeError, KeyError):
+        except json.JSONDecodeError:
             match = re.search(r'\{.*\}', raw, re.DOTALL)
             if match:
                 try:
@@ -52,7 +37,7 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
                     result = _normalize_entities(result)
                     await set_cached_ner(normalized_query, result)
                     return result
-                except (json.JSONDecodeError, TypeError, AttributeError, KeyError):
+                except json.JSONDecodeError:
                     pass
 
             return _fallback_intent()
@@ -82,17 +67,7 @@ def _normalize_entities(result: dict) -> dict:
        when 'city' is absent or empty, so Cypher district filtering is reliable.
     2. Ensure all required entity fields always exist to prevent KeyError downstream.
     """
-    # BUG FIX: 'result' (and 'entities' within it) is parsed-JSON from the LLM
-    # and isn't guaranteed to match the expected schema -- a type-confused
-    # response (e.g. 'result' not a dict) used to raise an uncaught
-    # AttributeError/TypeError here instead of degrading to the fallback
-    # intent like every other malformed-output path in this module.
-    if not isinstance(result, dict):
-        return _fallback_intent()
-
     entities = result.get("entities", {})
-    if not isinstance(entities, dict):
-        entities = {}
 
     # Ensure required list keys always exist
     for key in ("persons", "locations", "fir_ids", "dates", "ipc_sections", "crime_types"):
@@ -104,11 +79,6 @@ def _normalize_entities(result: dict) -> dict:
     # Promote district from locations -> city if city not already set
     if not entities.get("city"):
         for loc in entities.get("locations", []):
-            # BUG FIX: a location entry can come back as a non-string (e.g. a
-            # nested object/number) from a type-confused LLM response; skip
-            # it instead of crashing on .strip().
-            if not isinstance(loc, str):
-                continue
             if loc.strip().lower() in _KSP_DISTRICTS:
                 entities["city"] = loc
                 print(f"[NER Normalize] Promoted '{loc}' from locations -> city")

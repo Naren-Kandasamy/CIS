@@ -146,18 +146,8 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
     except Exception as e:
         print(f"[DIAG][PIPELINE] ❌ Pipeline failed at step: {e}")
         traceback.print_exc()
-        # BUG FIX (info leak): error=str(e) put the raw exception text straight
-        # into the job's client-facing error field, which sse_poller.py streams
-        # directly to the browser over SSE -- leaking internal details (file
-        # paths, driver/host info, stack message shapes) to whichever officer's
-        # query happened to hit this outer handler. This is the primary
-        # Signals-dispatched pipeline path (backend/job_dispatch.py's inline
-        # runner is the local-dev-only fallback, already fixed with the same
-        # pattern) -- the real exception is already logged server-side via
-        # traceback.print_exc() and the print() above; only a generic message
-        # goes to the client now.
         try:
-            await write_job_status(job_id, status="failed", error="Pipeline processing failed, please retry.")
+            await write_job_status(job_id, status="failed", error=str(e))
         except Exception as write_error:
             print(f"[DIAG][PIPELINE] ❌ Also failed to write failed status: {write_error}")
         raise  # re-raise so handler can call close_with_failure()

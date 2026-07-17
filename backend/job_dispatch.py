@@ -128,37 +128,17 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
                 history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
 
-                # BUG FIX: dispatch_query_job() reads query_cache_key(query)
-                # at the top expecting a short-lived full-result cache, but
-                # nothing anywhere ever wrote to it -- every lookup was
-                # unconditionally a miss, so the "cache" never actually
-                # short-circuited a single repeat request. Populate it here on
-                # success. NOTE: this only covers the inline-fallback path
-                # (this function) -- the primary Signals-dispatched path
-                # (functions/ps_1_cis_function/main.py's _run_pipeline, a
-                # separately deployed process) has its own write_job_status
-                # callback and does not populate this cache; making the cache
-                # work universally needs that path updated too, which is
-                # outside this file.
-                await nosql_set(query_cache_key(query), json.dumps(job["result"]), ttl=QUERY_CACHE_TTL_SECONDS)
-
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"[Local pipeline error] {e}")
-        # BUG FIX (info leak, found on a later audit pass -- this file wasn't
-        # covered by the earlier one): error=str(e) put the raw exception text
-        # straight into the job's client-facing error field, which
-        # sse_poller.py streams directly to the browser over SSE
-        # (yield {"event": "error", "data": {"error": job.get("error")}}) --
-        # leaking internal details (file paths, driver/host info, stack
-        # message shapes) to whichever officer's query happened to hit this
-        # outer handler (session-lock/history code around the pipeline call,
-        # not run_langgraph_pipeline's own already-sanitized error path). The
-        # real exception is already logged server-side via traceback.print_exc()
-        # and the print() above; only a generic message goes to the client now.
+        # BUG FIX: this failure-reporting call can itself hit the same
+        # transient NoSQL connectivity issue that caused the original
+        # failure -- previously unguarded, so a double-failure crashed the
+        # whole background task as an unretrieved exception instead of just
+        # logging that the job's failure status couldn't be persisted.
         try:
-            await write_job_status(job_id, status="failed", error="Pipeline processing failed, please retry.")
+            await write_job_status(job_id, status="failed", error=str(e))
         except Exception as write_error:
             print(f"[Local pipeline error] Also failed to write failed status: {write_error}")
 

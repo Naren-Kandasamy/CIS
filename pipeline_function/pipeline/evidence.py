@@ -36,27 +36,17 @@ class EvidenceObject:
         # that uses slightly different key names (e.g. "document_id" instead of
         # "fir_id", "relevance" instead of "score") doesn't cause a hard KeyError.
         for hit in rag_response.get("results", []):
-            # BUG FIX: hit.get("metadata", {}) only substitutes {} when the key is
-            # absent, not when it's present with value null. A Catalyst KB hit shaped
-            # like {"metadata": null} left item.metadata = None, which later crashed
-            # run_confidence_engine's item.metadata.get(...) calls with an unhandled
-            # AttributeError. Use "or {}" so both "absent" and "present but null" are
-            # coerced to a safe empty dict.
             self.items.append(EvidenceItem(
                 fir_id=hit.get("fir_id") or hit.get("document_id") or hit.get("id", "unknown"),
                 relevance_score=hit.get("score") or hit.get("relevance") or hit.get("similarity", 0.5),
                 sources=["rag"], convergent=False,
                 evidence_path=None, similarity_reason=hit.get("excerpt") or hit.get("text"),
-                confidence="medium", metadata=hit.get("metadata") or {}
+                confidence="medium", metadata=hit.get("metadata", {})
             ))
 
     def add_graph_results(self, graph_results: list):
         for result in graph_results:
-            # BUG FIX: same null-metadata gap as add_rag_results -- result.get("metadata", {})
-            # only defaults when the key is absent, not when it's present with value null,
-            # which would crash this ".get("accused_ids", [])" call (and, further down,
-            # feed None into EvidenceItem.metadata) with an unhandled AttributeError.
-            accused_ids = (result.get("metadata") or {}).get("accused_ids", [])
+            accused_ids = result.get("metadata", {}).get("accused_ids", [])
             existing = next((e for e in self.items if e.fir_id == result["fir_id"]), None)
             if existing:
                 existing.sources.append("graph")
@@ -71,7 +61,7 @@ class EvidenceObject:
                     fir_id=result["fir_id"], relevance_score=result.get("score", 0.7),
                     sources=["graph"], convergent=False,
                     evidence_path=result.get("path"), similarity_reason=None,
-                    confidence="medium", metadata=result.get("metadata") or {},
+                    confidence="medium", metadata=result.get("metadata", {}),
                     accused_ids=accused_ids
                 ))
     
