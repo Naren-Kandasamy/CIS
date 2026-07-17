@@ -38,28 +38,41 @@ def _get_mock_db_lock() -> asyncio.Lock:
     return _MOCK_DB_LOCK
 
 def get_lock(key: str) -> asyncio.Lock:
-    # BUG-07 FIX: Catalyst Functions create a new event loop per invocation via
-    # asyncio.run(). A Lock cached here from a prior invocation belongs to the
-    # old (closed) event loop. Using it raises:
-    #   RuntimeError: This lock is created for a different event loop
-    # which silently crashes the pipeline. Mirror the same guard already used
-    # by _get_mock_db_lock().
-    try:
-        current_loop = asyncio.get_event_loop()
-    except RuntimeError:
-        current_loop = None
-
+    # BUG FIX (supersedes the old BUG-07 FIX): the previous version tried to
+    # detect a lock left over from a dead event loop by comparing
+    # `existing._loop` against the current running loop, because pre-3.10
+    # asyncio.Lock bound to a specific loop at construction time and reusing
+    # one from a closed loop raised RuntimeError. Since Python 3.10,
+    # asyncio.Lock no longer takes/stores a loop reference at all -- its
+    # `_loop` attribute is always None, so `getattr(existing, '_loop', None)
+    # is not current_loop` was ALWAYS true, meaning every call believed the
+    # cached lock was stale and deleted+recreated it. Concurrent callers for
+    # the same key each got their own fresh, uncontested lock instead of
+    # sharing one -- the "fix" silently defeated the mutual exclusion this
+    # function exists to provide. Verified empirically: a Lock created in one
+    # asyncio.run() and reused via `async with` in a later, separate
+    # asyncio.run() (i.e. a different event loop, exactly the Catalyst
+    # Functions per-invocation scenario BUG-07 was guarding against) works
+    # correctly with no error in this runtime -- so no loop-staleness check
+    # is needed at all anymore. LRU eviction alone still bounds memory.
     if key in _locks:
-        existing = _locks[key]
-        if current_loop and getattr(existing, '_loop', None) is not current_loop:
-            # Stale lock from a dead event loop — evict and recreate.
-            del _locks[key]
-        else:
-            _locks.move_to_end(key)  # mark as recently used
-            return existing
+        _locks.move_to_end(key)  # mark as recently used
+        return _locks[key]
 
     if len(_locks) >= _LOCKS_MAX:
-        _locks.popitem(last=False)  # evict oldest (LRU), not all
+        # BUG FIX: unconditionally popping the LRU-oldest entry could evict a
+        # lock that is still held (checked out via `async with`) if enough
+        # other distinct keys cycle through get_lock() while it's held --
+        # "recently used" is only bumped on retrieval, not for the duration a
+        # lock is held. Scan from the LRU end (oldest first, matching
+        # OrderedDict's iteration order) for the first key whose lock is NOT
+        # currently held and evict that one instead. If every tracked lock is
+        # currently held, skip eviction for this call rather than removing a
+        # live lock -- _locks will just temporarily exceed _LOCKS_MAX by one.
+        for k in _locks:
+            if not _locks[k].locked():
+                del _locks[k]
+                break
     lock = asyncio.Lock()
     _locks[key] = lock
     return lock
@@ -113,6 +126,29 @@ ZIA_ASR_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/au
 ZIA_TTS_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/tts/synthesize"
 ZIA_TRANSLATE_URL   = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/translate"
 
+# KNOWN ISSUE (investigated, not resolved): translate_text()/text_to_speech()
+# below currently send a plain JSON body. Live testing against the real
+# endpoints confirms this is REJECTED -- the actual error response is
+# {"code":"LESS_THAN_MIN_OCCURANCE"/"EXTRA_PARAM_FOUND",
+#  "reason":"Error in processing `zoho-inputstream` parameter"}, meaning the
+# real Zia model gateway expects the payload wrapped in a multipart field
+# named zoho-inputstream, not a bare JSON body -- despite this doc's
+# "verified against console model cards" claim (Docs/PS1_Voice_Language_Layer_v2.md).
+# Public Catalyst docs (docs.catalyst.zoho.com) don't cover this parameter or
+# these specific endpoints at all -- the Zia Services catalog page doesn't
+# list Translation/TTS/ASR, and the QuickML Pipeline Endpoints page (the
+# actual API family these belong to, per the /quickml/api/v1/models/ path)
+# only documents headers, not body format. That same headers page also
+# mentions a REQUIRED X-QUICKML-ENDPOINT-KEY header this code has never sent
+# at all -- possibly a second, separate gap, but it's a per-deployed-model
+# secret with no guessable value, so it can't be added without pulling the
+# real key from the Catalyst console for this org's deployed model. ASR
+# (transcribe_audio) already uses multipart (audio file + language field) and
+# hasn't been confirmed working or broken independently of this -- it may or
+# may not need the same zoho-inputstream wrapping. Whoever picks this up
+# needs either the deployed model's auto-generated integration code from the
+# Catalyst console's "model card" view, or a response from Zoho support --
+# this isn't guessable safely by trial-and-error against production.
 def _zia_headers() -> dict:
     CATALYST_ORG_ID = _env("ZC_ORG_ID", "CATALYST_ORG_ID", "60075634347")
     h = _headers()
@@ -232,23 +268,28 @@ async def ztsql_query(sql: str, params: list = None) -> list:
         return r.json()["rows"]
 
 # BUG FIX: same mutable default arg fix as ztsql_query.
+# BUG FIX: this used to wrap the request in a try/except Exception that only
+# printed the error and returned None regardless of outcome -- auth failures,
+# malformed SQL, network errors, and HTTP 4xx/5xx all vanished silently.
+# Callers (e.g. ingestion/pipeline.py) have their own try/except expecting
+# real failures to propagate so they can log the failed write; that handling
+# never fired, so a broken datastore write looked like a successful ingest.
+# Matches the already-fixed ztsql_query pattern: only "datastore not
+# configured" degrades silently, everything else raises.
 async def ztsql_execute(sql: str, params: list = None):
     if params is None:
         params = []
-        
+
     url = CATALYST_DATASTORE_URL()
     if not url:
         return
-        
+
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url + "/execute", headers=_headers(),
-                json={"query": sql, "params": params}, timeout=15.0)
-            if r.status_code == 404:
-                return
-            r.raise_for_status()
-        except Exception as e:
-            print(f"Datastore execute failed: {e}")
+        r = await client.post(url + "/execute", headers=_headers(),
+            json={"query": sql, "params": params}, timeout=15.0)
+        if r.status_code == 404:
+            return
+        r.raise_for_status()
 
 async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.webm") -> str:
     """Zia Audio-to-Text Transcription. multipart/form-data per the verified model card."""
@@ -400,14 +441,18 @@ async def nosql_get(key: str) -> dict | None:
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
         if not os.path.exists(db_path):
             return None
-        try:
-            async with _get_mock_db_lock():
-                with open(db_path, "r") as f:
-                    data = json.load(f)
-            val = data.get(key)
-            return {"value": val} if val is not None else None
-        except Exception:
-            return None
+        # BUG FIX: a JSON parse failure here used to be caught by a blanket
+        # except and treated as a plain "key not found" -- indistinguishable
+        # from a clean miss. That let a corrupted/truncated store file go
+        # unnoticed, and the next nosql_set call would then silently
+        # overwrite it with just the one new key, destroying every other
+        # previously stored case/session record (see nosql_set below). Let a
+        # parse failure raise loudly instead of masking it.
+        async with _get_mock_db_lock():
+            with open(db_path, "r") as f:
+                data = json.load(f)
+        val = data.get(key)
+        return {"value": val} if val is not None else None
 
     resp = await _nosql_request("POST", "/item/fetch", {"keys": [{"item_key": {"S": key}}]})
     items = resp.get("data", {}).get("get") or []
@@ -429,18 +474,26 @@ async def nosql_set(key: str, value: str, ttl: int = None):
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
         async with _get_mock_db_lock():
             data = {}
+            # BUG FIX: a JSON parse failure here used to be caught by a blanket
+            # except and silently treated as an empty store, so the write just
+            # below would overwrite the whole file with only `key`, destroying
+            # every other previously stored case/session record. Let a parse
+            # failure raise loudly instead of quietly resetting the store.
             if os.path.exists(db_path):
-                try:
-                    with open(db_path, "r") as f:
-                        data = json.load(f)
-                except Exception:
-                    pass
+                with open(db_path, "r") as f:
+                    data = json.load(f)
             data[key] = value
-            try:
-                with open(db_path, "w") as f:
-                    json.dump(data, f, indent=2)
-            except Exception as e:
-                print(f"Failed to write to local mock NoSQL DB: {e}")
+            # BUG FIX: json.dump straight into db_path was not atomic -- a
+            # crash, OOM-kill, or concurrent write partway through could leave
+            # a truncated/invalid JSON file, which the read above would then
+            # (before this fix) silently reinterpret as an empty store on the
+            # next call. Write to a temp file in the same directory and
+            # os.replace() it into place so db_path is always either the
+            # complete old version or the complete new one.
+            tmp_path = f"{db_path}.tmp.{os.getpid()}"
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, db_path)
         return
 
     item = {"item_key": {"S": key}, "item_value": {"S": value}}
