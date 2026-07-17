@@ -28,6 +28,18 @@ async def llm_complete_resilient(prompt: str, system: str, **kwargs) -> str:
                 delay = BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
                 await asyncio.sleep(delay)
                 continue
+        # BUG FIX: KeyError/IndexError (e.g. resp["choices"][0][...] when the
+        # gateway returns {"choices": []} on a moderation block) and
+        # json.JSONDecodeError (a ValueError subclass, from r.json() on a
+        # non-JSON proxy error page) are deterministic response-parsing
+        # failures, not transient rate-limiting. The bare `except Exception`
+        # below used to swallow these, retry 3x for nothing, and report them
+        # as RateLimitExhaustedError -- hiding the real cause and masquerading
+        # a schema/moderation issue as rate limiting indefinitely. Fail fast
+        # and let the real exception surface instead.
+        except (KeyError, IndexError, ValueError) as e:
+            print(f"[LLM Core Error] Non-retryable response error ({type(e).__name__}): {repr(e)}")
+            raise
         except Exception as e:
              # Just in case mock or other failure throws non-httpx
              last_error = e
