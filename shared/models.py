@@ -82,6 +82,7 @@ class FIRSchema(BaseModel):
     arrest_surrenders: list[ArrestSurrenderSchema] = []
     act_sections: list[tuple[str, str]] = []  # (act_code, section_code) pairs -- was flat ipc_sections string
     status: str = "open"
+    is_cold: bool = False
     mo_descriptor: str = ""
     narrative: Optional[str] = None
     ocr_extracted: bool = False
