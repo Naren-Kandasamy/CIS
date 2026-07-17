@@ -16,12 +16,6 @@ interface Message {
   isStreaming?: boolean;
 }
 
-const SESSION_ID = sessionStorage.getItem("ps1_session_id") ?? (() => {
-  const id = crypto.randomUUID();
-  sessionStorage.setItem("ps1_session_id", id);
-  return id;
-})();
-
 const PIPELINE_STEPS = [
   { key: 'understanding query', label: 'NER & Intent' },
   { key: 'resolving entities', label: 'Entity Match' },
@@ -35,19 +29,56 @@ const PIPELINE_STEPS = [
 export default function App() {
   const [authToken, setAuthToken] = useState<string | null>(() => sessionStorage.getItem("ps1_auth_token"));
   const [displayName, setDisplayName] = useState<string>(() => sessionStorage.getItem("ps1_display_name") ?? '');
+  // BUG FIX: session id now lives in React state seeded at login time instead of a
+  // module-level singleton, so it can be regenerated per-login and cleared on logout
+  // (see handleLogin/handleLogout below). This prevents a second officer on the same
+  // shared-station tab from inheriting the previous officer's conversation history,
+  // which was keyed purely on this session id in backend/job_dispatch.py.
+  const [sessionId, setSessionId] = useState<string>(() => {
+    const existing = sessionStorage.getItem("ps1_session_id");
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    sessionStorage.setItem("ps1_session_id", id);
+    return id;
+  });
 
   const handleLogin = (token: string, _username: string, _role: string, name: string) => {
     sessionStorage.setItem("ps1_auth_token", token);
     sessionStorage.setItem("ps1_display_name", name);
+    // BUG FIX: regenerate a fresh session id on every successful login so a new
+    // officer signing into this tab never reuses (and thereby inherits the
+    // conversation history of) the previous officer's session id.
+    const newSessionId = crypto.randomUUID();
+    sessionStorage.setItem("ps1_session_id", newSessionId);
+    setSessionId(newSessionId);
     setAuthToken(token);
     setDisplayName(name);
   };
 
   const handleLogout = () => {
+    // BUG FIX: this previously only cleared local sessionStorage -- the
+    // server-side session record (shared/auth.py's session:<token> NoSQL
+    // entry) was never revoked, so a token captured before "logout" (shared
+    // kiosk, browser history, a proxy log) stayed fully valid for the
+    // remainder of its 8h TTL despite the officer believing they'd signed
+    // out. Best-effort fire-and-forget: local state is cleared regardless of
+    // whether this call succeeds, since the officer must be able to sign out
+    // even if the backend is briefly unreachable.
+    if (authToken) {
+      fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      }).catch(err => console.error('Failed to revoke session server-side:', err));
+    }
     sessionStorage.removeItem("ps1_auth_token");
     sessionStorage.removeItem("ps1_display_name");
+    // BUG FIX: previously left untouched, so the session id survived logout and a
+    // subsequent officer on the same tab inherited this officer's history:<SESSION_ID>
+    // conversation context. Clear it alongside the auth token.
+    sessionStorage.removeItem("ps1_session_id");
     setAuthToken(null);
     setDisplayName('');
+    setSessionId('');
   };
 
   const [messages, setMessages] = useState<Message[]>([
@@ -105,6 +136,11 @@ export default function App() {
             if (response.ok) {
               const data = await response.json();
               setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
+            } else if (response.status === 401) {
+              // BUG FIX: mirror handleSubmit's 401 handling -- previously this branch only
+              // logged to console, leaving an expired/invalid session silently signed-in
+              // with a mic button that did nothing forever until a text query was tried.
+              handleLogout();
             } else {
               console.error('Transcription failed:', await response.text());
             }
@@ -167,7 +203,7 @@ export default function App() {
           'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify({
-          session_id: SESSION_ID,
+          session_id: sessionId,
           query: userMessage.content
         })
       });
