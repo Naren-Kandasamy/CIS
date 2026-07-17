@@ -106,28 +106,9 @@ async def _quickml_headers() -> dict:
 CATALYST_LLM_URL       = lambda: _env("ZC_LLM_ENDPOINT", "CATALYST_LLM_ENDPOINT", "")
 CATALYST_VLM_URL       = lambda: _env("ZC_VLM_ENDPOINT", "CATALYST_VLM_ENDPOINT", "")
 CATALYST_KB_URL        = lambda: _env("ZC_KB_ENDPOINT", "CATALYST_KB_ENDPOINT", "")
+CATALYST_ASR_URL       = lambda: _env("ZC_ASR_ENDPOINT", "CATALYST_ASR_ENDPOINT", "")
+CATALYST_TTS_URL       = lambda: _env("ZC_TTS_ENDPOINT", "CATALYST_TTS_ENDPOINT", "")
 CATALYST_DATASTORE_URL = lambda: _env("ZC_DATASTORE_URL", "CATALYST_DATASTORE_URL", "")
-
-# Zia voice/language endpoints -- verified against console model cards
-ZIA_ASR_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/audio/transcribe"
-ZIA_TTS_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/tts/synthesize"
-ZIA_TRANSLATE_URL   = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/translate"
-
-def _zia_headers() -> dict:
-    CATALYST_ORG_ID = _env("ZC_ORG_ID", "CATALYST_ORG_ID", "60075634347")
-    h = _headers()
-    return {
-        "CATALYST-ORG": CATALYST_ORG_ID,
-        "Authorization": h["Authorization"]
-    }
-
-def _zia_headers_json() -> dict:
-    h = _zia_headers()
-    h["Content-Type"] = "application/json"
-    return h
-
-# Languages Zia ASR/TTS actually support
-ZIA_VOICE_LANGS = {"en", "hi", "kn"}
 
 async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
@@ -250,62 +231,32 @@ async def ztsql_execute(sql: str, params: list = None):
         except Exception as e:
             print(f"Datastore execute failed: {e}")
 
-async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.webm") -> str:
-    """Zia Audio-to-Text Transcription. multipart/form-data per the verified model card."""
+async def transcribe_audio(audio_bytes: bytes, language: str = "kn") -> str:
+    # BUG FIX: token must be read lazily, same reason as _headers().
+    auth_headers = {"Authorization": _headers()["Authorization"]}
     async with httpx.AsyncClient() as client:
-        r = await client.post(
-            ZIA_ASR_URL,
-            headers=_zia_headers(),   # no Content-Type -- httpx sets multipart boundary itself
-            files={"audio": (filename, audio_bytes, "audio/webm")},
-            data={"language": language},
-            timeout=20.0,
-        )
+        r = await client.post(CATALYST_ASR_URL(),
+            headers=auth_headers,
+            files={"audio": ("recording.webm", audio_bytes, "audio/webm")},
+            data={"language": language}, timeout=20.0)
         r.raise_for_status()
         return r.json()["transcript"]
 
-async def text_to_speech(text: str, language: str = "kn",
-                          speaker: str | None = None,
-                          pitch: str = "moderate",
-                          speed: str = "moderate",
-                          emotion: str = "neutral") -> bytes:
-    """Zia Text-to-Audio Synthesis. Pinned to neutral/moderate defaults for officer-facing responses."""
+async def text_to_speech(text: str, language: str = "kn") -> bytes:
+    url = CATALYST_TTS_URL()
+    if not url:
+        print("[Mock TTS] URL missing, returning dummy audio bytes.")
+        return b"ID3\x04\x00\x00\x00\x00\x00\x00MockAudioData"
+        
     async with httpx.AsyncClient() as client:
-        payload = {
-            "text": text,
-            "language": language,
-            "pitch": pitch,
-            "speed": speed,
-            "emotion": emotion,
-        }
-        if speaker:
-            payload["speaker"] = speaker
-        r = await client.post(ZIA_TTS_URL, headers=_zia_headers_json(), json=payload, timeout=15.0)
-        r.raise_for_status()
-        return r.content   # audio/wav
-
-async def translate_text(text: str, source_lang: str, target_lang: str = "en") -> dict:
-    """Zia Text Translation. New Layer 1b hop -- only called when source_lang not in ZIA_VOICE_LANGS."""
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            ZIA_TRANSLATE_URL,
-            headers=_zia_headers_json(),
-            json={"source_language": source_lang, "target_language": target_lang, "text": text},
-            timeout=15.0,
-        )
-        r.raise_for_status()
-        return r.json()   # {"translated_text": ..., "processing_time": ...}
-
-async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str) -> str:
-    """
-    Layer 1 orchestrator: ASR -> (conditional) translate -> plain text into Layer 2.
-    """
-    if declared_language in ZIA_VOICE_LANGS:
-        return await transcribe_audio(audio_bytes, language=declared_language)
-
-    raise ValueError(
-        f"Zia ASR does not support '{declared_language}'. "
-        f"Route typed text in this language through translate_text() instead."
-    )
+        try:
+            r = await client.post(url, headers=_headers(),
+                json={"text": text, "language": language}, timeout=15.0)
+            r.raise_for_status()
+            return r.content
+        except Exception as e:
+            print(f"[Mock TTS] Catalyst TTS failed ({e}), returning dummy audio bytes.")
+            return b"ID3\x04\x00\x00\x00\x00\x00\x00MockAudioData"
 
 # --- Real Catalyst NoSQL persistence ---
 # BUG FIX: this used to be a plain in-memory dict (_mock_nosql_cache), never

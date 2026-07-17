@@ -11,8 +11,3 @@ langgraph==0.2.55
 neo4j==5.28.4
 rapidfuzz==3.13.0
 zcatalyst-sdk==1.4.0
-
-# test-only -- needed to run test_*.py (pytest.mark.anyio, mocker fixture)
-pytest==8.3.3
-pytest-mock==3.14.0
-anyio==4.6.2
