@@ -123,9 +123,23 @@ async def test_get_session_penalized_ids_empty_when_unset(mock_get, anyio_backen
 
 @patch("backend.api.middleware.rbac.get_session")
 @patch("backend.api.routes.feedback.record_feedback_event", new_callable=AsyncMock)
-def test_api_submit_feedback(mock_record, mock_get_session):
+@patch("backend.api.routes.feedback.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.routes.feedback.nosql_get", new_callable=AsyncMock)
+def test_api_submit_feedback(mock_get, mock_set, mock_record, mock_get_session):
+    # BUG FIX (test isolation): this test previously left the route's own
+    # rate-limit check (_enforce_rate_limit, added after this test was
+    # originally written) hitting the real nosql_get/nosql_set -- only
+    # record_feedback_event was mocked. That meant every run of this test
+    # against a real Catalyst NoSQL backend permanently incremented a real
+    # feedback_rate:officer_1:SHARED_MO counter; after enough accumulated
+    # runs across a long session the real counter crossed FEEDBACK_RATE_LIMIT
+    # and this test started failing with a genuine 429 instead of 200 --
+    # not an application bug, a test-isolation bug. Mocking nosql_get/nosql_set
+    # here (nosql_get returns None -- "no prior submissions this window")
+    # makes the rate-limit check deterministic and stops writing real data.
+    mock_get.return_value = None
     mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
-    
+
     payload = {
         "session_id": "session123",
         "query_text": "Who is connected?",
