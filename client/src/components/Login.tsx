@@ -290,22 +290,12 @@ export default function Login({ onLogin }: LoginProps) {
             <p style={{ fontSize: '9.5px', color: '#8a7d67', margin: 0, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
               Authorized Personnel Only
             </p>
-            <div
-              style={{
-                marginTop: '8px',
-                display: 'inline-flex',
-                gap: '12px',
-                fontSize: '9.5px',
-                fontFamily: "'IBM Plex Mono', monospace",
-                color: '#5c5140',
-                background: '#e9e1cd',
-                padding: '4px 10px',
-                borderRadius: '2px',
-                border: '1px solid rgba(43,33,20,0.12)',
-              }}
-            >
-              <span>ID: dysp1 / pass: demo1234</span>
-            </div>
+            {/* BUG FIX: removed hardcoded "ID: dysp1 / pass: demo1234" credential text.
+                It rendered unconditionally (no import.meta.env.DEV gate), so it shipped
+                in the production build and gave any anonymous visitor a live, DySP-rank
+                login -- a full authentication bypass. Do not reintroduce real credentials
+                here; if a demo hint is ever needed again, gate it behind import.meta.env.DEV
+                and use a dedicated, minimally-privileged throwaway account. */}
           </div>
         </form>
       </div>

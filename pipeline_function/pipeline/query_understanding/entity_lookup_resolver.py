@@ -6,48 +6,49 @@ from shared.catalyst_client import ztsql_query
 # In-memory cache for lookup tables to avoid repeated DB calls in the 15-min function lifecycle
 _CRIME_SUB_HEADS_CACHE: dict = {}
 _SECTIONS_CACHE: dict = {}
-_CACHE_LOADED = False
+# BUG FIX: track load success per-table instead of a single shared _CACHE_LOADED flag.
+# With one shared flag, a transient failure on one table (e.g. sections) while the
+# other table (crime_sub_heads) succeeded would still set the flag True via "or",
+# permanently skipping the reload for the rest of the warm instance's lifetime and
+# silently pinning the failed table's resolver to its unverified fallback path.
+# Per-table flags let a failed table retry on the next call while the table that
+# already succeeded is not refetched.
+_SUB_HEADS_LOADED = False
+_SECTIONS_LOADED = False
 # BUG FIX: asyncio.Lock prevents a race condition where two concurrent invocations
-# both find _CACHE_LOADED=False and both fire the DB load, doubling the I/O and
+# both find the caches not yet loaded and both fire the DB load, doubling the I/O and
 # potentially interleaving partial state into the caches.
 _CACHE_LOCK = asyncio.Lock()
 
 async def _load_caches_if_needed():
-    global _CACHE_LOADED, _CRIME_SUB_HEADS_CACHE, _SECTIONS_CACHE
-    if _CACHE_LOADED:
+    global _SUB_HEADS_LOADED, _SECTIONS_LOADED, _CRIME_SUB_HEADS_CACHE, _SECTIONS_CACHE
+    if _SUB_HEADS_LOADED and _SECTIONS_LOADED:
         return
     async with _CACHE_LOCK:
         # Double-checked locking: re-check after acquiring lock
-        if _CACHE_LOADED:
+        if _SUB_HEADS_LOADED and _SECTIONS_LOADED:
             return
-        
-        sub_heads_ok = False
-        sections_ok = False
 
-        # Load crime_sub_heads
-        try:
-            sub_heads = await ztsql_query("SELECT crime_sub_head_id, crime_sub_head_name FROM crime_sub_heads")
-            for row in sub_heads:
-                _CRIME_SUB_HEADS_CACHE[row["crime_sub_head_id"]] = row["crime_sub_head_name"]
-            sub_heads_ok = True
-        except Exception as e:
-            print(f"Warning: Failed to load crime_sub_heads cache: {e}")
+        # Load crime_sub_heads (skip if already loaded successfully)
+        if not _SUB_HEADS_LOADED:
+            try:
+                sub_heads = await ztsql_query("SELECT crime_sub_head_id, crime_sub_head_name FROM crime_sub_heads")
+                for row in sub_heads:
+                    _CRIME_SUB_HEADS_CACHE[row["crime_sub_head_id"]] = row["crime_sub_head_name"]
+                _SUB_HEADS_LOADED = True
+            except Exception as e:
+                print(f"Warning: Failed to load crime_sub_heads cache: {e}")
 
-        # Load sections
-        try:
-            sections = await ztsql_query("SELECT section_code, act_code FROM sections")
-            for row in sections:
-                key = (row["act_code"], row["section_code"])
-                _SECTIONS_CACHE[key] = row["section_code"]
-            sections_ok = True
-        except Exception as e:
-            print(f"Warning: Failed to load sections cache: {e}")
-
-        # BUG FIX: only mark cache loaded if at least one table loaded successfully.
-        # Previously _CACHE_LOADED was set unconditionally, so a transient DB failure
-        # at cold-start would permanently disable both lookups for the function's lifetime.
-        if sub_heads_ok or sections_ok:
-            _CACHE_LOADED = True
+        # Load sections (skip if already loaded successfully)
+        if not _SECTIONS_LOADED:
+            try:
+                sections = await ztsql_query("SELECT section_code, act_code FROM sections")
+                for row in sections:
+                    key = (row["act_code"], row["section_code"])
+                    _SECTIONS_CACHE[key] = row["section_code"]
+                _SECTIONS_LOADED = True
+            except Exception as e:
+                print(f"Warning: Failed to load sections cache: {e}")
 
 async def get_crime_sub_head_name(crime_sub_head_id: str) -> Optional[str]:
     """Reverse lookup: resolved crime_sub_head_id -> its display name, reusing

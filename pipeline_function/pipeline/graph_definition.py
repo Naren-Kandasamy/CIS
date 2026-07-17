@@ -63,7 +63,11 @@ async def run_pipeline_stages(input_state: dict, config: dict):
             intent=intent, entities=intent_obj.get("entities", {})
         )
         
-        evidence = await execute_retrieval(dag, evidence, {"intent_object": intent_obj})
+        # BUG FIX: run_graph_step reads state.get("intent", {}), not "intent_object".
+        # Passing "intent_object" made entities resolve to {} silently, so city/locations/
+        # crime_types/weapon filters never applied and queries fell back to an unfiltered
+        # top-10 scan. Use "intent" to match executor.py (consistent with langgraph_router.py).
+        evidence = await execute_retrieval(dag, evidence, {"intent": intent_obj})
         
         # 4. Confidence Engine
         yield "scoring_evidence", {"status": "Scoring evidence..."}

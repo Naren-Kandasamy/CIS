@@ -1,7 +1,21 @@
 import asyncio
+import logging
 from pipeline_function.pipeline.evidence import EvidenceObject
 
+logger = logging.getLogger(__name__)
+
 TIMEOUT_BUDGETS = {"graph": 5.0, "rag": 3.0, "sql": 4.0}
+
+# BUG FIX: hard caps on the number of location/crime_type terms (and each
+# raw string's length) that run_graph_step will turn into Cypher OR-branches
+# and bound params. Previously unbounded -- entities.locations/crime_types
+# come straight from an LLM NER call capped only at max_tokens=500, which can
+# still return on the order of 100-200 short strings (or one long run-on
+# string), producing a WHERE clause with hundreds of OR branches/params per
+# request. Mirrors the resolved_crime_sub_heads[:3] cap already used in
+# run_sql_step.
+MAX_ENTITY_TERMS = 20
+MAX_ENTITY_STRING_LEN = 100
 
 async def execute_with_timeout(coro, source_type: str, evidence: EvidenceObject):
     timeout = TIMEOUT_BUDGETS.get(source_type, 5.0)
@@ -44,7 +58,13 @@ async def run_graph_step(step, state):
         RETURN p.id as person_id, rank
         """
         
-        print(f"Executing Algorithmic Cypher: {cypher} with params {params}")
+        # BUG FIX: was an unconditional print() of the full Cypher text and bound
+        # params (district names etc.) to stdout on every call -- in the Catalyst
+        # deployment that lands in platform-level log aggregation, which is
+        # retained longer / more broadly readable than app-level CIS access.
+        # logger.debug() is a no-op unless the root logger is explicitly set to
+        # DEBUG, so nothing is logged in production by default.
+        logger.debug("Executing Algorithmic Cypher: %s with params %s", cypher, params)
         results = await run_query(cypher, params)
         
         formatted = []
@@ -77,11 +97,12 @@ async def run_graph_step(step, state):
     if locations:
         # Split locations into words for more robust matching (e.g. "narrow gullies" matches "narrow gully")
         words = []
-        for loc in locations:
-            words.extend([w for w in loc.split() if len(w) >= 3])  # skip only 1-2 char words like 'in', 'at'
+        for loc in locations[:MAX_ENTITY_TERMS]:
+            words.extend([w for w in loc[:MAX_ENTITY_STRING_LEN].split() if len(w) >= 3])  # skip only 1-2 char words like 'in', 'at'
+        words = words[:MAX_ENTITY_TERMS]
         if not words:
-            words = locations
-            
+            words = locations[:MAX_ENTITY_TERMS]
+
         loc_clause = " OR ".join([f"(toLower(f.modus_operandi) CONTAINS toLower($loc_{i}) OR toLower(f.narrative) CONTAINS toLower($loc_{i}))" for i in range(len(words))])
         if loc_clause:
             cypher += f" AND ({loc_clause})"
@@ -91,11 +112,14 @@ async def run_graph_step(step, state):
         
     if crime_types:
         # Match any of the extracted crime types against type, MO, and narrative using keywords
+        # BUG FIX: same MAX_ENTITY_TERMS/MAX_ENTITY_STRING_LEN cap as the locations
+        # block above -- crime_types comes from the same uncapped NER output.
         words = []
-        for ct in crime_types:
-            words.extend([w for w in ct.split() if len(w) >= 3])
+        for ct in crime_types[:MAX_ENTITY_TERMS]:
+            words.extend([w for w in ct[:MAX_ENTITY_STRING_LEN].split() if len(w) >= 3])
+        words = words[:MAX_ENTITY_TERMS]
         if not words:
-            words = crime_types
+            words = crime_types[:MAX_ENTITY_TERMS]
 
         types_clause = " OR ".join([f"(toLower(f.crime_type) CONTAINS toLower($ctype_{i}) OR toLower(f.modus_operandi) CONTAINS toLower($ctype_{i}) OR toLower(f.narrative) CONTAINS toLower($ctype_{i}))" for i in range(len(words))])
         if types_clause:
@@ -118,7 +142,11 @@ async def run_graph_step(step, state):
  RETURN f.id as fir_id, f.crime_no as crime_no, f.district as district, f.crime_type as crime_type, f.modus_operandi as modus_operandi, f.narrative as narrative, f.date as date, accused_ids
  LIMIT 10"""
 
-    print(f"Executing Cypher: {cypher} with params {params}")
+    # BUG FIX: was an unconditional print() of the full Cypher text and bound
+    # params -- suspect/location names, MO descriptions, weapon mentions pulled
+    # from the officer's query -- to stdout on every graph retrieval call. See
+    # the identical fix/rationale on the pagerank branch above.
+    logger.debug("Executing Cypher: %s with params %s", cypher, params)
     # BUG FIX: this used to catch every exception and return [] here,
     # indistinguishable from "the query legitimately found nothing" --
     # execute_with_timeout (which wraps this coroutine) already has its own
