@@ -3,8 +3,11 @@ from unittest.mock import patch, AsyncMock
 from shared.feedback_models import CorrectionEvent, MethodologyTrust
 from shared.feedback_engine import (
     _smoothed_trust,
+    _sanitize_scope_part,
+    _narrow_scope_key,
     get_trust_weight,
     record_feedback_event,
+    get_session_penalized_ids,
     PRIOR_TRUST,
     TRUST_WEIGHT_FLOOR
 )
@@ -12,6 +15,24 @@ from fastapi.testclient import TestClient
 from backend.main import app
 
 client = TestClient(app)
+
+
+def test_sanitize_scope_part_escapes_delimiter():
+    # BUG FIX regression coverage: raw ":" in a client-controlled edge_type/
+    # crime_type value must never survive into the joined scope key unescaped,
+    # or a crafted edge_type could forge a key belonging to a different scope.
+    assert _sanitize_scope_part("SHARED_MO") == "SHARED_MO"
+    assert ":" not in _sanitize_scope_part("SHARED_MO::burglary")
+    assert "%" not in _sanitize_scope_part("100%").replace("%25", "")
+
+
+def test_narrow_scope_key_collision_prevented():
+    # An attacker submitting edge_type="SHARED_MO::burglary" with crime_type=None
+    # (so _narrow_scope_key is never even called for them) must not be able to
+    # produce the same broad-scope key string a genuine narrow-scope pair uses.
+    genuine_narrow_key = _narrow_scope_key("SHARED_MO", "burglary")
+    crafted_broad_equivalent = _sanitize_scope_part("SHARED_MO::burglary")
+    assert genuine_narrow_key != crafted_broad_equivalent
 
 def test_smoothed_trust_math():
     # Zero observations should return exact prior
@@ -54,6 +75,51 @@ async def test_narrow_scope_when_sufficient(mock_load_trust, anyio_backend="asyn
     weight = await get_trust_weight("SHARED_MO", "burglary")
     assert round(weight, 3) == round(_smoothed_trust(0, 20), 3)
     assert round(weight, 3) != round(_smoothed_trust(100, 100), 3)
+
+@pytest.mark.anyio
+@patch("shared.feedback_engine.nosql_set", new_callable=AsyncMock)
+@patch("shared.feedback_engine.nosql_get", new_callable=AsyncMock)
+async def test_record_feedback_event_increments_broad_and_narrow(mock_get, mock_set, anyio_backend="asyncio"):
+    # No existing trust records -- both broad and narrow start fresh.
+    mock_get.return_value = None
+    event = CorrectionEvent(
+        event_id="ev1", session_id="s1", officer_id="officer_1", timestamp="2024-01-01T00:00:00",
+        query_text="q", edge_type="SHARED_MO", crime_type="burglary", edge_id=None,
+        verdict="confirmed",
+    )
+    await record_feedback_event(event)
+
+    # correction:{event_id} + trust:SHARED_MO (broad) + trust:SHARED_MO::burglary (narrow)
+    assert mock_set.call_count == 3
+    written_keys = [call.args[0] for call in mock_set.call_args_list]
+    assert "correction:ev1" in written_keys
+    assert "trust:SHARED_MO" in written_keys
+    assert f"trust:{_narrow_scope_key('SHARED_MO', 'burglary')}" in written_keys
+
+
+@pytest.mark.anyio
+@patch("shared.feedback_engine.nosql_set", new_callable=AsyncMock)
+@patch("shared.feedback_engine.nosql_get", new_callable=AsyncMock)
+async def test_record_feedback_event_negative_verdict_applies_session_penalty(mock_get, mock_set, anyio_backend="asyncio"):
+    mock_get.return_value = None
+    event = CorrectionEvent(
+        event_id="ev2", session_id="s1", officer_id="officer_1", timestamp="2024-01-01T00:00:00",
+        query_text="q", edge_type="SHARED_MO", crime_type=None, edge_id="edge_456",
+        verdict="corrected",
+    )
+    await record_feedback_event(event)
+
+    written_keys = [call.args[0] for call in mock_set.call_args_list]
+    assert "session_penalty:s1" in written_keys
+
+
+@pytest.mark.anyio
+@patch("shared.feedback_engine.nosql_get", new_callable=AsyncMock)
+async def test_get_session_penalized_ids_empty_when_unset(mock_get, anyio_backend="asyncio"):
+    mock_get.return_value = None
+    result = await get_session_penalized_ids("s1")
+    assert result == set()
+
 
 @patch("backend.api.middleware.rbac.get_session")
 @patch("backend.api.routes.feedback.record_feedback_event", new_callable=AsyncMock)
