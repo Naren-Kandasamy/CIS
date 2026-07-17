@@ -1,6 +1,6 @@
 import pytest
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 from backend.main import app
@@ -25,7 +25,7 @@ async def test_push_and_get_review_items(mock_set, mock_get, anyio_backend="asyn
         item_type="cold_case_match",
         fir_id="FIR1",
         summary="Test match",
-        created_date=datetime.utcnow().isoformat()
+        created_date=datetime.now(timezone.utc).isoformat()
     )
     
     # Test push

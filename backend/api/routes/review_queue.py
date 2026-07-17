@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 from shared.review_queue_engine import get_pending_review_items, get_review_item, push_review_item
 from shared.catalyst_client import nosql_set
@@ -35,7 +35,7 @@ async def resolve_review_item(item_id: str, payload: ResolvePayload, request: Re
         
     item.status = payload.status
     item.reviewed_by = username
-    item.reviewed_date = datetime.utcnow().isoformat()
+    item.reviewed_date = datetime.now(timezone.utc).isoformat()
     
     # Save updated item back to DB (no need to update index as the index holds IDs)
     await nosql_set(f"review_queue:{item.item_id}", item.model_dump_json())
