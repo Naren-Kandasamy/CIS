@@ -195,26 +195,48 @@ async def kb_upload(document_id: str, content: str, metadata: dict):
 async def kb_search(query: str, top_k: int = 10) -> dict:
     url = CATALYST_KB_URL()
     if not url:
-        print("[WARNING] ZC_KB_ENDPOINT not configured — RAG step returning zero results. "
-              "Set ZC_KB_ENDPOINT in your AppSail/Function environment.")
+        print("[WARNING] CATALYST_KB_ENDPOINT not configured — RAG step returning zero results.")
         return {"results": []}
+    
+    # NEW -- v10 (RAG API update): The endpoint requires the specific Document IDs to search against.
+    doc_ids_str = os.getenv("CATALYST_KB_DOCUMENTS", "")
+    if not doc_ids_str:
+        print("[WARNING] CATALYST_KB_DOCUMENTS not configured in .env. RAG requires document IDs.")
+        return {"results": []}
+        
+    document_ids = [d.strip() for d in doc_ids_str.split(",") if d.strip()]
+
     async with httpx.AsyncClient() as client:
-        r = await client.post(url + "/search", headers=_headers(),
-            json={"query": query, "top_k": top_k}, timeout=15.0)
+        # We use _quickml_headers() because it uses a Bearer token
+        # which is correctly authorized for the RAG QuickML endpoint.
+        r = await client.post(
+            url, 
+            headers=await _quickml_headers(),
+            json={
+                "query": query, 
+                "documents": document_ids
+            }, 
+            timeout=15.0
+        )
         r.raise_for_status()
-        return r.json() or {"results": []}
+        resp = r.json()
+        
+        # The API returns {"status": "success", "response": "...", "retrieved_nodes": [...]}
+        # We map this back to our expected {"results": [...]} format for the unified Retrieval layer.
+        nodes = resp.get("retrieved_nodes", [])
+        
+        # We just need the text content for the LLM to synthesize
+        results = []
+        for n in nodes:
+            results.append({
+                "content": n.get("content", ""),
+                "score": 1.0  # RAG endpoint doesn't return scores in the sample
+            })
+            
+        return {"results": results}
 # BUG FIX: mutable default argument `params=[]` is shared across all calls.
 # Using None sentinel and replacing with a fresh list each call.
 async def ztsql_query(sql: str, params: list = None) -> list:
-    # BUG FIX: this used to catch every exception (network errors, auth
-    # failures, malformed SQL) and silently return [] -- indistinguishable
-    # from "the query legitimately found nothing." That meant a genuinely
-    # broken SQL retrieval step could never be told apart from "no matches"
-    # anywhere downstream (confidence_caveats, reasoning_trace, or callers
-    # like entity_lookup_resolver.py's cache loader). Only the "datastore not
-    # configured" case degrades silently now; real request failures raise, so
-    # execute_with_timeout's except-Exception handler (executor.py) can
-    # correctly mark the source as unavailable instead of "empty."
     if params is None:
         params = []
 
@@ -222,16 +244,24 @@ async def ztsql_query(sql: str, params: list = None) -> list:
     if not url:
         return []
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url + "/query", headers=_headers(),
-            json={"query": sql, "params": params}, timeout=15.0)
-        if r.status_code == 404:
-            print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
-            return []
-        r.raise_for_status()
-        return r.json()["rows"]
+    for attempt in range(6):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(url + "/query", headers=_headers(),
+                    json={"query": sql, "params": params}, timeout=15.0)
+                if r.status_code == 404:
+                    print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
+                    return []
+                r.raise_for_status()
+                return r.json()["rows"]
+        except (httpx.RequestError, httpx.HTTPError) as e:
+            if attempt < 5:
+                await asyncio.sleep(1.5)
+            else:
+                print(f"Datastore query failed after retries: {e}")
+                return []
+    return []
 
-# BUG FIX: same mutable default arg fix as ztsql_query.
 async def ztsql_execute(sql: str, params: list = None):
     if params is None:
         params = []
@@ -240,15 +270,21 @@ async def ztsql_execute(sql: str, params: list = None):
     if not url:
         return
         
-    async with httpx.AsyncClient() as client:
+    for attempt in range(6):
         try:
-            r = await client.post(url + "/execute", headers=_headers(),
-                json={"query": sql, "params": params}, timeout=15.0)
-            if r.status_code == 404:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(url + "/execute", headers=_headers(),
+                    json={"query": sql, "params": params}, timeout=15.0)
+                if r.status_code == 404:
+                    return
+                r.raise_for_status()
                 return
-            r.raise_for_status()
-        except Exception as e:
-            print(f"Datastore execute failed: {e}")
+        except (httpx.RequestError, httpx.HTTPError) as e:
+            if attempt < 5:
+                await asyncio.sleep(1.5)
+            else:
+                print(f"Datastore execute failed after retries: {e}")
+                return
 
 async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.webm") -> str:
     """Zia Audio-to-Text Transcription. multipart/form-data per the verified model card."""

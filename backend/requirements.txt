@@ -11,3 +11,4 @@ langgraph==0.2.55
 neo4j==5.28.4
 rapidfuzz==3.13.0
 zcatalyst-sdk==1.4.0
+langdetect

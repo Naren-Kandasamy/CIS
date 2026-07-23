@@ -86,6 +86,14 @@ class FIRSchema(BaseModel):
     narrative: Optional[str] = None
     ocr_extracted: bool = False
 
+    narrative_language: Optional[str] = None
+    narrative_original: Optional[str] = None
+    narrative_is_translated: bool = False
+
+    mo_descriptor_language: Optional[str] = None
+    mo_descriptor_original: Optional[str] = None
+    mo_descriptor_is_translated: bool = False
+
     @field_validator('district', mode='before')
     @classmethod
     def canonicalize_district(cls, v):
