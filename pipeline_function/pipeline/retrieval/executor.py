@@ -1,7 +1,7 @@
 import asyncio
 from pipeline_function.pipeline.evidence import EvidenceObject
 
-TIMEOUT_BUDGETS = {"graph": 5.0, "rag": 3.0, "sql": 4.0}
+TIMEOUT_BUDGETS = {"graph": 5.0, "rag": 15.0, "sql": 4.0}
 
 async def execute_with_timeout(coro, source_type: str, evidence: EvidenceObject):
     timeout = TIMEOUT_BUDGETS.get(source_type, 5.0)
