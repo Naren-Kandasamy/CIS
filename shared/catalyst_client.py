@@ -199,9 +199,9 @@ async def kb_search(query: str, top_k: int = 10) -> dict:
         return {"results": []}
     
     # NEW -- v10 (RAG API update): The endpoint requires the specific Document IDs to search against.
-    doc_ids_str = os.getenv("CATALYST_KB_DOCUMENTS", "")
+    doc_ids_str = _env("ZC_KB_DOCUMENTS", "CATALYST_KB_DOCUMENTS", "")
     if not doc_ids_str:
-        print("[WARNING] CATALYST_KB_DOCUMENTS not configured in .env. RAG requires document IDs.")
+        print("[WARNING] CATALYST_KB_DOCUMENTS or ZC_KB_DOCUMENTS not configured in .env. RAG requires document IDs.")
         return {"results": []}
         
     document_ids = [d.strip() for d in doc_ids_str.split(",") if d.strip()]

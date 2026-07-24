@@ -1,9 +1,11 @@
 import asyncio
 from neo4j import AsyncGraphDatabase  # neo4j driver works with Memgraph bolt
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 async def get_driver():
     # In a serverless environment where event loops are destroyed per-invocation,

@@ -2,7 +2,6 @@
 	"command": "python3.13 backend/start.py",
 	"build_path": "..",
 	"stack": "python_3_13",
-	"env_variables": {},
 	"memory": 512,
 	"scripts": {}
 }
