@@ -7,8 +7,9 @@ import sys
 # Add root project directory to path so imports work correctly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
-from shared.catalyst_client import kb_upload, ztsql_execute
+from shared.catalyst_client import kb_upload, ztsql_execute, translate_text
 from shared.graph_client import run_write, close
+from shared.language_utils import detect_language, is_viable
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +58,18 @@ async def ingest_fir_to_sql(fir: dict, sem: asyncio.Semaphore):
         # all target "cases" with (fir_internal_id, crime_no, registered_date,
         # crime_head_id, crime_sub_head_id). Aligned to match.
         sql = """
-        INSERT INTO cases (fir_internal_id, crime_no, registered_date, crime_head_id, crime_sub_head_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO cases (
+            fir_internal_id, crime_no, registered_date, crime_head_id, crime_sub_head_id,
+            narrative_language, narrative_original, narrative_is_translated,
+            mo_descriptor_language, mo_descriptor_original, mo_descriptor_is_translated
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = [
             fir["fir_internal_id"], fir.get("crime_no", ""), fir.get("incident_date", ""),
-            fir.get("crime_head_id", ""), fir.get("crime_sub_head_id", "")
+            fir.get("crime_head_id", ""), fir.get("crime_sub_head_id", ""),
+            fir.get("narrative_language"), fir.get("narrative_original"), fir.get("narrative_is_translated", False),
+            fir.get("mo_descriptor_language"), fir.get("mo_descriptor_original"), fir.get("mo_descriptor_is_translated", False)
         ]
         try:
             await ztsql_execute(sql, params)
@@ -80,7 +87,13 @@ async def ingest_fir_to_graph(fir: dict, sem: asyncio.Semaphore):
             f.modus_operandi = $modus_operandi,
             f.weapon = $weapon,
             f.ps_name = $ps_name,
-            f.narrative = $narrative
+            f.narrative = $narrative,
+            f.narrative_language = $narrative_language,
+            f.narrative_original = $narrative_original,
+            f.narrative_is_translated = $narrative_is_translated,
+            f.mo_descriptor_language = $mo_descriptor_language,
+            f.mo_descriptor_original = $mo_descriptor_original,
+            f.mo_descriptor_is_translated = $mo_descriptor_is_translated
         """
         params = {
             "fir_id": fir["fir_internal_id"],
@@ -91,7 +104,13 @@ async def ingest_fir_to_graph(fir: dict, sem: asyncio.Semaphore):
             "modus_operandi": fir.get("mo_descriptor", ""),
             "weapon": fir.get("weapon", ""),
             "ps_name": fir.get("ps_name", ""),
-            "narrative": fir.get("narrative", "")
+            "narrative": fir.get("narrative", ""),
+            "narrative_language": fir.get("narrative_language", ""),
+            "narrative_original": fir.get("narrative_original", ""),
+            "narrative_is_translated": fir.get("narrative_is_translated", False),
+            "mo_descriptor_language": fir.get("mo_descriptor_language", ""),
+            "mo_descriptor_original": fir.get("mo_descriptor_original", ""),
+            "mo_descriptor_is_translated": fir.get("mo_descriptor_is_translated", False)
         }
         try:
             await run_write(cypher, params)
@@ -115,6 +134,36 @@ async def ingest_fir_to_graph(fir: dict, sem: asyncio.Semaphore):
                 await run_write(rel_cypher, {"fir_id": fir["fir_internal_id"], "victim_id": victim_id})
         except Exception as e:
             logger.error(f"Graph insert failed for {fir['fir_internal_id']}: {e}")
+
+async def tag_and_normalize_language(fir: dict) -> dict:
+    fir = await _tag_field(fir, field="narrative")
+    fir = await _tag_field(fir, field="mo_descriptor")
+    return fir
+
+async def _tag_field(fir: dict, field: str) -> dict:
+    text = fir.get(field)
+    if not text:
+        return fir
+    
+    if LOCAL_MOCK_MODE:
+        # Mocking to avoid calling Zia translation in mock mode
+        fir[f"{field}_language"] = "en"
+        fir[f"{field}_original"] = text
+        fir[f"{field}_is_translated"] = False
+        return fir
+
+    detected = detect_language(text)
+    fir[f"{field}_original"] = text
+    fir[f"{field}_language"] = detected
+
+    if is_viable(detected):
+        fir[f"{field}_is_translated"] = False
+        return fir
+
+    result = await translate_text(text, source_lang=detected or "auto", target_lang="en")
+    fir[field] = result["translated_text"]
+    fir[f"{field}_is_translated"] = True
+    return fir
 
 async def run_ingestion_pipeline():
     logger.info("Starting offline ingestion pipeline...")
@@ -141,6 +190,7 @@ async def run_ingestion_pipeline():
             chunk = firs[i:i+chunk_size]
             chunk_tasks = []
             for fir in chunk:
+                fir = await tag_and_normalize_language(fir)
                 chunk_tasks.append(ingest_fir_to_kb(fir, kb_sem))
                 chunk_tasks.append(ingest_fir_to_sql(fir, sql_sem))
                 chunk_tasks.append(ingest_fir_to_graph(fir, graph_sem))

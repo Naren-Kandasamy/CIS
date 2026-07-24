@@ -12,10 +12,12 @@ const svgLocation = encodeSvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 interface NetworkGraphProps {
   elements?: any[];
   onNodeClick?: (entity: SelectedEntity) => void;
+  /** Full evidence array so the drawer can show narrative detail */
   evidence?: any[];
 }
 
 const DEFAULT_ELEMENTS = [
+  // Nodes
   { data: { id: 'fir1', label: 'FIR 12/2024', type: 'fir' }, classes: 'fir' },
   { data: { id: 'fir2', label: 'FIR 45/2023', type: 'fir' }, classes: 'fir' },
   { data: { id: 'p1', label: 'Ramesh Gowda', type: 'person' }, classes: 'person' },
@@ -24,6 +26,7 @@ const DEFAULT_ELEMENTS = [
   { data: { id: 'loc1', label: 'Belagavi', type: 'location' } },
   { data: { id: 'loc2', label: 'Bengaluru City', type: 'location' } },
 
+  // Edges
   { data: { source: 'p1', target: 'fir1', label: 'Accused' } },
   { data: { source: 'p2', target: 'fir1', label: 'Conspirator' } },
   { data: { source: 'p3', target: 'fir2', label: 'Abettor' } },
@@ -36,7 +39,7 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
   const graphElements = elements && elements.length > 0 ? elements : DEFAULT_ELEMENTS;
   const cyRef = useRef<any>(null);
   const isFirstLayout = useRef<boolean>(true);
-  
+
   const [nodeSize, setNodeSize] = useState<number>(42);
   const [edgeLength, setEdgeLength] = useState<number>(140);
 
@@ -54,7 +57,7 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
       name: 'cose',
       animate: !isFirstLayout.current, // Smooth transitions when dragging sliders
       animationDuration: 300,
-      fit: true, 
+      fit: true,
       padding: 60,
       randomize: isFirstLayout.current, // Only scatter on initial mount
       nodeRepulsion: () => edgeLength * 9000, // Balanced multi-edge repulsion scaling
@@ -70,6 +73,7 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
     isFirstLayout.current = false;
   }, [graphElements, edgeLength]);
 
+  // Attach tap listener whenever elements or callback changes
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !onNodeClick) return;
@@ -83,10 +87,12 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
 
       const linkedNodes = resolveLinkedNodes(nodeId, graphElements);
 
+      // Match evidence items for this node
       let evidenceItems: any[] = [];
       if (type === 'fir' && evidence) {
         evidenceItems = matchEvidenceByFirId(nodeId, evidence);
       } else if (type === 'person' && evidence) {
+        // For a person, collect evidence for all linked FIR nodes
         for (const ln of linkedNodes.filter(n => n.type === 'fir')) {
           evidenceItems.push(...matchEvidenceByFirId(ln.id, evidence));
         }

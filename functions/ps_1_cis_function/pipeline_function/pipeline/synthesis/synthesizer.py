@@ -19,6 +19,8 @@ RULES:
 - analytical: full paragraph synthesis with evidence section
 - If evidence object is empty: state no records found, suggest alternative queries
 - Never fabricate connections not in evidence
+- If an evidence item has excluded=true, do not present it as a lead -- state
+  that it has been ruled out and give its exclusion_reason; never omit it
 - Always end with: "All outputs require officer verification before action."
 """
 

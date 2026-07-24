@@ -5,6 +5,7 @@ import { ChannelBreakdownChart } from '../channel-breakdown-chart';
 import { RecentConversations } from '../recent-conversations';
 import NetworkGraph from './NetworkGraph';
 import CrimeMap from './CrimeMap';
+import HypothesisWorkspace from './HypothesisWorkspace';
 import EntityDrawer, { EntityInlinePanel } from './EntityDrawer';
 import { useEntityDrawer, resolveLinkedNodes, matchEvidenceByFirId } from '../../hooks/useEntityDrawer';
 import type { SelectedEntity } from '../../hooks/useEntityDrawer';
@@ -119,6 +120,9 @@ export default function DashboardPanel({ visualization, evidence }: DashboardPan
           </div>
         </div>
       </div>
+
+      {/* Hypothesis Workspace Panel */}
+      <HypothesisWorkspace firId={evidence?.[0]?.fir_id || 'DEMO_CASE_001'} />
 
       {/* Network Graph & Map — graph node clicks show inline panel right beside the graph */}
       <div className="dossier-panel dossier-paperclip" style={{ padding: '28px' }}>

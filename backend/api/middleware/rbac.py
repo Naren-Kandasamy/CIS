@@ -46,6 +46,14 @@ class RBACMiddleware:
         if min_role and not role_meets_minimum(session["role"], min_role):
             return await self._send_error(scope, receive, send, 403, "Insufficient rank for this action")
 
+        # BUG FIX: downstream routes (case/session ownership checks) need to
+        # know *who* is making the request. request.state (Starlette) reads
+        # from scope["state"], which this middleware never populated -- every
+        # route re-deriving identity had no session-backed source of truth.
+        scope.setdefault("state", {})
+        scope["state"]["username"] = session["username"]
+        scope["state"]["role"] = session["role"]
+
         await self.app(scope, receive, send)
 
     async def _send_error(self, scope, receive, send, status_code: int, detail: str):

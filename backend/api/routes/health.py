@@ -3,6 +3,7 @@ from fastapi import APIRouter
 router = APIRouter()
 
 @router.get("/health")
+@router.head("/health")
 async def health_check():
     """
     Cheap endpoint for keep-warm pings -- no Memgraph or Catalyst calls,

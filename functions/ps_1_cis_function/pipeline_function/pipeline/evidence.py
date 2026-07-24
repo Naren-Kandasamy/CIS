@@ -14,6 +14,10 @@ class EvidenceItem:
     confidence_flags:   list[str] = field(default_factory=list)
     fir_date:           Optional[str] = None
     metadata:           dict = field(default_factory=dict)
+    accused_ids:        list[str] = field(default_factory=list)
+    excluded:           bool = False
+    exclusion_reason:   Optional[str] = None
+    exclusion_type:     Optional[str] = None
 
 @dataclass
 class EvidenceObject:
@@ -42,6 +46,7 @@ class EvidenceObject:
 
     def add_graph_results(self, graph_results: list):
         for result in graph_results:
+            accused_ids = result.get("metadata", {}).get("accused_ids", [])
             existing = next((e for e in self.items if e.fir_id == result["fir_id"]), None)
             if existing:
                 existing.sources.append("graph")
@@ -49,12 +54,15 @@ class EvidenceObject:
                 existing.evidence_path = result.get("path")
                 existing.confidence = "high"
                 existing.relevance_score = min(existing.relevance_score * 1.3, 1.0)
+                if accused_ids:
+                    existing.accused_ids = accused_ids
             else:
                 self.items.append(EvidenceItem(
                     fir_id=result["fir_id"], relevance_score=result.get("score", 0.7),
                     sources=["graph"], convergent=False,
                     evidence_path=result.get("path"), similarity_reason=None,
-                    confidence="medium", metadata=result.get("metadata", {})
+                    confidence="medium", metadata=result.get("metadata", {}),
+                    accused_ids=accused_ids
                 ))
     
     async def add_sql_results(self, sql_results: list):

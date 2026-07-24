@@ -12,6 +12,8 @@ from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_re
 from pipeline_function.pipeline.confidence_engine import run_confidence_engine
 from pipeline_function.pipeline.synthesis.synthesizer import SYNTHESIS_SYSTEM
 from pipeline_function.pipeline.synthesis.fallback import build_fallback_response
+from shared.language_utils import detect_language, is_viable
+from shared.catalyst_client import translate_text
 
 # State schema for the graph
 class AgentState(TypedDict):
@@ -79,10 +81,57 @@ async def retrieving_evidence_node(state: AgentState):
     evidence_obj = await execute_retrieval(state["dag"], evidence_obj, {"intent": intent_obj})
     return {"evidence": evidence_obj}
 
+def should_translate_evidence(state: AgentState) -> str:
+    for item in state["evidence"].items:
+        # Check narrative
+        tag = item.metadata.get("narrative_language")
+        if not tag:
+            tag = detect_language(item.metadata.get("narrative", ""))
+            item.metadata["narrative_language"] = tag
+        if not is_viable(tag):
+            return "translate_evidence_node"
+        
+        # Check mo_descriptor
+        mo_tag = item.metadata.get("mo_descriptor_language")
+        if not mo_tag:
+            mo_tag = detect_language(item.metadata.get("mo_descriptor", ""))
+            item.metadata["mo_descriptor_language"] = mo_tag
+        if not is_viable(mo_tag):
+            return "translate_evidence_node"
+
+    return "confidence_scoring"
+
+async def translate_evidence_node(state: AgentState):
+    await state["write_status_callback"](state["job_id"], status="translating_evidence")
+    for item in state["evidence"].items:
+        tag = item.metadata.get("narrative_language")
+        if tag and not is_viable(tag):
+            original_text = item.metadata.get("narrative", "")
+            try:
+                result = await translate_text(original_text, source_lang=tag, target_lang="en")
+                item.metadata["narrative_original"] = original_text
+                item.metadata["narrative"] = result["translated_text"]
+                item.metadata["narrative_is_translated"] = True
+            except Exception as e:
+                print(f"Failed to translate narrative: {e}")
+        
+        mo_tag = item.metadata.get("mo_descriptor_language")
+        if mo_tag and not is_viable(mo_tag):
+            original_mo = item.metadata.get("mo_descriptor", "")
+            try:
+                result = await translate_text(original_mo, source_lang=mo_tag, target_lang="en")
+                item.metadata["mo_descriptor_original"] = original_mo
+                item.metadata["mo_descriptor"] = result["translated_text"]
+                item.metadata["mo_descriptor_is_translated"] = True
+            except Exception as e:
+                print(f"Failed to translate mo_descriptor: {e}")
+
+    return {"evidence": state["evidence"]}
+
 async def confidence_scoring_node(state: AgentState):
     await state["write_status_callback"](state["job_id"], status="confidence_scoring")
     evidence_obj = state["evidence"]
-    evidence_obj = run_confidence_engine(evidence_obj)
+    evidence_obj = await run_confidence_engine(evidence_obj)
     return {"evidence": evidence_obj}
 
 async def building_visualization_node(state: AgentState):
@@ -228,6 +277,8 @@ async def synthesizing_response_node(state: AgentState):
             "confidence": item.confidence,
             "relevance_score": item.relevance_score,
             "flags": item.confidence_flags,
+            "excluded": item.excluded,
+            "exclusion_reason": item.exclusion_reason,
             "data": item.metadata
         })
 
@@ -260,6 +311,7 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
     workflow.add_node("resolving_entities", resolving_entities_node)
     workflow.add_node("planning_execution", planning_execution_node)
     workflow.add_node("retrieving_evidence", retrieving_evidence_node)
+    workflow.add_node("translate_evidence_node", translate_evidence_node)
     workflow.add_node("confidence_scoring", confidence_scoring_node)
     workflow.add_node("building_visualization", building_visualization_node)
     workflow.add_node("synthesizing_response", synthesizing_response_node)
@@ -267,7 +319,17 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
     workflow.add_edge("understanding_query", "resolving_entities")
     workflow.add_edge("resolving_entities", "planning_execution")
     workflow.add_edge("planning_execution", "retrieving_evidence")
-    workflow.add_edge("retrieving_evidence", "confidence_scoring")
+    
+    workflow.add_conditional_edges(
+        "retrieving_evidence",
+        should_translate_evidence,
+        {
+            "confidence_scoring": "confidence_scoring",
+            "translate_evidence_node": "translate_evidence_node"
+        }
+    )
+    workflow.add_edge("translate_evidence_node", "confidence_scoring")
+    
     workflow.add_edge("confidence_scoring", "building_visualization")
     workflow.add_edge("building_visualization", "synthesizing_response")
     workflow.add_edge("synthesizing_response", END)
@@ -300,6 +362,9 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
                 "fir_id": item.fir_id,
                 "confidence": item.confidence,
                 "relevance_score": item.relevance_score,
+                "excluded": item.excluded,
+                "exclusion_reason": item.exclusion_reason,
+                "exclusion_type": item.exclusion_type,
                 "data": item.metadata
             })
 

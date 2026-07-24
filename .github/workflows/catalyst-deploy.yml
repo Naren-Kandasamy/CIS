@@ -1,0 +1,43 @@
+name: Deploy to Catalyst
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install Client Dependencies and Build
+        run: |
+          cd client
+          npm ci
+          npm run build
+      
+      - name: Install Catalyst CLI
+        run: npm install -g zcatalyst-cli
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Bundle Backend Dependencies
+        run: |
+          pip install -t backend/.packages -r backend/requirements.txt
+        
+      - name: Deploy to Zoho Catalyst
+        env:
+          CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+        run: catalyst deploy --token $CATALYST_TOKEN
