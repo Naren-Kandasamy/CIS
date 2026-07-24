@@ -2,7 +2,7 @@ import uuid
 import json
 from datetime import datetime
 from shared.claim_models import ClaimRecord
-from shared.catalyst_client import nosql_get, nosql_set
+from shared.catalyst_client import nosql_get, nosql_set, get_lock
 from shared.review_queue_models import ReviewQueueItem
 from shared.review_queue_engine import push_review_item
 
@@ -29,15 +29,25 @@ async def log_claim(fir_id: str, accused_id: str | None, evidence_ref: str | Non
     
     # Save the actual claim with TTL
     await nosql_set(f"claim:{record.claim_id}", record.model_dump_json(), ttl=CLAIM_TTL)
-    
+
     # Update the FIR index for O(1) lookup later
+    # BUG FIX: this read-modify-write ran completely unlocked -- concurrent
+    # queries touching the same FIR (multiple officers, or overlapping
+    # pipeline runs) could both read the same stale index snapshot, and the
+    # later write would silently drop the earlier one's claim_id. That claim
+    # would still exist at claim:{id} but never be found by
+    # check_and_flag_contradicted_claims's index lookup, silently defeating
+    # the contradiction-detection feature for that claim. Same bug class
+    # already fixed for hypothesis_engine.py's/review_queue_engine.py's index
+    # writes; guarded with the existing per-key lock registry here.
     index_key = f"claim_index:{fir_id}"
-    index_data = await nosql_get(index_key)
-    index = json.loads(index_data["value"]) if index_data else []
-    
-    if record.claim_id not in index:
-        index.append(record.claim_id)
-        await nosql_set(index_key, json.dumps(index), ttl=CLAIM_TTL)
+    async with get_lock(index_key):
+        index_data = await nosql_get(index_key)
+        index = json.loads(index_data["value"]) if index_data else []
+
+        if record.claim_id not in index:
+            index.append(record.claim_id)
+            await nosql_set(index_key, json.dumps(index), ttl=CLAIM_TTL)
 
 async def check_and_flag_contradicted_claims(fir_id: str, accused_id: str | None, reason: str):
     """

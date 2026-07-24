@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from shared.catalyst_client import nosql_get, nosql_set
+from shared.catalyst_client import nosql_get, nosql_set, get_lock
 from shared.graph_client import run_query
 from shared.hypothesis_models import HypothesisRecord, HypothesisCheckLog
 
@@ -21,17 +21,26 @@ async def create_hypothesis(record: HypothesisRecord) -> None:
     await nosql_set(f"hypothesis:{record.hypothesis_id}", data_str)
 
     # Index by FIR ID
+    # BUG FIX: this read-modify-write ran completely unlocked -- two officers
+    # creating hypotheses for the same fir_id concurrently could both read the
+    # same stale index snapshot, and the later write would silently drop the
+    # earlier one's hypothesis_id from the index. The hypothesis record itself
+    # (hypothesis:{id}, written above) would still exist but never appear
+    # again in list_hypotheses(fir_id) -- unrecoverable via retry. Same bug
+    # class already fixed for review_queue_engine.py's index and cases.py's
+    # user_cases index; guarded with the existing per-key lock registry here.
     index_key = f"hypotheses_by_fir:{record.fir_id}"
-    existing = await nosql_get(index_key)
-    if existing and "value" in existing:
-        try:
-            ids = set(json.loads(existing["value"]))
-        except Exception:
+    async with get_lock(index_key):
+        existing = await nosql_get(index_key)
+        if existing and "value" in existing:
+            try:
+                ids = set(json.loads(existing["value"]))
+            except Exception:
+                ids = set()
+        else:
             ids = set()
-    else:
-        ids = set()
-    ids.add(record.hypothesis_id)
-    await nosql_set(index_key, json.dumps(list(ids)))
+        ids.add(record.hypothesis_id)
+        await nosql_set(index_key, json.dumps(list(ids)))
 
 
 async def get_hypothesis(hypothesis_id: str) -> Optional[HypothesisRecord]:
@@ -161,19 +170,25 @@ async def resolve_hypothesis(hypothesis_id: str, status: str, resolved_by: str, 
     if status not in {"confirmed", "refuted"}:
         raise ValueError("Status must be 'confirmed' or 'refuted'")
 
-    hyp = await get_hypothesis(hypothesis_id)
-    if not hyp:
-        raise ValueError(f"Hypothesis not found: {hypothesis_id}")
+    # BUG FIX: unlocked read-modify-write -- two concurrent resolve calls on
+    # the same hypothesis_id (e.g. a double-click, or two officers resolving
+    # at once) could race, with the later write silently overwriting the
+    # earlier one's resolved_by/resolved_reason with no error to either
+    # caller. Guarded with the same per-key lock pattern used throughout.
+    async with get_lock(f"hypothesis:{hypothesis_id}"):
+        hyp = await get_hypothesis(hypothesis_id)
+        if not hyp:
+            raise ValueError(f"Hypothesis not found: {hypothesis_id}")
 
-    hyp.status = status
-    hyp.resolved_by = resolved_by
-    hyp.resolved_reason = resolved_reason
-    hyp.resolved_date = datetime.now(timezone.utc).isoformat()
+        hyp.status = status
+        hyp.resolved_by = resolved_by
+        hyp.resolved_reason = resolved_reason
+        hyp.resolved_date = datetime.now(timezone.utc).isoformat()
 
-    try:
-        data_str = hyp.model_dump_json()
-    except AttributeError:
-        data_str = hyp.json()
+        try:
+            data_str = hyp.model_dump_json()
+        except AttributeError:
+            data_str = hyp.json()
 
-    await nosql_set(f"hypothesis:{hypothesis_id}", data_str)
-    return hyp
+        await nosql_set(f"hypothesis:{hypothesis_id}", data_str)
+        return hyp

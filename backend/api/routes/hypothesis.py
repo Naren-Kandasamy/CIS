@@ -6,7 +6,7 @@ from typing import List, Optional
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from shared.hypothesis_models import HypothesisRecord
 from shared.hypothesis_engine import (
@@ -20,15 +20,21 @@ from shared.hypothesis_engine import (
 router = APIRouter()
 
 
+# BUG FIX: no length/count caps -- an authenticated officer could submit an
+# arbitrarily large statement/resolved_reason or a huge linked_entity_ids
+# array, each persisted verbatim to NoSQL with no size guard (same class of
+# unbounded-storage-growth issue already fixed on ExclusionCreateRequest/
+# CorrectionEvent elsewhere in this codebase). Bounds below are generous but
+# finite.
 class HypothesisCreateRequest(BaseModel):
-    fir_id: str
-    statement: str
-    linked_entity_ids: List[str] = []
+    fir_id: str = Field(max_length=128)
+    statement: str = Field(max_length=2000)
+    linked_entity_ids: List[str] = Field(default_factory=list, max_length=100)
 
 
 class HypothesisResolveRequest(BaseModel):
     status: str  # "confirmed" | "refuted"
-    resolved_reason: str
+    resolved_reason: str = Field(max_length=1000)
 
 
 def _officer_id(request: Request) -> str:
