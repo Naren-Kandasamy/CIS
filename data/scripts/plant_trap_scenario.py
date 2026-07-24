@@ -49,8 +49,8 @@ async def plant_trap_scenario():
 
         # Graph
         await run_write(
-            "MERGE (f:FIR {id: $fid}) SET f.date = $date, f.district = $district", 
-            {"fid": fir["fir_internal_id"], "date": fir["incident_date"], "district": fir["district_name"]}
+            "MERGE (f:FIR {id: $fid}) SET f.date = $date, f.district = $district, f.crime_type = $crime_type, f.modus_operandi = $mo, f.narrative = $narrative", 
+            {"fid": fir["fir_internal_id"], "date": fir["incident_date"], "district": fir["district_name"], "crime_type": fir["crime_sub_head_name"], "mo": fir["mo_descriptor"], "narrative": fir["narrative"]}
         )
         for acc in fir["accused_ids"]:
             await run_write("MERGE (a:Accused {id: $acc})", {"acc": acc})
