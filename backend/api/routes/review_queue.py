@@ -1,11 +1,21 @@
 # PS-1 Phase 5, Item 1.2: Review Queue API Routes
 # See Docs/PS1_Extended_Investigative_Capabilities.md Section 1.2.
 
-from fastapi import APIRouter, HTTPException
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+from typing import Literal, Optional
 from shared.review_queue_engine import get_pending_review_items, resolve_review_item
 
 router = APIRouter()
+
+
+class ResolvePayload(BaseModel):
+    # FIXED B-2: typed Pydantic model for strict validation instead of raw dict.
+    # FastAPI returns 422 automatically when field types or values are invalid.
+    status: Literal["reviewed", "dismissed"]
+    # reviewed_by is optional here — the route will override it with the RBAC session user.
+    # Kept in model so callers can still read back who reviewed (from the returned item).
+
 
 @router.get("/api/review-queue")
 async def list_review_queue(fir_id: Optional[str] = None):
@@ -15,24 +25,25 @@ async def list_review_queue(fir_id: Optional[str] = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/api/review-queue/{item_id}/resolve")
-async def resolve_review_item_endpoint(item_id: str, payload: dict):
-    # payload: {"status": "reviewed" | "dismissed", "reviewed_by": str}
-    status = payload.get("status")
-    reviewed_by = payload.get("reviewed_by")
-    
-    if not status or not reviewed_by:
-        raise HTTPException(status_code=400, detail="Missing 'status' or 'reviewed_by' in payload.")
-        
-    if status not in {"reviewed", "dismissed"}:
-        raise HTTPException(status_code=400, detail="Status must be 'reviewed' or 'dismissed'.")
-        
+async def resolve_review_item_endpoint(item_id: str, payload: ResolvePayload, request: Request):
+    # FIXED B-3: extract officer identity from the RBAC-authenticated session state,
+    # not from the request body — preventing any user from forging another officer's
+    # name in the audit trail. The RBACMiddleware injects username/role into
+    # scope["state"] (accessed as request.state.username).
+    officer_id = getattr(request.state, "username", "unknown")
+
     try:
-        item = await resolve_review_item(item_id, status, reviewed_by)
-        if not item:
-            raise HTTPException(status_code=404, detail=f"Review queue item {item_id} not found.")
-        return item
+        item = await resolve_review_item(item_id, payload.status, officer_id)
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    # FIXED: raise 404 AFTER the try/except block, not inside it,
+    # so the broad `except Exception` clause cannot intercept it.
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Review queue item '{item_id}' not found.")
+
+    return item

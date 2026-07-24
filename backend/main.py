@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
@@ -51,7 +52,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-import os
 
 ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS",

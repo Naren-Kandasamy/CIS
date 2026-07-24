@@ -2,10 +2,13 @@
 # See Docs/PS1_Extended_Investigative_Capabilities.md Section 1.2.
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from shared.catalyst_client import nosql_get, nosql_set, nosql_query_by_prefix
 from shared.review_queue_models import ReviewQueueItem
+
+logger = logging.getLogger(__name__)
 
 async def push_review_item(item: ReviewQueueItem):
     """Upsert a review queue item into NoSQL."""
@@ -23,7 +26,14 @@ async def get_pending_review_items(fir_id: Optional[str] = None) -> list[ReviewQ
         try:
             parsed.append(ReviewQueueItem(**i))
         except Exception as e:
-            print(f"Error parsing ReviewQueueItem: {e}")
+            # FIXED S-2: log at ERROR level so this surfaces in production monitoring.
+            # A silent print was previously dropping corrupt records invisibly.
+            logger.error(
+                "Failed to parse ReviewQueueItem from NoSQL — record may be corrupt. "
+                "Consider moving it to a quarantine key (e.g. 'review_queue_corrupt:'). "
+                "Raw data: %s. Error: %s",
+                i, e
+            )
             
     # Filter pending only
     parsed = [i for i in parsed if i.status == "pending"]

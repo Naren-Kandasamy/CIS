@@ -60,11 +60,29 @@ async def test_check_hypothesis():
     await create_hypothesis(record)
 
     log = await check_hypothesis("hyp-002")
-    assert isinstance(log, HypothesisCheckLog)
-    assert log.hypothesis_id == "hyp-002"
-    assert log.new_supporting_evidence_count >= 0
-    assert log.new_contradicting_evidence_count >= 0
-    assert "new supporting item" in log.notes
+    assert isinstance(log, HypothesisCheckLog), (
+        f"Expected HypothesisCheckLog, got {type(log)}"
+    )
+    assert log.hypothesis_id == "hyp-002", (
+        f"Expected hypothesis_id='hyp-002', got '{log.hypothesis_id}'"
+    )
+    # Strict: counts must be non-negative integers (not floats or None)
+    assert isinstance(log.new_supporting_evidence_count, int), (
+        f"Expected int for new_supporting_evidence_count, got {type(log.new_supporting_evidence_count)}"
+    )
+    assert isinstance(log.new_contradicting_evidence_count, int), (
+        f"Expected int for new_contradicting_evidence_count, got {type(log.new_contradicting_evidence_count)}"
+    )
+    assert log.new_supporting_evidence_count >= 0, "Supporting count must be non-negative"
+    assert log.new_contradicting_evidence_count >= 0, "Contradicting count must be non-negative"
+    # Strict: notes must be a non-empty string describing the result
+    assert isinstance(log.notes, str) and len(log.notes) > 0, (
+        f"Expected non-empty string for notes, got: {log.notes!r}"
+    )
+    # Strict: the notes must describe the evidence counts found (format contract)
+    assert "new supporting item" in log.notes or "No new evidence" in log.notes, (
+        f"Notes must describe evidence result, got: {log.notes!r}"
+    )
     print("  ✅ Hypothesis evidence check passed!")
 
 

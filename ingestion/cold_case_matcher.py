@@ -120,7 +120,11 @@ async def compute_and_run_cold_case_match(fir: dict):
                 "edge_id": edge_id
             })
         except Exception as e:
-            print(f"[ColdCaseMatcher] Failed to write SHARED_MO edge: {e}")
+            # FIXED P-2: do NOT queue an alert for a match whose graph edge could not
+            # be written — the alert would reference a link that doesn't exist in the
+            # graph, making the evidence untraceable. Skip this match entirely.
+            print(f"[ColdCaseMatcher] Failed to write SHARED_MO edge for {fir_id} -> {matched_fir_id}: {e}. Skipping alert.")
+            continue
 
         # Construct matches for cold-case matcher filter
         new_accused_ids = fir.get("accused_ids") or []
@@ -145,3 +149,4 @@ async def compute_and_run_cold_case_match(fir: dict):
     # Run the filtering and queue alert pushes
     if shared_mo_matches:
         await run_cold_case_match(fir, shared_mo_matches)
+

@@ -400,8 +400,15 @@ async def nosql_set(key: str, value: str, ttl: int = None):
     await _nosql_request("POST", "/item", [{"item": item, "return": "NULL"}])
 
 
-async def nosql_query_by_prefix(prefix: str) -> list:
-    """Retrieve all records whose key starts with the given prefix, returning deserialized values."""
+async def nosql_query_by_prefix(prefix: str, limit: int = 500) -> list:
+    """Retrieve records whose key starts with the given prefix, returning deserialized values.
+    
+    Args:
+        prefix: Key prefix to filter on (e.g. "review_queue:").
+        limit: Maximum number of records to return. Defaults to 500.
+               CAUTION: No pagination in NoSQL — all matching keys are scanned in memory.
+               Keep review queues pruned and set an appropriate limit for your use case.
+    """
     project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
     token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
     refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
@@ -424,6 +431,8 @@ async def nosql_query_by_prefix(prefix: str) -> list:
                         results.append(json.loads(val))
                     except Exception:
                         results.append(val)
+                    if len(results) >= limit:
+                        break
             return results
         except Exception:
             return []
@@ -442,7 +451,8 @@ async def nosql_query_by_prefix(prefix: str) -> list:
                     results.append(json.loads(val))
                 except Exception:
                     results.append(val)
+                if len(results) >= limit:
+                    break
     except Exception as e:
         print(f"Failed to query NoSQL by prefix {prefix} in production: {e}")
     return results
-

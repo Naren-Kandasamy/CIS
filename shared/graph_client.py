@@ -56,7 +56,16 @@ async def run_write(cypher: str, params: dict = None):
         await driver.close()
 
 async def close():
-    global _driver
-    if _driver:
-        await _driver.close()
-        _driver = None
+    """No-op in the current per-invocation driver pattern.
+    
+    This function exists so callers (tests, lifespan shutdown) can call close()
+    without needing to know whether a global driver is cached. In serverless
+    environments (Catalyst Functions), a global cached driver would carry a
+    stale event-loop reference across invocations and raise
+    'Task attached to a different loop'. The pattern here creates a fresh driver
+    per call and closes it in the finally block of run_query/run_write instead.
+    """
+    # _driver is module-level None and is never set; close() is intentionally a
+    # no-op. Do not add caching here without also adding the loop-staleness guard
+    # documented in shared/catalyst_client.py's get_lock().
+    pass
