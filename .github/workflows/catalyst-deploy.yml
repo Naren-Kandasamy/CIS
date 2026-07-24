@@ -40,4 +40,4 @@ jobs:
       - name: Deploy to Zoho Catalyst
         env:
           CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
-        run: catalyst deploy --token $CATALYST_TOKEN
+        run: catalyst deploy --project PS1-CIS --token $CATALYST_TOKEN
