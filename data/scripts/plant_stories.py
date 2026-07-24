@@ -17,10 +17,23 @@ def generate_stories(base_firs, num_stories=500):
     """
     story_firs = []
     
-    # Let's create a pool of 50 repeat offenders
-    repeat_offenders = [f"ACC-STORY-{i:03d}" for i in range(50)]
+    # Let's create a pool of 50 repeat offenders with Indian structured data
+    banks = ["SBIN", "HDFC", "ICIC", "PUNB", "UTIB", "CNRB", "BOFA"]
+    repeat_offenders = []
+    for i in range(50):
+        phone = f"+91{random.choice([9,8,7,6])}{random.randint(100000000, 999999999)}"
+        acc = f"{random.choice(banks)}{random.randint(1000, 9999):04d}{random.randint(100000, 999999):06d}"
+        rto = f"{random.randint(1, 73):02d}" # Karnataka RTO 01 to 73
+        plate = f"KA-{rto}-{random.choice(['A','AB','M','Z','KA','C','F'])}-{random.randint(1,9999):04d}"
+        
+        repeat_offenders.append({
+            "id": f"ACC-STORY-{i:03d}",
+            "phone": phone,
+            "bank_account": acc,
+            "license_plate": plate
+        })
     
-    districts = list(set([f["district_name"] for f in base_firs]))
+    districts = list(set([f.get("district_name", "Bengaluru City") for f in base_firs]))
     
     for i in range(num_stories):
         category = "1"
@@ -32,20 +45,34 @@ def generate_stories(base_firs, num_stories=500):
         crime_no = f"{category}{district_id}{unit_id}{year}{serial}"
         
         # Pick 1-3 repeat offenders for this FIR
-        accused = random.sample(repeat_offenders, k=random.randint(1, 3))
+        accused_list = random.sample(repeat_offenders, k=random.randint(1, 3))
+        accused_ids = [a["id"] for a in accused_list]
+        phones = [a["phone"] for a in accused_list]
+        accounts = [a["bank_account"] for a in accused_list]
+        plates = [a["license_plate"] for a in accused_list]
+        
+        narrative = (f"During investigation of case {crime_no}, the suspects were found to be operating in the area. "
+                     f"Technical intelligence indicated the use of mobile numbers {', '.join(phones)}. "
+                     f"A vehicle with registration {', '.join(plates)} was seen fleeing the scene. "
+                     f"Financial tracing identified suspicious transfers to account {accounts[0]}.")
         
         fir = {
             "fir_internal_id": str(uuid.uuid4()),
             "crime_no": crime_no,
-            "district_name": random.choice(districts),
+            "district_name": random.choice(districts) if districts else "Bengaluru City",
             "incident_date": incident_date.strftime("%Y-%m-%d"),
             "crime_head_id": "CH002", # Crimes Against Property
             "crime_sub_head_id": "CSH004", # Robbery
             "crime_sub_head_name": "Robbery",
-            "accused_ids": accused,
+            "accused_ids": accused_ids,
             "victim_ids": [f"VIC-STORY-{uuid.uuid4().hex[:6]}"],
-            "narrative": "",
-            "mo_descriptor": ""
+            "narrative": narrative,
+            "mo_descriptor": "Group operation utilizing vehicles and coordinated communication.",
+            "entities": {
+                "phones": phones,
+                "bank_accounts": accounts,
+                "license_plates": plates
+            }
         }
         story_firs.append(fir)
         
