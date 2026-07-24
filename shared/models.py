@@ -1,5 +1,6 @@
 from pydantic import BaseModel, field_validator
 from typing import Optional
+from datetime import datetime
 
 DISTRICT_CANONICAL = {
     "mysore": "Mysuru", "mysuru": "Mysuru",
@@ -64,6 +65,12 @@ class ArrestSurrenderSchema(BaseModel):
                                                  # Open Decision 3
     investigating_officer_id: Optional[str] = None
 
+class WantedVehicleRecord(BaseModel):
+    plate_number: str
+    reason: str            # "stolen" | "linked_to_open_case"
+    fir_id: Optional[str] = None
+    flagged_date: str
+
 class FIRSchema(BaseModel):
     id: str                       # our surrogate key (fir_internal_id)
     crime_no: str                 # real KSP composite key -- see parse_crime_no()
@@ -82,9 +89,18 @@ class FIRSchema(BaseModel):
     arrest_surrenders: list[ArrestSurrenderSchema] = []
     act_sections: list[tuple[str, str]] = []  # (act_code, section_code) pairs -- was flat ipc_sections string
     status: str = "open"
+    is_cold: bool = False
     mo_descriptor: str = ""
     narrative: Optional[str] = None
     ocr_extracted: bool = False
+
+    narrative_language: Optional[str] = None
+    narrative_original: Optional[str] = None
+    narrative_is_translated: bool = False
+
+    mo_descriptor_language: Optional[str] = None
+    mo_descriptor_original: Optional[str] = None
+    mo_descriptor_is_translated: bool = False
 
     @field_validator('district', mode='before')
     @classmethod

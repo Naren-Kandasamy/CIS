@@ -20,6 +20,8 @@
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
+from shared.catalyst_client import get_session_lock, get_case_lock
+from shared.claim_logger import check_and_flag_contradicted_claims
 from shared.graph_client import run_query, run_write
 from shared.exclusion_models import ExclusionRecord
 

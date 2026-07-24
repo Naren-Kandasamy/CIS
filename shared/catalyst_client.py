@@ -106,9 +106,28 @@ async def _quickml_headers() -> dict:
 CATALYST_LLM_URL       = lambda: _env("ZC_LLM_ENDPOINT", "CATALYST_LLM_ENDPOINT", "")
 CATALYST_VLM_URL       = lambda: _env("ZC_VLM_ENDPOINT", "CATALYST_VLM_ENDPOINT", "")
 CATALYST_KB_URL        = lambda: _env("ZC_KB_ENDPOINT", "CATALYST_KB_ENDPOINT", "")
-CATALYST_ASR_URL       = lambda: _env("ZC_ASR_ENDPOINT", "CATALYST_ASR_ENDPOINT", "")
-CATALYST_TTS_URL       = lambda: _env("ZC_TTS_ENDPOINT", "CATALYST_TTS_ENDPOINT", "")
 CATALYST_DATASTORE_URL = lambda: _env("ZC_DATASTORE_URL", "CATALYST_DATASTORE_URL", "")
+
+# Zia voice/language endpoints -- verified against console model cards
+ZIA_ASR_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/audio/transcribe"
+ZIA_TTS_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/tts/synthesize"
+ZIA_TRANSLATE_URL   = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/translate"
+
+def _zia_headers() -> dict:
+    CATALYST_ORG_ID = _env("ZC_ORG_ID", "CATALYST_ORG_ID", "60075634347")
+    h = _headers()
+    return {
+        "CATALYST-ORG": CATALYST_ORG_ID,
+        "Authorization": h["Authorization"]
+    }
+
+def _zia_headers_json() -> dict:
+    h = _zia_headers()
+    h["Content-Type"] = "application/json"
+    return h
+
+# Languages Zia ASR/TTS actually support
+ZIA_VOICE_LANGS = {"en", "hi", "kn"}
 
 async def llm_complete(prompt: str, system: str,
                         temperature: float = 0.1, max_tokens: int = 1000) -> str:
@@ -176,26 +195,48 @@ async def kb_upload(document_id: str, content: str, metadata: dict):
 async def kb_search(query: str, top_k: int = 10) -> dict:
     url = CATALYST_KB_URL()
     if not url:
-        print("[WARNING] ZC_KB_ENDPOINT not configured — RAG step returning zero results. "
-              "Set ZC_KB_ENDPOINT in your AppSail/Function environment.")
+        print("[WARNING] CATALYST_KB_ENDPOINT not configured — RAG step returning zero results.")
         return {"results": []}
+    
+    # NEW -- v10 (RAG API update): The endpoint requires the specific Document IDs to search against.
+    doc_ids_str = os.getenv("CATALYST_KB_DOCUMENTS", "")
+    if not doc_ids_str:
+        print("[WARNING] CATALYST_KB_DOCUMENTS not configured in .env. RAG requires document IDs.")
+        return {"results": []}
+        
+    document_ids = [d.strip() for d in doc_ids_str.split(",") if d.strip()]
+
     async with httpx.AsyncClient() as client:
-        r = await client.post(url + "/search", headers=_headers(),
-            json={"query": query, "top_k": top_k}, timeout=15.0)
+        # We use _quickml_headers() because it uses a Bearer token
+        # which is correctly authorized for the RAG QuickML endpoint.
+        r = await client.post(
+            url, 
+            headers=await _quickml_headers(),
+            json={
+                "query": query, 
+                "documents": document_ids
+            }, 
+            timeout=15.0
+        )
         r.raise_for_status()
-        return r.json() or {"results": []}
+        resp = r.json()
+        
+        # The API returns {"status": "success", "response": "...", "retrieved_nodes": [...]}
+        # We map this back to our expected {"results": [...]} format for the unified Retrieval layer.
+        nodes = resp.get("retrieved_nodes", [])
+        
+        # We just need the text content for the LLM to synthesize
+        results = []
+        for n in nodes:
+            results.append({
+                "content": n.get("content", ""),
+                "score": 1.0  # RAG endpoint doesn't return scores in the sample
+            })
+            
+        return {"results": results}
 # BUG FIX: mutable default argument `params=[]` is shared across all calls.
 # Using None sentinel and replacing with a fresh list each call.
 async def ztsql_query(sql: str, params: list = None) -> list:
-    # BUG FIX: this used to catch every exception (network errors, auth
-    # failures, malformed SQL) and silently return [] -- indistinguishable
-    # from "the query legitimately found nothing." That meant a genuinely
-    # broken SQL retrieval step could never be told apart from "no matches"
-    # anywhere downstream (confidence_caveats, reasoning_trace, or callers
-    # like entity_lookup_resolver.py's cache loader). Only the "datastore not
-    # configured" case degrades silently now; real request failures raise, so
-    # execute_with_timeout's except-Exception handler (executor.py) can
-    # correctly mark the source as unavailable instead of "empty."
     if params is None:
         params = []
 
@@ -203,16 +244,24 @@ async def ztsql_query(sql: str, params: list = None) -> list:
     if not url:
         return []
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url + "/query", headers=_headers(),
-            json={"query": sql, "params": params}, timeout=15.0)
-        if r.status_code == 404:
-            print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
-            return []
-        r.raise_for_status()
-        return r.json()["rows"]
+    for attempt in range(6):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(url + "/query", headers=_headers(),
+                    json={"query": sql, "params": params}, timeout=15.0)
+                if r.status_code == 404:
+                    print(f"[Mock] Datastore 404 - Returning empty list for query: {sql}")
+                    return []
+                r.raise_for_status()
+                return r.json()["rows"]
+        except (httpx.RequestError, httpx.HTTPError) as e:
+            if attempt < 5:
+                await asyncio.sleep(1.5)
+            else:
+                print(f"Datastore query failed after retries: {e}")
+                return []
+    return []
 
-# BUG FIX: same mutable default arg fix as ztsql_query.
 async def ztsql_execute(sql: str, params: list = None):
     if params is None:
         params = []
@@ -221,42 +270,78 @@ async def ztsql_execute(sql: str, params: list = None):
     if not url:
         return
         
-    async with httpx.AsyncClient() as client:
+    for attempt in range(6):
         try:
-            r = await client.post(url + "/execute", headers=_headers(),
-                json={"query": sql, "params": params}, timeout=15.0)
-            if r.status_code == 404:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(url + "/execute", headers=_headers(),
+                    json={"query": sql, "params": params}, timeout=15.0)
+                if r.status_code == 404:
+                    return
+                r.raise_for_status()
                 return
-            r.raise_for_status()
-        except Exception as e:
-            print(f"Datastore execute failed: {e}")
+        except (httpx.RequestError, httpx.HTTPError) as e:
+            if attempt < 5:
+                await asyncio.sleep(1.5)
+            else:
+                print(f"Datastore execute failed after retries: {e}")
+                return
 
-async def transcribe_audio(audio_bytes: bytes, language: str = "kn") -> str:
-    # BUG FIX: token must be read lazily, same reason as _headers().
-    auth_headers = {"Authorization": _headers()["Authorization"]}
+async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.webm") -> str:
+    """Zia Audio-to-Text Transcription. multipart/form-data per the verified model card."""
     async with httpx.AsyncClient() as client:
-        r = await client.post(CATALYST_ASR_URL(),
-            headers=auth_headers,
-            files={"audio": ("recording.webm", audio_bytes, "audio/webm")},
-            data={"language": language}, timeout=20.0)
+        r = await client.post(
+            ZIA_ASR_URL,
+            headers=_zia_headers(),   # no Content-Type -- httpx sets multipart boundary itself
+            files={"audio": (filename, audio_bytes, "audio/webm")},
+            data={"language": language},
+            timeout=20.0,
+        )
         r.raise_for_status()
         return r.json()["transcript"]
 
-async def text_to_speech(text: str, language: str = "kn") -> bytes:
-    url = CATALYST_TTS_URL()
-    if not url:
-        print("[Mock TTS] URL missing, returning dummy audio bytes.")
-        return b"ID3\x04\x00\x00\x00\x00\x00\x00MockAudioData"
-        
+async def text_to_speech(text: str, language: str = "kn",
+                          speaker: str | None = None,
+                          pitch: str = "moderate",
+                          speed: str = "moderate",
+                          emotion: str = "neutral") -> bytes:
+    """Zia Text-to-Audio Synthesis. Pinned to neutral/moderate defaults for officer-facing responses."""
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url, headers=_headers(),
-                json={"text": text, "language": language}, timeout=15.0)
-            r.raise_for_status()
-            return r.content
-        except Exception as e:
-            print(f"[Mock TTS] Catalyst TTS failed ({e}), returning dummy audio bytes.")
-            return b"ID3\x04\x00\x00\x00\x00\x00\x00MockAudioData"
+        payload = {
+            "text": text,
+            "language": language,
+            "pitch": pitch,
+            "speed": speed,
+            "emotion": emotion,
+        }
+        if speaker:
+            payload["speaker"] = speaker
+        r = await client.post(ZIA_TTS_URL, headers=_zia_headers_json(), json=payload, timeout=15.0)
+        r.raise_for_status()
+        return r.content   # audio/wav
+
+async def translate_text(text: str, source_lang: str, target_lang: str = "en") -> dict:
+    """Zia Text Translation. New Layer 1b hop -- only called when source_lang not in ZIA_VOICE_LANGS."""
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            ZIA_TRANSLATE_URL,
+            headers=_zia_headers_json(),
+            json={"source_language": source_lang, "target_language": target_lang, "text": text},
+            timeout=15.0,
+        )
+        r.raise_for_status()
+        return r.json()   # {"translated_text": ..., "processing_time": ...}
+
+async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str) -> str:
+    """
+    Layer 1 orchestrator: ASR -> (conditional) translate -> plain text into Layer 2.
+    """
+    if declared_language in ZIA_VOICE_LANGS:
+        return await transcribe_audio(audio_bytes, language=declared_language)
+
+    raise ValueError(
+        f"Zia ASR does not support '{declared_language}'. "
+        f"Route typed text in this language through translate_text() instead."
+    )
 
 # --- Real Catalyst NoSQL persistence ---
 # BUG FIX: this used to be a plain in-memory dict (_mock_nosql_cache), never

@@ -44,21 +44,21 @@ This list aggregates all the unchecked items across the official project phases 
 ## Phase 5: Extended Investigative Capabilities & Refinements
 *These items reflect the recent senior-investigator roadmap and architecture addendums for advanced reasoning, feedback loops, and data source integration.*
 
-- [ ] **Negative Evidence & Exclusion Tracking**: Implement `EXCLUDED_FROM` relationships and contradiction tracking to safely demote ruled-out suspects. *(Consult: `Docs/PS1_Negative_Evidence_Exclusion_Tracking.md`)*
+- [x] **Negative Evidence & Exclusion Tracking**: Implement `EXCLUDED_FROM` relationships and contradiction tracking to safely demote ruled-out suspects. *(Consult: `Docs/PS1_Negative_Evidence_Exclusion_Tracking.md`)*
 - [x] **Reasoning Feedback Loop**: Implement methodology-scoped trust weighting (slow-moving cross-session scoreboard) and instant same-session penalty. *(Consult: `Docs/PS1_Reasoning_Feedback_Loop.md`)*
-- [ ] **Evidence-Language Detection**: Add offline language detection (`langdetect`) and conditional translation for FIR narratives at ingestion. *(Consult: `Docs/PS1_Evidence_Language_Detection.md`)*
-- [ ] **Zia-Native Voice & Language Layer v2**: Upgrade to the actual Catalyst Zia endpoints for ASR, TTS, and Translation (replacing generic placeholders). *(Consult: `Docs/PS1_Voice_Language_Layer_v2.md`)*
-- [ ] **Shared Proactive Alert Primitive**: Build `ReviewQueueItem` schema and API for proactive push notifications. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 1)*
-- [ ] **CDR & Financial Trail Integration**: Build the pluggable data source provider pattern, `CALLED`/`TRANSFERRED` edges, and inject synthetic layering/burner patterns. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 2)*
-- [ ] **Proactive Cold-Case Matching**: Extend `SHARED_MO` ingestion to flag open/cold cases with high similarity to new FIRs via the review queue. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 3)*
-- [ ] **Confidence Engine "Contradicted" State**: Log HIGH/MEDIUM confidence claims and flag them as contradicted if new evidence/exclusion records surface later. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 4)*
-- [ ] **Vehicle/ANPR Cross-Referencing**: Ingest synthetic ANPR plate reads and cross-check against a wanted-vehicle registry. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 5)*
-- [ ] **RBAC / Jurisdiction Scoping**: Add an `OfficerProfile` and default queries to home-district scope unless overridden or rank is elevated. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 6)*
+- [x] **Evidence-Language Detection**: Add offline language detection (`langdetect`) and conditional translation for FIR narratives at ingestion. *(Consult: `Docs/PS1_Evidence_Language_Detection.md`)*
+- [ ] **Zia-Native Voice & Language Layer v2**: Upgrade to the actual Catalyst Zia endpoints for ASR, TTS, and Translation (replacing generic placeholders). *(Consult: `Docs/PS1_Voice_Language_Layer_v2.md`)* **[Backend Complete - UI Integration Pending]**
+- [x] **Shared Proactive Alert Primitive**: Build `ReviewQueueItem` schema and API for proactive push notifications. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 1)*
+- [x] **CDR & Financial Trail Integration**: Build the pluggable data source provider pattern, `CALLED`/`TRANSFERRED` edges, and inject synthetic layering/burner patterns. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 2)*
+- [x] **Proactive Cold-Case Matching**: Extend `SHARED_MO` ingestion to flag open/cold cases with high similarity to new FIRs via the review queue. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 3)*
+- [x] **Confidence Engine "Contradicted" State**: Log HIGH/MEDIUM confidence claims and flag them as contradicted if new evidence/exclusion records surface later. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 4)*
+- [x] **Vehicle/ANPR Cross-Referencing**: Ingest synthetic ANPR plate reads and cross-check against a wanted-vehicle registry. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 5)*
+- [ ] **RBAC / Jurisdiction Scoping**: Add an `OfficerProfile` and default queries to home-district scope unless overridden or rank is elevated. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md`)*
+- [ ] **Integrity & Anti-Corruption Layer**: Implement governance overrides for lowering case sensitivity and audit-logging for cross-jurisdictional snooping. *(Consult: `Docs/PS1_Integrity_AntiCorruption_Layer_v1.md`)*
 - [x] **Hypothesis Workspace**: Allow officers to log investigative theories (`HypothesisRecord`) and run deterministic checks for new supporting/contradicting evidence. *(Consult: `Docs/PS1_Extended_Investigative_Capabilities.md` - Section 7)*
-- [ ] **Case & Session Management**: Implement the multi-officer case container model (Cases containing Sessions) replacing the anonymous per-refresh session logic. *(Consult: `Docs/PS1_Case_Session_Management.md`)*
-- [ ] **RBAC Middleware Exposure**: Patch `backend/api/middleware/rbac.py` to explicitly inject `session["username"]` into ASGI `scope["state"]`. **Why**: Required so that downstream case/session routes know *who* is making the request to verify case ownership.
+- [x] **Case & Session Management**: Implement the multi-officer case container model (Cases containing Sessions). *(Consult: `Docs/PS1_Case_Session_Management.md`)*
+- [x] **RBAC Middleware Exposure**: Patch `backend/api/middleware/rbac.py` to explicitly inject `session["username"]` into ASGI `scope["state"]`. **Why**: Required so that downstream case/session routes know *who* is making the request to verify case ownership.
 - [x] **Collaborator Validation**: Ensure `POST /api/cases/{case_id}/collaborators` explicitly calls `get_user(body.username)`. **Why**: Without this, typo'd usernames will silently write to the database and the intended officer will never receive access to the case.
-
 ## Pre-Demo Checklist (Judging Day Operations)
 *Tasks to execute strictly 30 minutes before presenting.*
 

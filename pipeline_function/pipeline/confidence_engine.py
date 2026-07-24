@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pipeline_function.pipeline.evidence import EvidenceItem, EvidenceObject
 from shared.exclusion_engine import get_active_exclusions_bulk, alibi_covers_incident, EXCLUSION_DEMOTION_FACTOR
+from shared.feedback_engine import get_trust_weight, get_session_penalized_ids
 from typing import Optional
 
 @dataclass
@@ -117,14 +118,42 @@ async def apply_exclusion_demotion(evidence: EvidenceObject) -> None:
 
 
 async def run_confidence_engine(evidence: EvidenceObject) -> EvidenceObject:
+    penalized_ids = await get_session_penalized_ids(evidence.session_id)
+    
     for item in evidence.items:
         sig = await compute_confidence(item)
         item.confidence = sig.tier
         item.relevance_score = sig.score
         item.confidence_reasons = sig.reasons
         item.confidence_flags = sig.flags
+        
+        # Apply Reasoning Feedback Loop (Trust-Weighting & Session Penalty)
+        edge_type = "NARRATIVE_SIMILARITY"
+        if item.evidence_path:
+            path = item.evidence_path.lower()
+            if "co_accused" in path: edge_type = "CO_ACCUSED"
+            elif "shared_vehicle" in path: edge_type = "SHARED_VEHICLE"
+            elif "phone_contact" in path: edge_type = "PHONE_CONTACT"
+            elif "shared_mo" in path: edge_type = "SHARED_MO"
+            elif "shared_tattoo" in path: edge_type = "SHARED_TATTOO"
+            elif "temporal_cluster" in path: edge_type = "TEMPORAL_CLUSTER"
+
+        crime_type = item.metadata.get("crime_sub_head_id") or item.metadata.get("crime_type")
+        trust = await get_trust_weight(edge_type, crime_type)
+        
+        edge_id = item.metadata.get("edge_id") or item.fir_id
+        session_penalty = 0.5 if edge_id in penalized_ids else 1.0
+        
+        # Apply feedback demotion to both relevance score and confidence tier (implicitly via score)
+        item.relevance_score = item.relevance_score * trust * session_penalty
+        
+        # Optionally re-evaluate confidence tier if score dropped significantly due to feedback
+        if item.relevance_score < 0.60 and item.confidence in ["high", "medium"]:
+            item.confidence = "low"
+            item.confidence_flags.append(f"Demoted due to methodology feedback (trust={trust:.2f}, penalty={session_penalty:.1f})")
+
         evidence.reasoning_trace.append(
-            f"{item.fir_id}: {sig.tier} ({sig.score:.2f}) -- {'; '.join(sig.reasons[:2])}"
+            f"{item.fir_id}: {item.confidence} ({item.relevance_score:.2f}) -- {'; '.join(sig.reasons[:2])}"
         )
     await apply_exclusion_demotion(evidence)
     evidence.rank()

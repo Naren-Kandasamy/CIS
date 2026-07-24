@@ -1,5 +1,10 @@
 # PS-1: Integrity & Anti-Corruption Layer v1
 
+**Status: folded into `PS1_Architecture_v9.md` §23 and `PS1_Implementation_v9.md` §22
+(A9–A12).** Retained here as the standalone design rationale and threat model those
+sections implement — read this for the *why*, read the consolidated docs for the *how*
+and the current file-by-file build state. Not a separate build target going forward.
+
 **Companion to:** `PS1_RBAC_Case_Access_v1.md` (access model). This doc covers what stops
 that access model — and the system generally — from being misused, in either direction:
 senior officers abusing legitimate authority, or junior officers concealing information.

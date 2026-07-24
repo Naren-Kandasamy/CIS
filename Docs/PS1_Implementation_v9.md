@@ -2,7 +2,7 @@
 ## Living Document — Consolidated Revision
 
 **Supersedes:** `PS1_Implementation_v8.md`
-**Folds in:** `PS1_Voice_Language_Layer_v2.md`, `PS1_Evidence_Language_Detection.md`, `PS1_Reasoning_Feedback_Loop.md`
+**Folds in:** `PS1_Voice_Language_Layer_v2.md`, `PS1_Evidence_Language_Detection.md`, `PS1_Reasoning_Feedback_Loop.md`, `PS1_Integrity_AntiCorruption_Layer_v1.md`
 **Companion document:** `PS1_Architecture_v9.md` — read that first for the *why*; this document is the *how*, file-by-file.
 
 **Verification note on this revision:** every "current state" reference below (line numbers, function names, file paths) was checked directly against the actual v8 text before writing the diff — not assumed from the addenda's own citations. Two things the addenda flagged as `[VERIFY]` turned out to still be genuinely unverifiable from v8's text alone (the exact LangGraph retrieval-node name, and whether citation-to-source structure already exists) — these are called out explicitly below rather than silently resolved, because guessing them would produce a diff that looks confident but might not apply cleanly to the real `langgraph_router.py` file.
@@ -23,6 +23,10 @@
 | A6 | `shared/language_utils.py`, `shared/feedback_models.py`, `shared/feedback_engine.py` | §5 | New files under `shared/` |
 | A7 | New `EvidenceItem` fields: `edge_type`, `edge_id`, `crime_type`, `language`, `text_original`, `is_translated` | §10 | v8 lines 936–947 (`EvidenceItem` dataclass) — confirmed current field set has none of these |
 | A8 | `langdetect` dependency | §5, §16 | No dependency-management section existed in v8 to diff against — noted as new, see §5a |
+| A9 | Hash-chained audit entries + read-access logging in `pipeline_function/pipeline/audit.py` | §22 | v8's `audit.py` internals (exact current function/field names) aren't shown anywhere in v8's text, only referenced by name in the file tree — exact splice point is `[VERIFY]`, same honesty rule as the two items below §0's table |
+| A10 | `shared/search_log.py` — named-entity search logging | §5, §22 | New file; no v8 equivalent exists |
+| A11 | `is_sensitive` downgrade check in `backend/api/middleware/rbac.py` | §22 | v8's `rbac.py` internals also aren't shown in v8's text — same `[VERIFY]` caveat |
+| A12 | Append-only evidence versioning | §22 | Extends A2's ingestion-time preserve-original pattern; no new file, a rule applied at every evidence-write call site |
 
 ### Changes
 
@@ -73,6 +77,7 @@ ps1-cis/
 │   ├── language_utils.py     # NEW -- detect_language, is_viable (Sec 5)
 │   ├── feedback_models.py    # NEW -- CorrectionEvent, MethodologyTrust (Sec 13a)
 │   ├── feedback_engine.py    # NEW -- get_trust_weight, record_feedback_event (Sec 13a)
+│   ├── search_log.py         # NEW -- named-entity search logging (Sec 5, Sec 22)
 │   ├── ner_examples.py
 │   └── ner_prompt.py
 │
@@ -87,7 +92,7 @@ ps1-cis/
 │   │   │   └── feedback.py   # NEW -- POST /api/feedback/correction (Sec 6)
 │   │   └── middleware/
 │   │       ├── input_validator.py
-│   │       └── rbac.py
+│   │       └── rbac.py       # CHANGED -- is_sensitive downgrade gate, vigilance_cell check (Sec 22)
 │   ├── job_dispatch.py
 │   └── sse_poller.py
 │
@@ -100,7 +105,7 @@ ps1-cis/
 │   │   ├── confidence_engine.py  # CHANGED -- trust_weight input (Sec 12)
 │   │   ├── cache.py
 │   │   ├── catalyst_resilient_client.py
-│   │   ├── audit.py
+│   │   ├── audit.py              # CHANGED -- hash-chained entries + read logging (Sec 22) [VERIFY current internals]
 │   │   ├── preprocessing/
 │   │   │   └── normalizer.py     # + translation short-circuit (Layer 1b, Sec 9a)
 │   │   ├── query_understanding/
@@ -388,6 +393,55 @@ def is_viable(language_code: str | None) -> bool:
 ### 5.4 `shared/feedback_models.py` / `shared/feedback_engine.py` `[NEW — A4]`
 
 Full implementation given once, in §13a, rather than duplicated here — this section only lists the files as part of the shared library inventory.
+
+### 5.5 `shared/search_log.py` `[NEW — A10]`
+
+```python
+# shared/search_log.py
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Literal, Optional
+import uuid
+
+TargetType = Literal["person", "vehicle", "property", "none"]
+SearchReason = Literal["routine_stop", "informant_tip", "case_followup", "other"]
+
+@dataclass
+class SearchLogEntry:
+    """One row per named-entity search. Deliberately NOT gated on a case
+    existing -- see Architecture v9 Sec 23 / A10. `target_type="none"` covers
+    pattern-level browsing (e.g. "recent thefts in this area") and does not
+    require target_id; anything else is expected to carry one."""
+    officer_id: str
+    target_type: TargetType
+    target_id: Optional[str] = None
+    linked_case_id: Optional[str] = None
+    reason: Optional[SearchReason] = None
+    search_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+def log_search(officer_id: str, target_type: TargetType,
+               target_id: str | None = None,
+               linked_case_id: str | None = None,
+               reason: SearchReason | None = None) -> SearchLogEntry:
+    """Writes to Catalyst NoSQL under key `search_log:{officer_id}:{search_id}`.
+    Fire-and-forget from the caller's perspective -- never blocks or denies
+    the search itself; the point is the trail, not a gate. [VERIFY] Catalyst
+    NoSQL write helper name/signature -- reuse whatever backend.py's other
+    NoSQL writes already call, not shown in v8's text."""
+    entry = SearchLogEntry(officer_id, target_type, target_id, linked_case_id, reason)
+    # catalyst_client.nosql_write(f"search_log:{officer_id}:{entry.search_id}", entry)
+    return entry
+```
+
+**Wiring point:** called from wherever a query resolves to a specific named entity —
+most naturally inside `pipeline_function/pipeline/query_understanding/ner_intent.py`
+once NER has identified a person/vehicle/property target, or in
+`backend/api/routes/query.py` right after intent classification, whichever the real
+NER-to-query-route data flow makes cleaner. Neither file's current internals are shown
+in v8's text, so the exact call site is `[VERIFY]` — the important constraint is that it
+fires once per resolved named-entity target, not once per raw query string, so pattern
+browsing doesn't generate log noise.
 
 ---
 
@@ -949,9 +1003,129 @@ async def ingest_one(fir: FIRSchema):
 
 ---
 
-## 22. RBAC + Audit Logging
+## 22. RBAC + Audit Logging `[CHANGED — adds A9–A12]`
 
-*(Unchanged.)*
+Base RBAC (rank/case visibility checks) is unchanged from v8 and is governed by
+`PS1_RBAC_Case_Access_v1.md`, which is not folded into this file-by-file plan since it
+introduces case-management routes not yet present in v8's `backend/api/routes/` (no
+`cases.py` exists in the current tree). What follows is only the integrity layer that sits
+on top of whatever access check already runs.
+
+### `[NEW — A9]` Hash-chained audit entries — `pipeline_function/pipeline/audit.py`
+
+```python
+# pipeline_function/pipeline/audit.py (addition)
+# [VERIFY] v8's audit.py internals (current function name for writing an
+# entry, exact NoSQL key shape) aren't shown anywhere in v8's ~2,500 lines --
+# only referenced by filename in the project tree. The sketch below assumes a
+# single write_audit_entry()-style function exists; splice against whatever
+# the real one is called.
+
+import hashlib
+import json
+
+def _chain_hash(entry: dict, previous_hash: str) -> str:
+    """Each entry's hash covers its own content PLUS the previous entry's
+    hash, so deleting or reordering a past entry breaks every hash computed
+    after it. previous_hash for the very first entry in a chain is a fixed
+    genesis constant, not empty string, so an empty chain can't be trivially
+    forged as "the start"."""
+    payload = json.dumps(entry, sort_keys=True) + previous_hash
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+def write_audit_entry(entry: dict, previous_hash: str) -> tuple[dict, str]:
+    entry_hash = _chain_hash(entry, previous_hash)
+    entry["prev_hash"] = previous_hash
+    entry["hash"] = entry_hash
+    # catalyst_client.nosql_write(f"audit:{entry['timestamp']}:{entry_hash[:8]}", entry)
+    return entry, entry_hash
+
+def verify_chain(entries: list[dict]) -> bool:
+    """Recomputes the chain across a full ordered fetch; used by vigilance_cell
+    review, not on the hot path of every request."""
+    prev = GENESIS_HASH
+    for e in entries:
+        expected = _chain_hash({k: v for k, v in e.items() if k not in ("hash", "prev_hash")}, prev)
+        if expected != e["hash"] or e["prev_hash"] != prev:
+            return False
+        prev = e["hash"]
+    return True
+
+GENESIS_HASH = "0" * 64
+```
+
+**Read logging, not just writes:** the same `write_audit_entry()` call now fires on case
+views, evidence views, Case Board views, and every `is_sensitive` toggle in either
+direction — not only on LLM query synthesis, which is likely all v8's version covered
+(unconfirmed, since v8's internals aren't shown — flagged above). Each of these call sites
+needs `write_audit_entry` wired in individually; there is no single choke point that
+already sees all reads.
+
+**Getting `previous_hash` on every write** requires either (a) a single global "last hash"
+pointer read-then-written per entry (a serialization point — every write must know the
+prior write's hash before computing its own), or (b) per-officer or per-case sub-chains
+if global serialization becomes a bottleneck under concurrent writes. Given this project's
+throughput ("lakhs of FIRs," not lakhs of *concurrent* writes at any instant), (a) should
+be fine at hackathon scale, but confirm Catalyst NoSQL's actual read-then-write consistency
+guarantee before relying on it — `[VERIFY]`, noted in §31.
+
+### `[NEW — A10]` Named-entity search logging
+
+`shared/search_log.py` given in full in §5.5. Wiring point is `[VERIFY]` (see that
+section) — either `ner_intent.py` once a person/vehicle/property entity is resolved, or
+`backend/api/routes/query.py` right after intent classification.
+
+### `[NEW — A11]` `is_sensitive` downgrade gate — `backend/api/middleware/rbac.py`
+
+```python
+# backend/api/middleware/rbac.py (addition)
+# [VERIFY] same caveat as audit.py -- v8's rbac.py internals aren't shown in
+# v8's text; splice against the real current-officer-context lookup, not a
+# guessed one.
+
+def can_downgrade_sensitivity(officer: "OfficerProfile") -> bool:
+    return officer.role == "vigilance_cell"
+
+def enforce_sensitivity_change(officer, case, new_value: bool):
+    if new_value is False and not can_downgrade_sensitivity(officer):
+        raise PermissionError("Only vigilance_cell may lower a case's sensitivity flag.")
+    # any officer may raise it (new_value=True) -- no check needed on that path
+    write_audit_entry({
+        "action": "sensitivity_change",
+        "case_id": case.case_id,
+        "officer_id": officer.officer_id,
+        "new_value": new_value,
+    }, previous_hash=...)  # [VERIFY] real previous-hash lookup, see A9
+    if new_value is False:
+        create_review_queue_item(case, reason="sensitivity_downgrade")  # reuses existing
+        # ReviewQueueItem primitive -- [VERIFY] exact constructor, referenced
+        # but not shown in v8's text either
+```
+
+This assumes a `ReviewQueueItem` primitive exists by the time this ships — not yet in v8's
+confirmed tree, and `PS1_RBAC_Case_Access_v1.md`'s case-management routes (`cases.py`)
+still don't exist here either. `case.is_sensitive` and `case.department` are no longer an
+open gap, though — both are now real fields on `FIRSchema` (Architecture v9 §15), so this
+gate has something concrete to check once the case routes land.
+
+### `[NEW — A12]` Append-only evidence
+
+No new file — applies as a rule at every write call site that currently mutates a FIR or
+`EvidenceItem` field in place. Concretely: any UPDATE-style write to `narrative`,
+`mo_descriptor`, or an evidence field's content should become an INSERT of a new version
+row with a `superseded_at`/`supersedes_id` pointer back to the prior version, whose content
+and hash stay untouched. `ingestion/pipeline.py`'s A2 handling already does this for
+translation (`narrative_original` preserved alongside the translated field) — this
+generalizes the same pattern to edits generally, not new code so much as a constraint on
+future write paths.
+
+### Explicitly out of scope for the hackathon
+
+Anomaly detection on correction-ratio gaming (A11's threat vector in the integrity doc) is
+not being built — no detection code, no new endpoint. Everything it would need
+(`CorrectionEvent` volume, override frequency, `SearchLogEntry` volume) is already captured
+by A4/A9/A10 without additional work, so this is a documented risk, not a missing feature
+someone forgot to build.
 
 ---
 
@@ -1105,6 +1279,15 @@ Appended to the existing chaos/eval test scripts (`verify_stories.py`, `eval_ner
 - [ ] Zia Translate round-trip on all 8 non-en/hi/kn supported languages, at least a smoke test each
 - [ ] VoiceButton without a selected language → sensible default or explicit prompt, never a silent failure
 
+**Integrity & Anti-Corruption (A9–A12):**
+- [ ] Write 3 audit entries, delete the middle one directly in NoSQL, run `verify_chain()` → confirm it returns `False`
+- [ ] Write 3 audit entries normally, run `verify_chain()` with no tampering → confirm `True`
+- [ ] Log a search with `target_type="none"` (pattern browsing) → confirm no `target_id` required, no error
+- [ ] Log a search with `target_type="person"` and no `linked_case_id` → confirm it's accepted, not blocked
+- [ ] Attempt `enforce_sensitivity_change(new_value=False)` as a non-`vigilance_cell` officer → confirm `PermissionError`
+- [ ] Same call as an officer with `role == "vigilance_cell"` → confirm it succeeds and a review-queue item is created
+- [ ] Attempt `enforce_sensitivity_change(new_value=True)` as any officer → confirm no role check blocks it
+
 ---
 
 ## To Discuss / Remaining `[CHANGED — new items appended, all v8 items unchanged]`
@@ -1118,4 +1301,7 @@ Appended to the existing chaos/eval test scripts (`verify_stories.py`, `eval_ner
 - [ ] `[VERIFY]` ZTSQL's `ALTER TABLE` support/limits on an already-populated table — new ground, not previously needed
 - [ ] Whether `backend/` and `pipeline_function/` maintain separate `requirements.txt` files (affects where `langdetect` needs adding) — v8's project structure doesn't show a top-level dependency manifest either way
 - [ ] Re-tune `MIN_SAMPLES_FOR_NARROW_SCOPE` / `PRIOR_STRENGTH` once real officer correction volume exists post-hackathon — current values are starting guesses
+- [ ] `[VERIFY]` Current `pipeline_function/pipeline/audit.py` and `backend/api/middleware/rbac.py` internals (function names, NoSQL key shape, current officer-context lookup) — §22's A9/A11 sketches are written against the file tree's confirmed *existence*, not confirmed internals, same honesty rule as the two items above
+- [ ] Confirm Catalyst NoSQL's read-then-write consistency guarantee before relying on a single global `previous_hash` pointer for the audit chain under concurrent writes (§22, A9)
+- [ ] `PS1_RBAC_Case_Access_v1.md`'s case-management routes (`cases.py`, `ReviewQueueItem`) don't exist yet in this file tree — `is_sensitive`/`department` are now defined on `FIRSchema` (Architecture v9 §15), so A11's downgrade gate has fields to check; the routes themselves are still the open dependency
 - [ ] Begin wiring all three additions into the real codebase now that Architecture v9 and this document exist as a single consolidated reference — the four standalone addenda documents can be retired once this is confirmed to match the actual repo

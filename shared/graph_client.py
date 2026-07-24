@@ -1,6 +1,9 @@
 import asyncio
 from neo4j import AsyncGraphDatabase  # neo4j driver works with Memgraph bolt
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 async def get_driver():
     # In a serverless environment where event loops are destroyed per-invocation,
@@ -53,8 +56,19 @@ async def run_write(cypher: str, params: dict = None):
     finally:
         await driver.close()
 
+async def run_write_batch(cypher: str, params_list: list[dict]):
+    if not params_list:
+        return
+    driver = await get_driver()
+    try:
+        async with driver.session() as session:
+            for params in params_list:
+                await session.run(cypher, params)
+    finally:
+        await driver.close()
+
 async def close():
-    global _driver
-    if _driver:
-        await _driver.close()
-        _driver = None
+    # In serverless environments, driver is now created and closed per-request
+    # so there is no global _driver to close. We keep this function for backwards
+    # compatibility with existing scripts.
+    pass
