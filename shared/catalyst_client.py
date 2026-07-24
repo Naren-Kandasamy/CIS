@@ -398,3 +398,51 @@ async def nosql_set(key: str, value: str, ttl: int = None):
     if ttl:
         item["expires_at"] = {"N": str(int(time.time()) + ttl)}
     await _nosql_request("POST", "/item", [{"item": item, "return": "NULL"}])
+
+
+async def nosql_query_by_prefix(prefix: str) -> list:
+    """Retrieve all records whose key starts with the given prefix, returning deserialized values."""
+    project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
+    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
+    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
+    
+    if _env("MOCK_NOSQL_ONLY", "") == "true" or not project_id or not (token or refresh_token):
+        import json
+        import os
+        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
+        if not os.path.exists(db_path):
+            return []
+        try:
+            async with _get_mock_db_lock():
+                with open(db_path, "r") as f:
+                    data = json.load(f)
+            
+            results = []
+            for k, val in data.items():
+                if k.startswith(prefix):
+                    try:
+                        results.append(json.loads(val))
+                    except Exception:
+                        results.append(val)
+            return results
+        except Exception:
+            return []
+
+    import json
+    results = []
+    try:
+        resp = await _nosql_request("GET", "/item", None)
+        items = resp.get("data", {}).get("get") or []
+        for item_data in items:
+            item = item_data.get("item") or {}
+            key = item.get("item_key", {}).get("S", "")
+            if key.startswith(prefix):
+                val = item.get("item_value", {}).get("S", "")
+                try:
+                    results.append(json.loads(val))
+                except Exception:
+                    results.append(val)
+    except Exception as e:
+        print(f"Failed to query NoSQL by prefix {prefix} in production: {e}")
+    return results
+

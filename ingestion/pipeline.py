@@ -80,7 +80,8 @@ async def ingest_fir_to_graph(fir: dict, sem: asyncio.Semaphore):
             f.modus_operandi = $modus_operandi,
             f.weapon = $weapon,
             f.ps_name = $ps_name,
-            f.narrative = $narrative
+            f.narrative = $narrative,
+            f.status = $status
         """
         params = {
             "fir_id": fir["fir_internal_id"],
@@ -91,7 +92,8 @@ async def ingest_fir_to_graph(fir: dict, sem: asyncio.Semaphore):
             "modus_operandi": fir.get("mo_descriptor", ""),
             "weapon": fir.get("weapon", ""),
             "ps_name": fir.get("ps_name", ""),
-            "narrative": fir.get("narrative", "")
+            "narrative": fir.get("narrative", ""),
+            "status": fir.get("status", "open")
         }
         try:
             await run_write(cypher, params)
@@ -147,7 +149,14 @@ async def run_ingestion_pipeline():
             
             logger.info(f"Executing chunk {i//chunk_size + 1}... ({len(chunk)} FIRs)")
             await asyncio.gather(*chunk_tasks)
-            logger.info(f"Finished chunk {i//chunk_size + 1}.")
+            logger.info(f"Finished ingestion for chunk {i//chunk_size + 1}. Running cold-case matching...")
+            
+            from ingestion.cold_case_matcher import compute_and_run_cold_case_match
+            match_tasks = []
+            for fir in chunk:
+                match_tasks.append(compute_and_run_cold_case_match(fir))
+            await asyncio.gather(*match_tasks)
+            logger.info(f"Finished cold-case matching for chunk {i//chunk_size + 1}.")
     finally:
         await close()
         logger.info("Ingestion complete.")

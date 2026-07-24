@@ -2,6 +2,8 @@ import asyncio
 from neo4j import AsyncGraphDatabase  # neo4j driver works with Memgraph bolt
 import os
 
+_driver = None
+
 async def get_driver():
     # In a serverless environment where event loops are destroyed per-invocation,
     # global caching of the neo4j driver causes "Task attached to a different loop"
