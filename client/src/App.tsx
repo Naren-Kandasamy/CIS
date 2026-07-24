@@ -5,6 +5,7 @@ import Login from './components/Login';
 import EntityDrawer from './components/dashboard/EntityDrawer';
 import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
 import ReactMarkdown from 'react-markdown';
+import CISDashboard from './components/dashboard/CISDashboard';
 
 interface Message {
   id: string;
@@ -59,7 +60,7 @@ export default function App() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeView, setActiveView] = useState<'query' | 'dashboard'>('query');
+  const [activeView, setActiveView] = useState<'query' | 'dashboard' | 'cis-console'>('query');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { selectedEntity, openEntity, closeDrawer } = useEntityDrawer();
 
@@ -294,6 +295,27 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveView('cis-console')}
+              style={{
+                width: '100%',
+                border: 'none',
+                textAlign: 'left',
+                font: 'inherit',
+                padding: '12px',
+                borderRadius: '12px',
+                background: activeView === 'cis-console' ? 'var(--sidebar-accent)' : 'transparent',
+                color: activeView === 'cis-console' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                cursor: 'pointer'
+              }}
+              aria-current={activeView === 'cis-console' ? 'page' : undefined}
+            >
+              <Shield size={18} /> CIS Console
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveView('dashboard')}
               style={{
                 width: '100%',
@@ -380,6 +402,7 @@ export default function App() {
             >
               <LogOut size={18} /> Sign Out
             </button>
+
           </footer>
         </aside>
 
@@ -546,6 +569,8 @@ export default function App() {
                 </form>
               </div>
             </>
+          ) : activeView === 'cis-console' ? (
+            <CISDashboard />
           ) : (
             <DashboardPanel 
               visualization={messages.filter(m => m.role === 'assistant').pop()?.visualization} 
