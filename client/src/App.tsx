@@ -63,6 +63,43 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { selectedEntity, openEntity, closeDrawer } = useEntityDrawer();
 
+  // Reasoning Feedback Loop state hooks
+  const [feedbackStatus, setFeedbackStatus] = useState<Record<string, { verdict: 'confirmed' | 'corrected' }>>({});
+  const [activeCorrectionId, setActiveCorrectionId] = useState<string | null>(null);
+  const [correctionExplanation, setCorrectionExplanation] = useState<string>('');
+
+  const handleFeedbackSubmit = async (item: any, verdict: 'confirmed' | 'corrected', explanation?: string) => {
+    const key = item.edge_id || item.fir_id;
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/feedback/correction`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          event_id: crypto.randomUUID(),
+          session_id: SESSION_ID,
+          officer_id: displayName || 'officer',
+          timestamp: new Date().toISOString(),
+          query_text: messages[messages.length - 2]?.content || '',
+          edge_type: item.edge_type || 'NARRATIVE_SIMILARITY',
+          crime_type: item.crime_type || null,
+          edge_id: item.edge_id || null,
+          verdict,
+          explanation: explanation || null
+        })
+      });
+      if (!response.ok) throw new Error('Failed to submit feedback');
+      setFeedbackStatus(prev => ({ ...prev, [key]: { verdict } }));
+      setActiveCorrectionId(null);
+      setCorrectionExplanation('');
+    } catch (err) {
+      console.error(err);
+      alert('Error submitting feedback');
+    }
+  };
+
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
@@ -505,6 +542,77 @@ export default function App() {
                                       {item.data?.Date && <div><strong>Date:</strong> {item.data.Date}</div>}
                                       {item.data?.weapon && <div><strong>Weapon:</strong> {item.data.weapon}</div>}
                                       <div className="text-[9px] mt-1" style={{ color: 'var(--text-tertiary)', fontFamily: 'IBM Plex Mono, monospace' }}>Click to expand →</div>
+                                    </div>
+
+                                    {/* Feedback section */}
+                                    <div 
+                                      className="feedback-controls mt-2 pt-2 border-t"
+                                      style={{ borderColor: 'var(--glass-border)' }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {feedbackStatus[item.edge_id || item.fir_id] ? (
+                                        <div className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                                          <span>✓</span> Feedback recorded ({feedbackStatus[item.edge_id || item.fir_id].verdict})
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col gap-2">
+                                          {activeCorrectionId === (item.edge_id || item.fir_id) ? (
+                                            <div className="flex flex-col gap-2 mt-1">
+                                              <textarea
+                                                className="w-full text-xs p-1.5 rounded"
+                                                style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)', outline: 'none' }}
+                                                placeholder="Explain the correction (required)..."
+                                                value={correctionExplanation}
+                                                onChange={(e) => setCorrectionExplanation(e.target.value)}
+                                                rows={2}
+                                                required
+                                              />
+                                              <div className="flex gap-2 justify-end">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setActiveCorrectionId(null)}
+                                                  className="px-2 py-1 text-[10px] rounded border"
+                                                  style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderColor: 'var(--glass-border)', cursor: 'pointer' }}
+                                                >
+                                                  Cancel
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  disabled={!correctionExplanation.trim()}
+                                                  onClick={() => handleFeedbackSubmit(item, 'corrected', correctionExplanation)}
+                                                  className="px-2 py-1 text-[10px] rounded text-white"
+                                                  style={{ background: correctionExplanation.trim() ? 'var(--accent-primary)' : 'var(--text-tertiary)', cursor: correctionExplanation.trim() ? 'pointer' : 'not-allowed' }}
+                                                >
+                                                  Submit
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Was this connection useful?</span>
+                                              <button
+                                                type="button"
+                                                className="px-2 py-0.5 text-[10px] rounded border hover:bg-emerald-950/20"
+                                                style={{ borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10b981', cursor: 'pointer', background: 'transparent' }}
+                                                onClick={() => handleFeedbackSubmit(item, 'confirmed')}
+                                              >
+                                                ✓ Confirm
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="px-2 py-0.5 text-[10px] rounded border hover:bg-rose-950/20"
+                                                style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', cursor: 'pointer', background: 'transparent' }}
+                                                onClick={() => {
+                                                  setActiveCorrectionId(item.edge_id || item.fir_id);
+                                                  setCorrectionExplanation('');
+                                                }}
+                                              >
+                                                ✗ Correct
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 );

@@ -67,7 +67,7 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
             history = json.loads(history_doc["value"]) if history_doc else []
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history)
+        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):

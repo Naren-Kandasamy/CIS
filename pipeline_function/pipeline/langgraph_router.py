@@ -68,7 +68,7 @@ async def retrieving_evidence_node(state: AgentState):
     intent = intent_obj.get("intent", "lookup")
     evidence_obj = EvidenceObject(
         query=state["query"],
-        session_id=state["job_id"],
+        session_id=state.get("session_id") or state["job_id"],
         urgency=urgency,
         intent=intent,
         entities=intent_obj.get("entities", {})
@@ -304,7 +304,7 @@ async def synthesizing_response_node(state: AgentState):
     return {"final_response": ans}
 
 # Define the graph compilation inside the runner for thread-safety
-async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback, history: list = None):
+async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback, history: list = None, session_id: str = None):
     workflow = StateGraph(AgentState)
     
     workflow.add_node("understanding_query", understanding_query_node)
@@ -341,7 +341,8 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
         "job_id": job_id,
         "query": query,
         "write_status_callback": write_status_callback,
-        "history": history or []
+        "history": history or [],
+        "session_id": session_id
     }
     
     # BUG FIX: previously nothing here caught a failure -- an uncaught
@@ -365,7 +366,10 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
                 "excluded": item.excluded,
                 "exclusion_reason": item.exclusion_reason,
                 "exclusion_type": item.exclusion_type,
-                "data": item.metadata
+                "data": item.metadata,
+                "edge_type": item.edge_type,
+                "edge_id": item.edge_id,
+                "crime_type": item.crime_type
             })
 
         result_data = {

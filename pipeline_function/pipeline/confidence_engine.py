@@ -65,11 +65,17 @@ def assign_tier(score: float, flags: list) -> str:
     if score >= 0.40: return "low"
     return "unverified"
 
-def compute_confidence(item: EvidenceItem) -> ConfidenceSignal:
+from shared.feedback_engine import get_trust_weight
+
+async def compute_confidence(item: EvidenceItem) -> ConfidenceSignal:
     c, cr = compute_source_convergence(item)
     s, sr, sf = compute_evidence_strength(item)
     r, rr = compute_recency(item.fir_date)
-    final = (c * 0.45) + (s * 0.40) + (r * 0.15)
+    base_final = (c * 0.45) + (s * 0.40) + (r * 0.15)
+    
+    trust = await get_trust_weight(item.edge_type or "NARRATIVE_SIMILARITY", item.crime_type)
+    final = base_final * trust
+    
     return ConfidenceSignal(tier=assign_tier(final, sf), score=round(final, 3),
                              reasons=cr+sr+rr, flags=sf)
 
@@ -115,7 +121,7 @@ async def run_confidence_engine(evidence: EvidenceObject) -> EvidenceObject:
     penalized_ids = await get_session_penalized_ids(evidence.session_id)
     
     for item in evidence.items:
-        sig = compute_confidence(item)
+        sig = await compute_confidence(item)
         item.confidence = sig.tier
         item.relevance_score = sig.score
         item.confidence_reasons = sig.reasons
@@ -152,3 +158,4 @@ async def run_confidence_engine(evidence: EvidenceObject) -> EvidenceObject:
     await apply_exclusion_demotion(evidence)
     evidence.rank()
     return evidence
+

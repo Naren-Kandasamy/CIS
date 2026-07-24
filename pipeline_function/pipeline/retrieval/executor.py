@@ -223,5 +223,26 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         elif step_type == "sql":
             await evidence.add_sql_results(result)
 
+    await apply_trust_weighting(evidence, evidence.session_id)
     evidence.rank()
     return evidence
+
+async def _get_session_penalized_ids(session_key: str) -> set:
+    import json
+    from shared.catalyst_client import nosql_get
+    existing = await nosql_get(session_key)
+    if existing and "value" in existing:
+        try:
+            return set(json.loads(existing["value"]))
+        except Exception:
+            return set()
+    return set()
+
+async def apply_trust_weighting(evidence: EvidenceObject, session_id: str):
+    from shared.feedback_engine import get_trust_weight
+    penalized = await _get_session_penalized_ids(f"session_penalty:{session_id}")
+    for item in evidence.items:
+        trust = await get_trust_weight(item.edge_type or "NARRATIVE_SIMILARITY", item.crime_type)
+        session_penalty = 0.5 if item.edge_id in penalized else 1.0
+        item.relevance_score = item.relevance_score * trust * session_penalty
+

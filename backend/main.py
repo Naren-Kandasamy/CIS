@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 load_dotenv()
 
-from backend.api.routes import query, health, transcribe, graph, tts, ocr, export, auth, exclusions, cases, sessions, translate, feedback, review_queue
+from backend.api.routes import query, health, transcribe, graph, tts, ocr, export, auth, exclusions, cases, sessions, feedback, hypothesis, translate, review_queue
 from backend.api.middleware.input_validator import InputValidationMiddleware
 from backend.api.middleware.rbac import RBACMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,6 +88,7 @@ app.include_router(auth.router)
 app.include_router(exclusions.router)
 app.include_router(cases.router)
 app.include_router(sessions.router)
+app.include_router(hypothesis.router)
 app.include_router(translate.router)
 app.include_router(feedback.router)
 app.include_router(review_queue.router)
