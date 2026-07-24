@@ -39,6 +39,23 @@ async def create_exclusion(record: ExclusionRecord) -> None:
     if not await run_query("MATCH (f:FIR {id: $id}) RETURN f.id AS id LIMIT 1", {"id": record.fir_id}):
         raise ValueError(f"No FIR node with id={record.fir_id!r}")
 
+    # BUG FIX: get_active_exclusions/get_active_exclusions_bulk key their
+    # result dict by accused_id alone -- nothing prevented a second active
+    # exclusion being created for the same (accused_id, fir_id) pair (MERGE
+    # above matches on exclusion_id, not this pair), which would silently
+    # drop one of the two from every future ranking lookup with no error to
+    # anyone and no deterministic which-one-wins. Reject a second active
+    # exclusion for the same pair instead -- an officer who wants to change
+    # the reasoning should reverse the existing one first, preserving the
+    # audit trail the whole feature exists to provide.
+    existing = await get_active_exclusions(record.fir_id)
+    if record.accused_id in existing:
+        raise ValueError(
+            f"An active exclusion already exists for accused={record.accused_id!r} "
+            f"fir={record.fir_id!r} (exclusion_id={existing[record.accused_id].exclusion_id!r}) "
+            f"-- reverse it first if you need to change it"
+        )
+
     await run_write("""
         MATCH (a:Accused {id: $accused_id}), (f:FIR {id: $fir_id})
         MERGE (a)-[e:EXCLUDED_FROM {exclusion_id: $exclusion_id}]->(f)
@@ -54,6 +71,18 @@ async def create_exclusion(record: ExclusionRecord) -> None:
             e.status = 'active'
     """, record.model_dump())
 
+    # Wire up the contradiction-detection integration: check_and_flag_contradicted_claims
+    # was imported here but never actually called -- a new exclusion ("this
+    # person is ruled out") is exactly the event that should be checked
+    # against past HIGH/MEDIUM-confidence LLM claims about this accused/FIR,
+    # flagging any that are now contradicted for review.
+    try:
+        await check_and_flag_contradicted_claims(record.fir_id, record.accused_id, record.reason)
+    except Exception as e:
+        # Best-effort: a failure here must never roll back or block the
+        # exclusion write itself, which is the actual audit-trail record.
+        print(f"[ExclusionEngine] Contradiction check failed for {record.exclusion_id!r}: {e}")
+
 
 async def reverse_exclusion(exclusion_id: str, reversed_by: str, reversed_reason: str) -> None:
     """
@@ -62,11 +91,19 @@ async def reverse_exclusion(exclusion_id: str, reversed_by: str, reversed_reason
     full audit trail of "we thought this person was ruled out, here's why we
     changed our mind, and who made that call."
     """
-    if not await run_query(
+    rows = await run_query(
         "MATCH ()-[e:EXCLUDED_FROM {exclusion_id: $id}]->() RETURN e.status AS status LIMIT 1",
         {"id": exclusion_id},
-    ):
+    )
+    if not rows:
         raise ValueError(f"No exclusion with id={exclusion_id!r}")
+    # BUG FIX: the status was fetched but never checked -- calling reverse a
+    # second time on an already-reversed exclusion silently overwrote the
+    # ORIGINAL reversal's reversed_by/reversed_reason/reversed_date with the
+    # second call's values, destroying the first reversal's audit trail (the
+    # exact thing this feature exists to preserve, per the docstring above).
+    if rows[0]["status"] != "active":
+        raise ValueError(f"Exclusion {exclusion_id!r} is not active (status={rows[0]['status']!r}) -- cannot reverse it again")
 
     await run_write("""
         MATCH ()-[e:EXCLUDED_FROM {exclusion_id: $exclusion_id}]->()

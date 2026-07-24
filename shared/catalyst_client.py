@@ -28,35 +28,42 @@ _LOCKS_MAX = 2000
 _MOCK_DB_LOCK: asyncio.Lock | None = None
 
 def _get_mock_db_lock() -> asyncio.Lock:
+    # BUG FIX: the previous staleness check (getattr(_MOCK_DB_LOCK, '_loop',
+    # None) is not loop) was dead code on modern Python -- asyncio.Lock no
+    # longer binds to an event loop at construction time (that binding was
+    # removed in 3.10+ specifically to avoid this kind of bug; a Lock now
+    # binds lazily on first acquire()). getattr(..., '_loop', None) is
+    # therefore always None, and None is never the same object as a real
+    # running loop, so this condition was True on every single call --
+    # _MOCK_DB_LOCK was recreated fresh every time, meaning two concurrent
+    # writers to .nosql_mock_db.json each got their OWN lock object and never
+    # actually excluded each other. Just cache and reuse the one lock.
     global _MOCK_DB_LOCK
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        return asyncio.Lock()
-    if _MOCK_DB_LOCK is None or getattr(_MOCK_DB_LOCK, '_loop', None) is not loop:
+    if _MOCK_DB_LOCK is None:
         _MOCK_DB_LOCK = asyncio.Lock()
     return _MOCK_DB_LOCK
 
 def get_lock(key: str) -> asyncio.Lock:
-    # BUG-07 FIX: Catalyst Functions create a new event loop per invocation via
-    # asyncio.run(). A Lock cached here from a prior invocation belongs to the
-    # old (closed) event loop. Using it raises:
-    #   RuntimeError: This lock is created for a different event loop
-    # which silently crashes the pipeline. Mirror the same guard already used
-    # by _get_mock_db_lock().
-    try:
-        current_loop = asyncio.get_event_loop()
-    except RuntimeError:
-        current_loop = None
-
+    # BUG FIX: this used to re-check "does this cached lock belong to a stale/
+    # closed event loop" via getattr(existing, '_loop', None) is not
+    # current_loop, following BUG-07's stated intent (Catalyst Functions can
+    # create a fresh event loop per invocation via asyncio.run(), and reusing
+    # a Lock from a prior invocation's now-closed loop raises RuntimeError).
+    # In practice this check was dead code with the opposite effect: modern
+    # asyncio.Lock (3.10+) no longer binds to a loop at construction, so
+    # `existing._loop` is always None -- and None is never `is` any real
+    # loop object, so the "stale" branch fired on *every* call, evicting and
+    # recreating the lock each time. Two coroutines calling get_lock(same key)
+    # concurrently each got a distinct, uncontended Lock object, so `async
+    # with` on either one never actually excluded the other -- every
+    # get_lock/get_session_lock/get_case_lock call site across the codebase
+    # (session history, case metadata, user_cases/review_queue/hypothesis/
+    # claim indexes, feedback trust counters, query session-ownership) was
+    # silently unprotected. Simple LRU caching, no fabricated staleness
+    # check, is both correct and sufficient within a single running process.
     if key in _locks:
-        existing = _locks[key]
-        if current_loop and getattr(existing, '_loop', None) is not current_loop:
-            # Stale lock from a dead event loop — evict and recreate.
-            del _locks[key]
-        else:
-            _locks.move_to_end(key)  # mark as recently used
-            return existing
+        _locks.move_to_end(key)  # mark as recently used
+        return _locks[key]
 
     if len(_locks) >= _LOCKS_MAX:
         _locks.popitem(last=False)  # evict oldest (LRU), not all

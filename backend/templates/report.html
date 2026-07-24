@@ -32,7 +32,7 @@
     <div class="section">
         <h2>System Synthesis</h2>
         <div class="answer-box">
-            {{ answer | replace('\n', '<br>') }}
+            {{ answer | e | replace('\n', ('<br>' | safe)) }}
         </div>
     </div>
 

@@ -1,7 +1,21 @@
 import asyncio
+import logging
 from pipeline_function.pipeline.evidence import EvidenceObject
 
-TIMEOUT_BUDGETS = {"graph": 5.0, "rag": 3.0, "sql": 4.0}
+logger = logging.getLogger(__name__)
+
+TIMEOUT_BUDGETS = {"graph": 5.0, "rag": 15.0, "sql": 4.0}
+
+# BUG FIX: hard caps on the number of location/crime_type terms (and each
+# raw string's length) that run_graph_step will turn into Cypher OR-branches
+# and bound params. Previously unbounded -- entities.locations/crime_types
+# come straight from an LLM NER call capped only at max_tokens=500, which can
+# still return on the order of 100-200 short strings (or one long run-on
+# string), producing a WHERE clause with hundreds of OR branches/params per
+# request. Mirrors the resolved_crime_sub_heads[:3] cap already used in
+# run_sql_step.
+MAX_ENTITY_TERMS = 20
+MAX_ENTITY_STRING_LEN = 100
 
 async def execute_with_timeout(coro, source_type: str, evidence: EvidenceObject):
     timeout = TIMEOUT_BUDGETS.get(source_type, 5.0)
@@ -24,9 +38,9 @@ from shared.graph_client import run_query
 async def run_graph_step(step, state):
     intent = state.get("intent", {})
     entities = intent.get("entities", {})
-    
+
     city = entities.get("city", "")
-    
+
     # Handle Algorithmic Queries
     if step.get("operation") == "pagerank":
         # Execute Degree Centrality / Mock PageRank based on FIR counts
@@ -37,16 +51,22 @@ async def run_graph_step(step, state):
         if city:
             cypher += "WHERE toLower(f.district) CONTAINS toLower($city)\n"
             params["city"] = city
-            
+
         cypher += """
         WITH p, count(f) as rank
         ORDER BY rank DESC LIMIT 5
         RETURN p.id as person_id, rank
         """
-        
-        print(f"Executing Algorithmic Cypher: {cypher} with params {params}")
+
+        # BUG FIX: was an unconditional print() of the full Cypher text and bound
+        # params (district names etc.) to stdout on every call -- in the Catalyst
+        # deployment that lands in platform-level log aggregation, which is
+        # retained longer / more broadly readable than app-level CIS access.
+        # logger.debug() is a no-op unless the root logger is explicitly set to
+        # DEBUG, so nothing is logged in production by default.
+        logger.debug("Executing Algorithmic Cypher: %s with params %s", cypher, params)
         results = await run_query(cypher, params)
-        
+
         formatted = []
         for row in results:
             formatted.append({
@@ -62,51 +82,55 @@ async def run_graph_step(step, state):
         return formatted
     locations = entities.get("locations", [])
     if isinstance(locations, str): locations = [locations]
-    
+
     crime_types = entities.get("crime_types", [])
     weapon = entities.get("weapon", "")
-    
+
     # Base Cypher query
     cypher = "MATCH (f:FIR) WHERE 1=1"
     params = {}
-    
+
     if city:
         cypher += " AND toLower(f.district) CONTAINS toLower($city)"
         params["city"] = city
-        
+
     if locations:
         # Split locations into words for more robust matching (e.g. "narrow gullies" matches "narrow gully")
         words = []
-        for loc in locations:
-            words.extend([w for w in loc.split() if len(w) >= 3])  # skip only 1-2 char words like 'in', 'at'
+        for loc in locations[:MAX_ENTITY_TERMS]:
+            words.extend([w for w in loc[:MAX_ENTITY_STRING_LEN].split() if len(w) >= 3])  # skip only 1-2 char words like 'in', 'at'
+        words = words[:MAX_ENTITY_TERMS]
         if not words:
-            words = locations
-            
+            words = locations[:MAX_ENTITY_TERMS]
+
         loc_clause = " OR ".join([f"(toLower(f.modus_operandi) CONTAINS toLower($loc_{i}) OR toLower(f.narrative) CONTAINS toLower($loc_{i}))" for i in range(len(words))])
         if loc_clause:
             cypher += f" AND ({loc_clause})"
             for i, word in enumerate(words):
                 params[f"loc_{i}"] = word
-                
-        
+
+
     if crime_types:
         # Match any of the extracted crime types against type, MO, and narrative using keywords
+        # BUG FIX: same MAX_ENTITY_TERMS/MAX_ENTITY_STRING_LEN cap as the locations
+        # block above -- crime_types comes from the same uncapped NER output.
         words = []
-        for ct in crime_types:
-            words.extend([w for w in ct.split() if len(w) >= 3])
+        for ct in crime_types[:MAX_ENTITY_TERMS]:
+            words.extend([w for w in ct[:MAX_ENTITY_STRING_LEN].split() if len(w) >= 3])
+        words = words[:MAX_ENTITY_TERMS]
         if not words:
-            words = crime_types
+            words = crime_types[:MAX_ENTITY_TERMS]
 
         types_clause = " OR ".join([f"(toLower(f.crime_type) CONTAINS toLower($ctype_{i}) OR toLower(f.modus_operandi) CONTAINS toLower($ctype_{i}) OR toLower(f.narrative) CONTAINS toLower($ctype_{i}))" for i in range(len(words))])
         if types_clause:
             cypher += f" AND ({types_clause})"
             for i, word in enumerate(words):
                 params[f"ctype_{i}"] = word
-                
+
     if weapon:
         cypher += " AND (toLower(f.modus_operandi) CONTAINS toLower($weapon) OR toLower(f.narrative) CONTAINS toLower($weapon))"
         params["weapon"] = weapon
-        
+
     # Return top relevant FIRs, along with any Accused linked via ACCUSED_IN --
     # needed so exclusion demotion (confidence_engine.py) can tell which
     # accused persons an evidence item is about. OPTIONAL MATCH so FIRs with
@@ -118,7 +142,11 @@ async def run_graph_step(step, state):
  RETURN f.id as fir_id, f.crime_no as crime_no, f.district as district, f.crime_type as crime_type, f.modus_operandi as modus_operandi, f.narrative as narrative, f.date as date, accused_ids
  LIMIT 10"""
 
-    print(f"Executing Cypher: {cypher} with params {params}")
+    # BUG FIX: was an unconditional print() of the full Cypher text and bound
+    # params -- suspect/location names, MO descriptions, weapon mentions pulled
+    # from the officer's query -- to stdout on every graph retrieval call. See
+    # the identical fix/rationale on the pagerank branch above.
+    logger.debug("Executing Cypher: %s with params %s", cypher, params)
     # BUG FIX: this used to catch every exception and return [] here,
     # indistinguishable from "the query legitimately found nothing" --
     # execute_with_timeout (which wraps this coroutine) already has its own
@@ -126,7 +154,7 @@ async def run_graph_step(step, state):
     # in confidence_caveats/reasoning_trace, so let real failures propagate
     # to it instead of swallowing them here.
     results = await run_query(cypher, params)
-    print(f"Got {len(results)} results from graph")
+    logger.debug("Got %d results from graph", len(results))
 
     # Format for the EvidenceObject
     formatted = []
@@ -204,7 +232,7 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         elif step_type == "sql":
             coro = run_sql_step(step, evidence.entities)
         else:
-            print(f"Skipping DAG step with unrecognized type {step_type!r}: {step}")
+            logger.warning("Skipping DAG step with unrecognized type %r: %s", step_type, step)
             continue
 
         tasks.append(execute_with_timeout(coro, step_type, evidence))
@@ -223,5 +251,25 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         elif step_type == "sql":
             await evidence.add_sql_results(result)
 
+    await apply_trust_weighting(evidence, evidence.session_id)
     evidence.rank()
     return evidence
+
+async def _get_session_penalized_ids(session_key: str) -> set:
+    import json
+    from shared.catalyst_client import nosql_get
+    existing = await nosql_get(session_key)
+    if existing and "value" in existing:
+        try:
+            return set(json.loads(existing["value"]))
+        except Exception:
+            return set()
+    return set()
+
+async def apply_trust_weighting(evidence: EvidenceObject, session_id: str):
+    from shared.feedback_engine import get_trust_weight
+    penalized = await _get_session_penalized_ids(f"session_penalty:{session_id}")
+    for item in evidence.items:
+        trust = await get_trust_weight(item.edge_type or "NARRATIVE_SIMILARITY", item.crime_type)
+        session_penalty = 0.5 if item.edge_id in penalized else 1.0
+        item.relevance_score = item.relevance_score * trust * session_penalty
