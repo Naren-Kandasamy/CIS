@@ -1,7 +1,9 @@
-import json, re
+import json, re, logging
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient as llm_complete
 from pipeline_function.pipeline.cache import get_cached_ner, set_cached_ner, get_ner_cache_lock
 from shared.ner_prompt import build_ner_prompt, NER_INTENT_SYSTEM
+
+logger = logging.getLogger(__name__)
 
 async def extract_ner_and_intent(normalized_query: str) -> dict:
     # BUG FIX: the cache check-then-LLM-call-then-set sequence used to have
@@ -23,7 +25,13 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
             return _fallback_intent()
 
         try:
-            print(f"\\n[DEBUG RAW LLM RESPONSE]: {raw}\\n")
+            # BUG FIX: the raw LLM response echoes back sensitive case entities
+            # (persons, locations, weapon, FIR IDs) extracted from the officer's
+            # query. It was unconditionally printed to stdout on every call, so
+            # anyone with log/observability access (broader than officers with a
+            # valid session) could read it. logger.debug() is gated by the
+            # standard logging level (suppressed unless DEBUG is enabled).
+            logger.debug(f"\\n[DEBUG RAW LLM RESPONSE]: {raw}\\n")
             result = json.loads(raw.strip())
             # BUG-03 FIX: normalize entities for deterministic city detection
             result = _normalize_entities(result)

@@ -67,7 +67,7 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
             history = json.loads(history_doc["value"]) if history_doc else []
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history)
+        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):
@@ -82,12 +82,18 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
+        # BUG FIX (info leak): error=str(e) put the raw exception text straight
+        # into the job's client-facing error field, which sse_poller.py streams
+        # directly to the browser over SSE. The real exception is already
+        # logged server-side via logger.error() above; only a generic message
+        # goes to the client now.
+        #
         # BUG FIX: guard against this failure-reporting call itself hitting
         # the same transient NoSQL connectivity issue that caused the
         # original failure -- otherwise a double-failure crashes the whole
         # invocation as an unretrieved exception instead of just logging it.
         try:
-            await write_job_status(job_id, status="failed", error=str(e))
+            await write_job_status(job_id, status="failed", error="Pipeline processing failed, please retry.")
         except Exception as write_error:
             logger.error(f"Also failed to write failed status: {write_error}")
 

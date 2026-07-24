@@ -22,13 +22,18 @@ def test_transcribe_route_success(mock_get_session, mocker):
 
     mock_post = mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
 
-    # Send a dummy webm file (can be just text bytes)
     # Real WebM magic bytes so validate_mime_type's sniff check passes.
     dummy_audio = b"\x1A\x45\xDF\xA3" + b"dummy audio content"
     response = client.post(
-        "/api/transcribe?language=kn",
+        "/api/transcribe",
         headers=AUTH_HEADERS,
-        files={"audio": ("test.webm", dummy_audio, "audio/webm")}
+        files={"audio": ("test.webm", dummy_audio, "audio/webm")},
+        # BUG FIX: language is now bound via Form(...), matching the real
+        # client (App.tsx sends it as a multipart form field, not a query
+        # param) -- see backend/api/routes/transcribe.py. Send it the same
+        # way here instead of as a query string, which this route no longer
+        # reads.
+        data={"language": "kn"},
     )
 
     assert response.status_code == 200
@@ -40,12 +45,12 @@ def test_transcribe_route_success(mock_get_session, mocker):
 def test_transcribe_route_unsupported_language(mock_get_session):
     mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
     # If frontend sends language="ta" (Tamil), it should throw HTTP 400
-    # Real WebM magic bytes so validate_mime_type's sniff check passes.
     dummy_audio = b"\x1A\x45\xDF\xA3" + b"dummy audio content"
     response = client.post(
-        "/api/transcribe?language=ta",
+        "/api/transcribe",
         headers=AUTH_HEADERS,
-        files={"audio": ("test.webm", dummy_audio, "audio/webm")}
+        files={"audio": ("test.webm", dummy_audio, "audio/webm")},
+        data={"language": "ta"},  # BUG FIX: see note above -- form field, not query param
     )
 
     # The orchestrator throws ValueError which is caught and returned as 400

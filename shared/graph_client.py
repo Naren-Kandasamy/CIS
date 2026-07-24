@@ -23,7 +23,14 @@ async def run_query(cypher: str, params: dict = None) -> list:
         params = {}
         
     if os.getenv("LOCAL_MOCK_MODE", "false").lower() == "true":
-        if os.getenv("X_ZOHO_CATALYST_LISTEN_PORT"):
+        # BUG FIX: X_ZOHO_CATALYST_LISTEN_PORT is only set when running inside
+        # AppSail -- the pipeline Function (a separate deployment context, not
+        # AppSail) never sets it, so this guard previously missed a real
+        # Function deployment accidentally shipping with LOCAL_MOCK_MODE=true,
+        # which would silently serve fake evidence in production. ZC_PROJECT_ID
+        # / CATALYST_PROJECT_ID are set in every real Catalyst deployment
+        # (AppSail and Functions alike), closing that gap.
+        if os.getenv("X_ZOHO_CATALYST_LISTEN_PORT") or os.getenv("ZC_PROJECT_ID") or os.getenv("CATALYST_PROJECT_ID"):
             raise EnvironmentError("LOCAL_MOCK_MODE=true must NOT be set in a deployed environment.")
         # Return mock evidence so the LLM can test reasoning logic
         return [{

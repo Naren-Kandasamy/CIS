@@ -132,13 +132,23 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
         import traceback
         traceback.print_exc()
         print(f"[Local pipeline error] {e}")
+        # BUG FIX (info leak): error=str(e) put the raw exception text
+        # straight into the job's client-facing error field, which
+        # sse_poller.py streams directly to the browser over SSE --
+        # leaking internal details (file paths, driver/host info, stack
+        # message shapes) to whichever officer's query happened to hit this
+        # outer handler (session-lock/history code around the pipeline call,
+        # not run_langgraph_pipeline's own already-sanitized error path). The
+        # real exception is already logged server-side via traceback.print_exc()
+        # and the print() above; only a generic message goes to the client now.
+        #
         # BUG FIX: this failure-reporting call can itself hit the same
         # transient NoSQL connectivity issue that caused the original
         # failure -- previously unguarded, so a double-failure crashed the
         # whole background task as an unretrieved exception instead of just
         # logging that the job's failure status couldn't be persisted.
         try:
-            await write_job_status(job_id, status="failed", error=str(e))
+            await write_job_status(job_id, status="failed", error="Pipeline processing failed, please retry.")
         except Exception as write_error:
             print(f"[Local pipeline error] Also failed to write failed status: {write_error}")
 
