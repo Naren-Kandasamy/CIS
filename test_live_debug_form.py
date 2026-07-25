@@ -10,7 +10,7 @@ async def main():
         # Try sending as multipart/form-data
         data = {"source_language": "en", "target_language": "kn", "text": "This is a test."}
         async with httpx.AsyncClient() as client:
-            r = await client.post(url, headers=_zia_headers(), data=data, timeout=15.0)
+            r = await client.post(url, headers=await _zia_headers(), data=data, timeout=15.0)
             print("Status:", r.status_code)
             print("Response:", r.text)
     except Exception as e:

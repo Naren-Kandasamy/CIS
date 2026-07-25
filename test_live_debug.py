@@ -9,7 +9,7 @@ async def main():
         url = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/translate"
         payload = {"source_language": "en", "target_language": "kn", "text": "This is a test."}
         async with httpx.AsyncClient() as client:
-            r = await client.post(url, headers=_zia_headers_json(), json=payload, timeout=15.0)
+            r = await client.post(url, headers=await _zia_headers_json(), json=payload, timeout=15.0)
             print("Status:", r.status_code)
             print("Response:", r.text)
     except Exception as e:

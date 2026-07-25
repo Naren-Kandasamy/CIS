@@ -120,16 +120,51 @@ ZIA_ASR_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/au
 ZIA_TTS_URL         = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/tts/synthesize"
 ZIA_TRANSLATE_URL   = "https://api.catalyst.zoho.in/quickml/api/v1/models/zia/translate"
 
-def _zia_headers() -> dict:
+# BUG FIX: CATALYST_API_TOKEN (used by _headers()) is not an OAuth access
+# token at all -- posting it to the Zia endpoints as "Zoho-oauthtoken <...>"
+# got a clean 401 INVALID_OAUTHTOKEN. Worse, the refresh-token-derived OAuth
+# access token used everywhere else in this file (_get_nosql_access_token(),
+# shared by NoSQL and _quickml_headers()) IS a valid OAuth token but was
+# never granted the QuickML.deployment.READ scope these three Zia endpoints
+# require -- confirmed via a live call returning 401 INVALID_OAUTHSCOPE.
+# Zia needs its own refresh token, generated against a Self Client grant
+# with QuickML.deployment.READ explicitly requested.
+_zia_token_cache = {"access_token": None, "expires_at": 0.0}
+
+async def _get_zia_access_token() -> str:
+    now = time.time()
+    if _zia_token_cache["access_token"] and now < _zia_token_cache["expires_at"]:
+        return _zia_token_cache["access_token"]
+
+    refresh_token = _env("ZC_ZIA_REFRESH_TOKEN", "ZIA_REFRESH_TOKEN")
+    client_id = _env("ZC_CLIENT_ID", "CATALYST_CLIENT_ID")
+    client_secret = _env("ZC_CLIENT_SECRET", "CATALYST_CLIENT_SECRET")
+    if not (refresh_token and client_id and client_secret):
+        raise EnvironmentError("ZIA_REFRESH_TOKEN is not set")
+
+    async with httpx.AsyncClient() as client:
+        r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }, timeout=15.0)
+        r.raise_for_status()
+        data = r.json()
+        _zia_token_cache["access_token"] = data["access_token"]
+        _zia_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+        return _zia_token_cache["access_token"]
+
+async def _zia_headers() -> dict:
     CATALYST_ORG_ID = _env("ZC_ORG_ID", "CATALYST_ORG_ID", "60075634347")
-    h = _headers()
+    token = await _get_zia_access_token()
     return {
         "CATALYST-ORG": CATALYST_ORG_ID,
-        "Authorization": h["Authorization"]
+        "Authorization": f"Zoho-oauthtoken {token}"
     }
 
-def _zia_headers_json() -> dict:
-    h = _zia_headers()
+async def _zia_headers_json() -> dict:
+    h = await _zia_headers()
     h["Content-Type"] = "application/json"
     return h
 
@@ -306,13 +341,18 @@ async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: s
     async with httpx.AsyncClient() as client:
         r = await client.post(
             ZIA_ASR_URL,
-            headers=_zia_headers(),   # no Content-Type -- httpx sets multipart boundary itself
-            files={"audio": (filename, audio_bytes, "audio/webm")},
+            headers=await _zia_headers(),   # no Content-Type -- httpx sets multipart boundary itself
+            # BUG FIX: the documented Sample Request uses field name "file",
+            # not "audio" -- confirmed against a live call.
+            files={"file": (filename, audio_bytes, "audio/webm")},
             data={"language": language},
             timeout=20.0,
         )
         r.raise_for_status()
-        return r.json()["transcript"]
+        # BUG FIX: the documented (and live-confirmed) response shape is
+        # {"status": "success", "language": ..., "text": ..., ...} -- there
+        # is no "transcript" key.
+        return r.json()["text"]
 
 async def text_to_speech(text: str, language: str = "kn",
                           speaker: str | None = None,
@@ -330,7 +370,7 @@ async def text_to_speech(text: str, language: str = "kn",
         }
         if speaker:
             payload["speaker"] = speaker
-        r = await client.post(ZIA_TTS_URL, headers=_zia_headers_json(), json=payload, timeout=15.0)
+        r = await client.post(ZIA_TTS_URL, headers=await _zia_headers_json(), json=payload, timeout=15.0)
         r.raise_for_status()
         return r.content   # audio/wav
 
@@ -339,7 +379,7 @@ async def translate_text(text: str, source_lang: str, target_lang: str = "en") -
     async with httpx.AsyncClient() as client:
         r = await client.post(
             ZIA_TRANSLATE_URL,
-            headers=_zia_headers_json(),
+            headers=await _zia_headers_json(),
             json={"source_language": source_lang, "target_language": target_lang, "text": text},
             timeout=15.0,
         )
