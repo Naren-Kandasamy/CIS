@@ -104,3 +104,35 @@ async def query(request: QueryRequest, http_request: Request):
     await _authorize_session(request.session_id, username)
     job_id = await dispatch_query_job(request.session_id, request.query)
     return EventSourceResponse(stream_job_status(job_id))
+
+
+# BUG FIX: there was no way to retrieve a job's result once its SSE stream had
+# ended. AppSail closes the response after ~45s, but a cold Function start plus
+# a slow synthesis can take longer -- the pipeline finishes and writes its
+# answer to NoSQL, yet the client is left on the last progress stage with no
+# terminal event and no means of recovery. This lets the client fetch a
+# completed job after a dropped stream.
+@router.get("/api/query/status/{job_id}")
+async def query_status(job_id: str, http_request: Request):
+    username = getattr(http_request.state, "username", None)
+    if not username:
+        raise HTTPException(401, "No authenticated session")
+
+    from backend.job_dispatch import read_job_status
+    job = await read_job_status(job_id)
+    if not job:
+        raise HTTPException(404, "Unknown job")
+
+    status = job.get("status")
+    if status == "failed":
+        return {"status": "failed", "error": "Pipeline processing failed, please retry."}
+    if status != "done":
+        return {"status": status or "queued"}
+
+    result = job.get("result") or {}
+    return {
+        "status": "done",
+        "answer": result.get("answer", ""),
+        "evidence": result.get("evidence", []),
+        "visualization": result.get("visualization"),
+    }

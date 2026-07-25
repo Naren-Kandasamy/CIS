@@ -182,6 +182,33 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
+  // Recovers a job whose SSE stream was cut before it finished. The pipeline
+  // keeps running server-side and writes its result to NoSQL regardless, so
+  // this polls until the job reports done/failed.
+  const pollForCompletedJob = async (
+    jobId: string,
+    token: string | null,
+    attempts = 40,
+    intervalMs = 3000,
+  ): Promise<{ status: string; answer?: string; evidence?: any[]; visualization?: any; error?: string } | null> => {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await fetchWithRetry(
+          `${import.meta.env.VITE_API_BASE_URL || ''}/api/query/status/${jobId}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'done' || data.status === 'failed') return data;
+        }
+      } catch (err) {
+        console.error('Job status poll failed:', err);
+      }
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading) return;
@@ -228,6 +255,10 @@ export default function App() {
       const decoder = new TextDecoder();
       if (!reader) throw new Error("No reader");
 
+      // Tracked so a prematurely-closed stream can be recovered after the loop.
+      let jobId: string | null = null;
+      let sawTerminalEvent = false;
+
       // SSE frames are separated by double-newline (\r\n\r\n).
       // Each frame has one or more lines: "event: <type>\r\ndata: <json>\r\n"
       // We accumulate a buffer across read() calls because a single chunk may
@@ -250,6 +281,13 @@ export default function App() {
 
           try {
             const data = JSON.parse(eventData);
+            // Emitted first by the server. Retained so a stream cut short by
+            // the AppSail response timeout can still be recovered below.
+            if (eventType === 'job' && data.job_id) {
+              jobId = data.job_id;
+              continue;
+            }
+            if (eventType === 'done' || eventType === 'error') sawTerminalEvent = true;
             setMessages(prev => prev.map(msg => {
               if (msg.id !== assistantMsgId) return msg;
               if (eventType === 'ping') return msg; // keepalive, ignore
@@ -288,6 +326,36 @@ export default function App() {
       }
       // Flush any remaining buffer content on stream close
       if (buffer.trim()) parseSSEBuffer(buffer + '\n\n');
+
+      // BUG FIX: AppSail closes the SSE response after ~45s. A pipeline that
+      // needs longer (cold Function start plus a slow synthesis) therefore had
+      // its stream cut with no "done" and no "error", leaving this message
+      // stuck on its last progress stage forever -- even though the pipeline
+      // finished and wrote its answer to NoSQL. If the stream ended without a
+      // terminal event, poll for the finished job instead of giving up.
+      if (!sawTerminalEvent && jobId) {
+        const recovered = await pollForCompletedJob(jobId, authToken);
+        setMessages(prev => prev.map(msg => {
+          if (msg.id !== assistantMsgId) return msg;
+          if (recovered?.status === 'done') {
+            return {
+              ...msg,
+              content: recovered.answer,
+              evidence: recovered.evidence ?? msg.evidence,
+              visualization: recovered.visualization ?? msg.visualization,
+              isStreaming: false,
+              status: undefined,
+            };
+          }
+          return {
+            ...msg,
+            content: recovered?.error
+              ?? "This query took longer than expected and the connection closed. Please try again.",
+            isStreaming: false,
+            status: undefined,
+          };
+        }));
+      }
 
     } catch (error) {
       console.error(error);

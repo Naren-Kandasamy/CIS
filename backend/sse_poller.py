@@ -14,6 +14,15 @@ async def stream_job_status(job_id: str):
     last_status = None
     elapsed = 0.0
 
+    # BUG FIX: AppSail cuts the HTTP response well before SSE_MAX_POLL_SECONDS
+    # (observed ~45s), so a pipeline that needs longer -- cold Function start
+    # plus a slow synthesis -- has its stream closed with no "done" and no
+    # "error". The job itself completes and its answer is written to NoSQL,
+    # but the client never hears about it and the UI spins on the last stage
+    # forever. Emit the job id up front so the client can fetch the finished
+    # result from /api/query/status/{job_id} if the stream dies early.
+    yield {"event": "job", "data": json.dumps({"job_id": job_id})}
+
     while elapsed < SSE_MAX_POLL_SECONDS:
         job = await read_job_status(job_id)
 
