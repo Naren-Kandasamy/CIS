@@ -42,4 +42,8 @@ jobs:
           CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
           PROJECT_ID: "45958000000015001"
         run: |
+          rm -rf functions/ps_1_cis_function/pipeline_function
+          cp -r pipeline_function functions/ps_1_cis_function/
+          rm -rf functions/ps_1_cis_function/shared
+          cp -r shared functions/ps_1_cis_function/
           npx zcatalyst-cli@1.26.2 deploy --project $PROJECT_ID --token $CATALYST_TOKEN
