@@ -83,6 +83,8 @@ test_pipeline.py
 # Root-level UI redesign and analysis ignores
 ui-redesign/
 /*.md
+# ...but the project README is documentation, not a scratch note
+!/README.md
 PS1_*
 !Docs/PS1_*
 .nosql_mock_db.json

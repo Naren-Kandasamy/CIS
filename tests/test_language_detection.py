@@ -4,7 +4,7 @@ import os
 import sys
 
 # Add parent directory to path so imports work
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from shared.language_utils import detect_language, is_viable
 from pipeline_function.pipeline.langgraph_router import should_translate_evidence, AgentState

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 os.environ["MOCK_NOSQL_ONLY"] = "true"
 
 # Ensure imports work from project root
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Define mocks
 async def mock_get_session(token: str):
