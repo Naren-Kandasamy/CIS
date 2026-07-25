@@ -55,7 +55,19 @@ jobs:
           # since at least 2026-07-25 reported success while shipping nothing,
           # so the backend silently kept running old code and all real deploys
           # had to be done by hand. Inspect the output and fail explicitly.
-          npx zcatalyst-cli@1.26.2 deploy --project $PROJECT_ID --token $CATALYST_TOKEN 2>&1 | tee deploy.log
+          # BUG FIX: --dc is required here. This project lives in the India
+          # data centre (api.catalyst.zoho.in) and CATALYST_TOKEN is issued by
+          # it, but a fresh CLI in CI has no login config to tell it that --
+          # locally it works only because `catalyst login` persists
+          # "active_dc": "in". Without --dc the CLI presents an India token to
+          # the default (US) endpoint and fails with "unable to refresh access
+          # token" -> every component skipped, nothing deployed. --org is
+          # passed explicitly for the same reason.
+          npx zcatalyst-cli@1.26.2 deploy \
+            --project $PROJECT_ID \
+            --token $CATALYST_TOKEN \
+            --dc in \
+            --org $CATALYST_ORG 2>&1 | tee deploy.log
 
           if grep -qiE "Authentication failure|No components deployed|deploy skipped" deploy.log; then
             echo "::error::Catalyst deploy FAILED (CLI exited 0 but nothing shipped). If this is an auth failure, regenerate the token with 'catalyst token:generate' and update the CATALYST_TOKEN repo secret."
