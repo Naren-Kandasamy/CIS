@@ -133,3 +133,32 @@ async def resolve_act_section(ipc_section_text: str) -> Optional[Tuple[str, str]
             
     # If no confident match, return our best structural guess
     return (act_guess, section_guess)
+
+async def get_crime_sub_head_id(crime_sub_head_name: str) -> Optional[str]:
+    """Reverse lookup: friendly crime_sub_head_name -> crime_sub_head_id,
+    reusing cache."""
+    await _load_caches_if_needed()
+    if not crime_sub_head_name:
+        return None
+    # 1. Exact match
+    for k, v in _CRIME_SUB_HEADS_CACHE.items():
+        if v.lower() == crime_sub_head_name.lower():
+            return k
+    # 2. Substring match
+    for k, v in _CRIME_SUB_HEADS_CACHE.items():
+        if crime_sub_head_name.lower() in v.lower() or v.lower() in crime_sub_head_name.lower():
+            return k
+    # 3. Fuzzy match fallback
+    names = list(_CRIME_SUB_HEADS_CACHE.values())
+    ids = list(_CRIME_SUB_HEADS_CACHE.keys())
+    result = process.extractOne(
+        crime_sub_head_name, 
+        names, 
+        scorer=fuzz.WRatio
+    )
+    if result:
+        match_string, score, match_index = result
+        if score >= 75.0:
+            return ids[match_index]
+    return None
+
