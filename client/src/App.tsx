@@ -182,6 +182,25 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
+  // Keeps the pipeline Function's container warm. A cold start adds ~11s to
+  // the first query, which is both a bad first impression and enough to push
+  // a slow query past the window AppSail holds the SSE response open.
+  // Deliberately invisible: fire-and-forget, no state, no UI, and failures are
+  // swallowed -- pre-warming is an optimisation and must never surface to the
+  // officer or block anything.
+  useEffect(() => {
+    if (!authToken) return;
+    const ping = () => {
+      fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/warmup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      }).catch(() => { /* best-effort only */ });
+    };
+    ping();                                   // warm immediately on sign-in
+    const id = setInterval(ping, 4 * 60_000); // and keep it warm while in use
+    return () => clearInterval(id);
+  }, [authToken]);
+
   // Recovers a job whose SSE stream was cut before it finished. The pipeline
   // keeps running server-side and writes its result to NoSQL regardless, so
   // this polls until the job reports done/failed.

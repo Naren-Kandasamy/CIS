@@ -99,6 +99,32 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
 
     return job_id
 
+async def dispatch_warmup() -> bool:
+    """
+    Fire a no-op event at the pipeline Function so its container is already
+    warm when a real query arrives.
+
+    A cold start adds ~11s on top of the pipeline's own ~40s, which is enough
+    to push a query past the window AppSail keeps the SSE response open. This
+    writes no job record, runs no pipeline and makes no LLM calls -- the
+    Function returns immediately after warming its connections. Best-effort:
+    never raises, since failing to pre-warm must not affect the caller.
+    """
+    signals_url = _get_signals_url()
+    if not signals_url:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                signals_url, json={"data": json.dumps({"warmup": True})}
+            )
+            response.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"[Warmup] dispatch failed (non-fatal): {type(e).__name__}: {e}")
+        return False
+
+
 async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
     """Local-dev-only pipeline runner. Replaced by Catalyst Signals in production."""
     from pipeline_function.pipeline.langgraph_router import run_langgraph_pipeline

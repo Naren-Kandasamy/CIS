@@ -106,6 +106,20 @@ async def query(request: QueryRequest, http_request: Request):
     return EventSourceResponse(stream_job_status(job_id))
 
 
+# Pre-warms the pipeline Function. Deliberately does no work of its own and
+# returns immediately -- the client calls this in the background so the first
+# real query doesn't pay the container's cold-start cost. Kept behind auth so
+# it cannot be used as an unauthenticated way to spin up the Function.
+@router.post("/api/warmup")
+async def warmup(http_request: Request):
+    username = getattr(http_request.state, "username", None)
+    if not username:
+        raise HTTPException(401, "No authenticated session")
+    from backend.job_dispatch import dispatch_warmup
+    dispatched = await dispatch_warmup()
+    return {"status": "ok", "dispatched": dispatched}
+
+
 # BUG FIX: there was no way to retrieve a job's result once its SSE stream had
 # ended. AppSail closes the response after ~45s, but a cold Function start plus
 # a slow synthesis can take longer -- the pipeline finishes and writes its

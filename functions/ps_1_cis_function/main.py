@@ -80,6 +80,23 @@ def handler(event, context):
             
         print(f"[DIAG][HANDLER] Final job_data keys: {list(job_data.keys())}")
 
+        # Warm-up ping: there is no job to run. A cold container costs ~11s of
+        # import/connection setup, which lands on whichever officer happens to
+        # send the first query -- and is enough to push a slow query past the
+        # SSE window. This pays that cost up front instead. Checked before the
+        # job fields below, since a warm-up event carries none of them.
+        if job_data.get("warmup"):
+            print("[DIAG][HANDLER] Warm-up ping received")
+            if not _warmed_up:
+                try:
+                    asyncio.run(warm_connections())
+                    _warmed_up = True
+                    print("[DIAG][HANDLER] ✅ Warm-up complete")
+                except Exception as e:
+                    print(f"[DIAG][HANDLER] ⚠️ Warm-up failed (non-fatal): {e}")
+            context.close_with_success()
+            return
+
         job_id = job_data["job_id"]
         session_id = job_data["session_id"]
         query = job_data["query"]
