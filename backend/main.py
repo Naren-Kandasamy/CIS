@@ -26,7 +26,22 @@ async def lifespan(app: FastAPI):
     # Check NoSQL auth first — if this fails every nosql_get/set will fail
     # silently and every query will hang in QUEUED state forever.
     try:
-        from shared.catalyst_client import nosql_set, nosql_get
+        from shared.catalyst_client import (
+            nosql_set, nosql_get, _mock_nosql_reason, _running_in_catalyst,
+        )
+        # BUG FIX: the old health check wrote a key then read the SAME key
+        # back, which also succeeds against the local mock file -- so it
+        # printed "passed" even when the app was silently using an empty
+        # container-local store instead of real NoSQL (this is what made a
+        # missing-config incident look like "Invalid username or password"
+        # for every officer). Report which store is actually in use.
+        reason = _mock_nosql_reason()
+        if reason is None:
+            print("[STARTUP] ✅ NoSQL target: real Catalyst AppKeyValueStore")
+        else:
+            where = "DEPLOYED" if _running_in_catalyst() else "local dev"
+            print(f"[STARTUP] ⚠️  NoSQL target: LOCAL MOCK FILE ({where}) — reason: {reason}")
+
         await nosql_set("health:startup", "ok")
         result = await nosql_get("health:startup")
         print(f"[STARTUP] ✅ NoSQL health check passed: {result}")

@@ -3,6 +3,7 @@ import { useEntityDrawer } from '../../hooks/useEntityDrawer';
 import { Shield, Mic, Square, Pause, Volume2, HelpCircle } from 'lucide-react';
 import { RecentConversations } from '../recent-conversations';
 import { fetchWithRetry } from '../../lib/utils';
+import { startWavRecording, type WavRecorder } from '../../lib/wavRecorder';
 
 const generateUUIDv4 = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -39,8 +40,7 @@ export default function CISDashboard() {
   const [toggleOriginal, setToggleOriginal] = useState<{ [key: string]: boolean }>({});
 
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const wavRecorderRef = useRef<WavRecorder | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -52,43 +52,34 @@ export default function CISDashboard() {
   }, [query]);
 
   const startRecording = async () => {
-    audioChunksRef.current = [];
     setTranscribeError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await uploadAudioForTranscription(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
+      // BUG FIX: was MediaRecorder with mimeType 'audio/webm'. Zia ASR
+      // rejects .webm (400 INVALID_FILE_EXTENSION), so this never worked --
+      // capture PCM and encode WAV instead.
+      wavRecorderRef.current = await startWavRecording();
       setIsRecording(true);
       setIsPaused(false);
     } catch (err) {
       console.error("Microphone access denied:", err);
+      setTranscribeError("Could not access the microphone. Check browser permissions.");
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setIsPaused(false);
-    }
+  const stopRecording = async () => {
+    const recorder = wavRecorderRef.current;
+    if (!recorder || !isRecording) return;
+    wavRecorderRef.current = null;
+    setIsRecording(false);
+    setIsPaused(false);
+    const audioBlob = await recorder.stop();
+    await uploadAudioForTranscription(audioBlob);
   };
 
   const togglePauseRecording = () => {
-    const recorder = mediaRecorderRef.current;
+    const recorder = wavRecorderRef.current;
     if (!recorder) return;
-    if (isPaused) {
+    if (recorder.isPaused()) {
       recorder.resume();
       setIsPaused(false);
     } else {
@@ -100,7 +91,7 @@ export default function CISDashboard() {
   const uploadAudioForTranscription = async (audioBlob: Blob) => {
     setIsTranscribing(true);
     const formData = new FormData();
-    formData.append('audio', audioBlob, 'recording.webm');
+    formData.append('audio', audioBlob, 'recording.wav');
     formData.append('language', language);
 
     try {

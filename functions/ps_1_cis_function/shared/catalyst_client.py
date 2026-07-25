@@ -336,15 +336,36 @@ async def ztsql_execute(sql: str, params: list = None):
                 print(f"Datastore execute failed after retries: {e}")
                 return
 
-async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.webm") -> str:
+# Extensions Zia ASR actually accepts -- verified live by posting identical
+# WAV bytes under different names: .wav/.mp3/.ogg/.flac return 200, while
+# .webm and .m4a return 400 INVALID_FILE_EXTENSION. Zia validates by
+# extension, so the name we send matters as much as the bytes.
+ZIA_ASR_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac"}
+
+_ZIA_ASR_MIMES = {
+    ".wav": "audio/wav", ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg", ".flac": "audio/flac",
+}
+
+async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.wav") -> str:
     """Zia Audio-to-Text Transcription. multipart/form-data per the verified model card."""
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ZIA_ASR_EXTENSIONS:
+        # Fail here with a clear message rather than letting Zia's opaque
+        # 400 INVALID_FILE_EXTENSION surface to the officer as a 500.
+        raise ValueError(
+            f"Unsupported audio format '{ext or filename}'. "
+            f"Zia ASR accepts: {', '.join(sorted(ZIA_ASR_EXTENSIONS))}."
+        )
+
     async with httpx.AsyncClient() as client:
         r = await client.post(
             ZIA_ASR_URL,
             headers=await _zia_headers(),   # no Content-Type -- httpx sets multipart boundary itself
             # BUG FIX: the documented Sample Request uses field name "file",
-            # not "audio" -- confirmed against a live call.
-            files={"file": (filename, audio_bytes, "audio/webm")},
+            # not "audio" -- confirmed against a live call. The declared mime
+            # must match the extension Zia validates on.
+            files={"file": (filename, audio_bytes, _ZIA_ASR_MIMES[ext])},
             data={"language": language},
             timeout=20.0,
         )
@@ -353,6 +374,12 @@ async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: s
         # {"status": "success", "language": ..., "text": ..., ...} -- there
         # is no "transcript" key.
         return r.json()["text"]
+
+# Zia TTS treats "speaker" as required, and speaker names are per-language
+# (not interchangeable) -- see the Text-to-Audio Synthesis model card's
+# Speaker list in the Catalyst console. A caller that only knows the language
+# still needs a valid one, so map each supported language to a default.
+ZIA_DEFAULT_SPEAKERS = {"en": "Mary", "hi": "Divya", "kn": "Anu"}
 
 async def text_to_speech(text: str, language: str = "kn",
                           speaker: str | None = None,
@@ -364,12 +391,16 @@ async def text_to_speech(text: str, language: str = "kn",
         payload = {
             "text": text,
             "language": language,
+            # BUG FIX: "speaker" was only included when a caller explicitly
+            # passed one, but Zia rejects the request without it (400
+            # LESS_THAN_MIN_OCCURANCE). backend/api/routes/tts.py never passes
+            # a speaker, so every real TTS call from the app failed. Fall back
+            # to a valid speaker for the requested language.
+            "speaker": speaker or ZIA_DEFAULT_SPEAKERS.get(language, "Mary"),
             "pitch": pitch,
             "speed": speed,
             "emotion": emotion,
         }
-        if speaker:
-            payload["speaker"] = speaker
         r = await client.post(ZIA_TTS_URL, headers=await _zia_headers_json(), json=payload, timeout=15.0)
         r.raise_for_status()
         return r.content   # audio/wav
@@ -386,12 +417,13 @@ async def translate_text(text: str, source_lang: str, target_lang: str = "en") -
         r.raise_for_status()
         return r.json()   # {"translated_text": ..., "processing_time": ...}
 
-async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str) -> str:
+async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str,
+                                    filename: str = "recording.wav") -> str:
     """
     Layer 1 orchestrator: ASR -> (conditional) translate -> plain text into Layer 2.
     """
     if declared_language in ZIA_VOICE_LANGS:
-        return await transcribe_audio(audio_bytes, language=declared_language)
+        return await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
 
     raise ValueError(
         f"Zia ASR does not support '{declared_language}'. "
@@ -479,13 +511,58 @@ async def _nosql_request(method: str, path: str, json_body) -> dict:
                 continue
     raise last_error
 
+def _running_in_catalyst() -> bool:
+    """True when executing inside a deployed Catalyst AppSail/Function.
+
+    X_ZOHO_CATALYST_LISTEN_PORT is injected by the Catalyst runtime itself,
+    not by the project's own environment-variable config, so it stays a
+    reliable signal even when the app's own config vars are missing -- which
+    is exactly the situation this guard exists to catch.
+    """
+    return bool(os.getenv("X_ZOHO_CATALYST_LISTEN_PORT"))
+
+
+def _mock_nosql_reason() -> str | None:
+    """Why the local mock store would be used, or None if real NoSQL is configured."""
+    if _env("MOCK_NOSQL_ONLY", "") == "true":
+        return "MOCK_NOSQL_ONLY=true"
+    if not _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID"):
+        return "ZC_PROJECT_ID/CATALYST_PROJECT_ID is not set"
+    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
+    if not (token or _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")):
+        return "neither ZC_ACCESS_TOKEN nor ZC_REFRESH_TOKEN is set"
+    return None
+
+
+def _should_use_mock_nosql() -> bool:
+    """
+    BUG FIX: nosql_get/nosql_set used to fall back to a container-local JSON
+    file whenever config looked incomplete -- silently, and in production too.
+    In a deployed AppSail that file starts empty, so the user store simply
+    appeared to contain nobody: every login returned "Invalid username or
+    password", and five of those tripped the lockout into a 429. The real
+    cause (missing NoSQL config) was completely invisible, and it recurred on
+    every deploy because each new container gets a fresh empty file.
+
+    The mock store is a local-development convenience, so refuse it outright
+    when running inside Catalyst unless it was explicitly requested.
+    """
+    reason = _mock_nosql_reason()
+    if reason is None:
+        return False
+    if _running_in_catalyst() and _env("MOCK_NOSQL_ONLY", "") != "true":
+        raise EnvironmentError(
+            f"NoSQL is not configured in this deployment ({reason}). Refusing to fall "
+            "back to the local mock store -- that would silently serve an empty user/"
+            "session database. Set the missing variable(s) in the AppSail/Function "
+            "Configuration tab and redeploy."
+        )
+    return True
+
+
 async def nosql_get(key: str) -> dict | None:
     """Fetch a value from the real Catalyst NoSQL AppKeyValueStore table with local fallback."""
-    project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
-    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
-    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
-    
-    if _env("MOCK_NOSQL_ONLY", "") == "true" or not project_id or not (token or refresh_token):
+    if _should_use_mock_nosql():
         import json
         import os
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
@@ -510,11 +587,7 @@ async def nosql_set(key: str, value: str, ttl: int = None):
     """
     Upsert a value into the real Catalyst NoSQL AppKeyValueStore table with local fallback.
     """
-    project_id = _env("ZC_PROJECT_ID", "CATALYST_PROJECT_ID")
-    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
-    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
-    
-    if _env("MOCK_NOSQL_ONLY", "") == "true" or not project_id or not (token or refresh_token):
+    if _should_use_mock_nosql():
         import json
         import os
         db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))

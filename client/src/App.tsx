@@ -7,6 +7,7 @@ import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
 import ReactMarkdown from 'react-markdown';
 import CISDashboard from './components/dashboard/CISDashboard';
 import { fetchWithRetry } from './lib/utils';
+import { startWavRecording, type WavRecorder } from './lib/wavRecorder';
 
 interface Message {
   id: string;
@@ -106,63 +107,50 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<BlobPart[]>([]);
+  // BUG FIX: this used MediaRecorder, which emits webm/opus in Chrome. Zia
+  // ASR rejects .webm outright (400 INVALID_FILE_EXTENSION), so every voice
+  // query failed. startWavRecording() captures PCM and encodes WAV instead.
+  const wavRecorderRef = useRef<WavRecorder | null>(null);
 
   const handleMicClick = async () => {
     if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
+      const recorder = wavRecorderRef.current;
+      wavRecorderRef.current = null;
       setIsRecording(false);
       setIsPaused(false);
+      if (!recorder) return;
+
+      try {
+        setIsTranscribing(true);
+        const audioBlob = await recorder.stop();
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.wav');
+        formData.append('language', voiceLanguage);
+
+        const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: formData
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
+        } else {
+          console.error('Transcription failed:', await response.text());
+          alert('Voice transcription failed. Please try again or type your query.');
+        }
+      } catch (err) {
+        console.error('Error sending audio:', err);
+        alert('Voice transcription failed. Please try again or type your query.');
+      } finally {
+        setIsTranscribing(false);
+      }
     } else {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          const formData = new FormData();
-          formData.append('audio', audioBlob, 'recording.webm');
-          formData.append('language', voiceLanguage);
-
-          try {
-            setIsTranscribing(true);
-            const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${authToken}`
-              },
-              body: formData
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
-            } else {
-              console.error('Transcription failed:', await response.text());
-              alert('Voice transcription failed. Please try again or type your query.');
-            }
-          } catch (err) {
-            console.error('Error sending audio:', err);
-            alert('Voice transcription failed. Please try again or type your query.');
-          } finally {
-            setIsTranscribing(false);
-          }
-
-          stream.getTracks().forEach(track => track.stop());
-        };
-
-        mediaRecorder.start();
+        wavRecorderRef.current = await startWavRecording();
         setIsRecording(true);
         setIsPaused(false);
       } catch (err) {
@@ -173,9 +161,9 @@ export default function App() {
   };
 
   const handleMicPauseToggle = () => {
-    const recorder = mediaRecorderRef.current;
+    const recorder = wavRecorderRef.current;
     if (!recorder) return;
-    if (isPaused) {
+    if (recorder.isPaused()) {
       recorder.resume();
       setIsPaused(false);
     } else {
