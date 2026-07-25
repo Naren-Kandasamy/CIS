@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useEntityDrawer } from '../../hooks/useEntityDrawer';
-import { Shield, Mic, Square, Volume2, HelpCircle } from 'lucide-react';
+import { Shield, Mic, Square, Pause, Volume2, HelpCircle } from 'lucide-react';
 import { RecentConversations } from '../recent-conversations';
+import { fetchWithRetry } from '../../lib/utils';
 
 const generateUUIDv4 = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -26,6 +27,9 @@ export default function CISDashboard() {
   const [query, setQuery] = useState<string>('');
   const [language, setLanguage] = useState<string>('kn');
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
+  const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   
@@ -49,6 +53,7 @@ export default function CISDashboard() {
 
   const startRecording = async () => {
     audioChunksRef.current = [];
+    setTranscribeError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -66,6 +71,7 @@ export default function CISDashboard() {
 
       mediaRecorder.start();
       setIsRecording(true);
+      setIsPaused(false);
     } catch (err) {
       console.error("Microphone access denied:", err);
     }
@@ -75,18 +81,31 @@ export default function CISDashboard() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setIsPaused(false);
+    }
+  };
+
+  const togglePauseRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    if (isPaused) {
+      recorder.resume();
+      setIsPaused(false);
+    } else {
+      recorder.pause();
+      setIsPaused(true);
     }
   };
 
   const uploadAudioForTranscription = async (audioBlob: Blob) => {
-    setIsLoading(true);
+    setIsTranscribing(true);
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
     formData.append('language', language);
 
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
+      const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
         method: 'POST',
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined,
         body: formData,
@@ -94,12 +113,13 @@ export default function CISDashboard() {
       if (!response.ok) throw new Error(`Transcription failed: ${response.statusText}`);
       const data = await response.json();
       if (data.transcript) {
-        setQuery(data.transcript);
+        setQuery(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
       }
     } catch (err) {
       console.error("ASR transmission error:", err);
+      setTranscribeError("Voice transcription failed. Please try again or type your query.");
     } finally {
-      setIsLoading(false);
+      setIsTranscribing(false);
     }
   };
 
@@ -114,9 +134,9 @@ export default function CISDashboard() {
 
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
+      const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
@@ -175,7 +195,10 @@ export default function CISDashboard() {
       if (buffer.trim()) parseSSEBuffer(buffer + '\n\n');
     } catch (err: any) {
       console.error("Streaming error:", err);
-      setStreamedStatus(err.message || "Pipeline transmission breakdown.");
+      const message = err instanceof TypeError
+        ? "Unable to reach the server. Please check your connection and try again."
+        : (err.message || "Pipeline transmission breakdown.");
+      setStreamedStatus(message);
     } finally {
       setIsLoading(false);
     }
@@ -256,13 +279,26 @@ export default function CISDashboard() {
             placeholder="Ask about cases, sections, or criminals..."
             className="flex-1 bg-transparent py-2 text-sm focus:outline-none placeholder-stone-400 font-medium"
             style={{ color: '#2b2824' }}
-            disabled={isLoading}
+            disabled={isLoading || isTranscribing}
           />
+
+          {/* Pause/Resume Trigger -- only while actively recording */}
+          {isRecording && (
+            <button
+              type="button"
+              onClick={togglePauseRecording}
+              className="p-2 text-stone-500 hover:text-stone-800 mr-1 transition-colors"
+              aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+            >
+              {isPaused ? <Mic size={16} /> : <Pause size={16} />}
+            </button>
+          )}
 
           {/* Inline Media Button Trigger */}
           <button
             type="button"
             onClick={isRecording ? stopRecording : startRecording}
+            disabled={isTranscribing}
             className="p-2 text-stone-500 hover:text-stone-800 mr-2 transition-colors"
           >
             {isRecording ? <Square size={16} className="text-red-700 fill-red-700 animate-pulse" /> : <Mic size={18} />}
@@ -271,13 +307,32 @@ export default function CISDashboard() {
           {/* Solid Action Square Submit Box */}
           <button
             type="submit"
-            disabled={isLoading || !query.trim() || !!validationError}
+            disabled={isLoading || isTranscribing || !query.trim() || !!validationError}
             className="w-10 h-10 rounded flex items-center justify-center transition-all bg-[#802323] hover:bg-[#631919]"
-            style={{ opacity: (isLoading || !query.trim() || !!validationError) ? 0.4 : 1 }}
+            style={{ opacity: (isLoading || isTranscribing || !query.trim() || !!validationError) ? 0.4 : 1 }}
           >
             <div className="w-3 h-3 border-2 border-white rotate-45 transform translate-x-[-0.5px]"></div>
           </button>
         </form>
+
+        {(isRecording || isTranscribing) && (
+          <div className="flex items-center gap-2 text-xs font-mono text-stone-500 px-1">
+            {isTranscribing ? (
+              <span>⏳ Transcribing your audio...</span>
+            ) : (
+              <>
+                <span className="text-red-700">{isPaused ? '⏸' : '●'}</span>
+                <span>{isPaused ? 'Recording paused' : 'Recording...'} — click the mic to stop</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {transcribeError && (
+          <div className="text-xs p-2.5 rounded font-mono border bg-red-50 text-red-800 border-red-200">
+            ⚠ {transcribeError}
+          </div>
+        )}
 
         {validationError && (
           <div className="text-xs p-2.5 rounded font-mono border bg-red-50 text-red-800 border-red-200">

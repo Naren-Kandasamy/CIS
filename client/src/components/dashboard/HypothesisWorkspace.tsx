@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Lightbulb, CheckCircle2, XCircle, RefreshCw, Plus, ShieldAlert } from 'lucide-react';
+import { fetchWithRetry } from '../../lib/utils';
 
 interface HypothesisRecord {
   hypothesis_id: str;
@@ -34,7 +35,7 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
     setLoading(true);
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${firId}`, {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${firId}`, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined,
       });
       if (res.ok) {
@@ -63,7 +64,7 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
 
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis`, {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +92,7 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
     setCheckingId(id);
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${id}/check`, {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${id}/check`, {
         method: 'POST',
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined,
       });
@@ -111,7 +112,7 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
 
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${resolveModalId}/resolve`, {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${resolveModalId}/resolve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -6,6 +6,7 @@ import EntityDrawer from './components/dashboard/EntityDrawer';
 import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
 import ReactMarkdown from 'react-markdown';
 import CISDashboard from './components/dashboard/CISDashboard';
+import { fetchWithRetry } from './lib/utils';
 
 interface Message {
   id: string;
@@ -73,7 +74,7 @@ export default function App() {
   const handleFeedbackSubmit = async (item: any, verdict: 'confirmed' | 'corrected', explanation?: string) => {
     const key = item.edge_id || item.fir_id;
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/feedback/correction`, {
+      const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/feedback/correction`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +137,7 @@ export default function App() {
 
           try {
             setIsTranscribing(true);
-            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
+            const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${authToken}`
@@ -193,22 +194,6 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
-  // BUG FIX: the Catalyst AppSail backend occasionally resets the connection
-  // (observed as a raw "TypeError: Failed to fetch", not an HTTP error
-  // response) -- a single retry papers over these transient blips instead of
-  // surfacing an error on the first hiccup.
-  const fetchQueryWithRetry = async (url: string, options: RequestInit, retries = 1): Promise<Response> => {
-    try {
-      return await fetch(url, options);
-    } catch (err) {
-      if (retries > 0 && err instanceof TypeError) {
-        await new Promise(r => setTimeout(r, 800));
-        return fetchQueryWithRetry(url, options, retries - 1);
-      }
-      throw err;
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading) return;
@@ -233,7 +218,7 @@ export default function App() {
     }]);
 
     try {
-      const response = await fetchQueryWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
+      const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
