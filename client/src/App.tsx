@@ -59,6 +59,7 @@ export default function App() {
     }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [voiceLanguage, setVoiceLanguage] = useState('kn');
   const [isLoading, setIsLoading] = useState(false);
   const [activeView, setActiveView] = useState<'query' | 'dashboard' | 'cis-console'>('query');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -128,7 +129,7 @@ export default function App() {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           const formData = new FormData();
           formData.append('audio', audioBlob, 'recording.webm');
-          formData.append('language', 'kn'); // Default to Kannada for PS-1
+          formData.append('language', voiceLanguage);
 
           try {
             setIsLoading(true);
@@ -661,6 +662,26 @@ export default function App() {
                     onChange={e => setInputValue(e.target.value)}
                     disabled={isLoading}
                   />
+                  <select
+                    value={voiceLanguage}
+                    onChange={(e) => setVoiceLanguage(e.target.value)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      fontSize: '12px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      marginRight: '2px',
+                      appearance: 'none'
+                    }}
+                    title="Voice Input Language"
+                  >
+                    <option value="en">EN</option>
+                    <option value="hi">HI</option>
+                    <option value="kn">KN</option>
+                  </select>
                   <button 
                     type="button" 
                     className="action-btn" 
