@@ -48,6 +48,16 @@ def handler(event, context):
     global _warmed_up
     print("[DIAG][HANDLER] handler() called")
 
+    # CRITICAL WORKAROUND: langchain_core caches a global ThreadPoolExecutor.
+    # In a serverless environment, background threads may be killed or atexit 
+    # hooks run between invocations, leaving this executor in a "shutdown" state.
+    # If not cleared, subsequent requests will crash with "cannot schedule new futures after shutdown".
+    try:
+        import langchain_core.callbacks.manager
+        langchain_core.callbacks.manager._executor.cache_clear()
+    except Exception as e:
+        print(f"[DIAG][HANDLER] ⚠️ Failed to clear langchain_core executor cache: {e}")
+
     # ── Step 1: Parse the incoming event ──────────────────────────────────
     try:
         raw_data = event.get_raw_data()
