@@ -133,7 +133,7 @@ export default function App() {
 
           try {
             setIsLoading(true);
-            const response = await fetch('/api/transcribe', {
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${authToken}`

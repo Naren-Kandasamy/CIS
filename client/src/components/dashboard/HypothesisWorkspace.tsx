@@ -33,7 +33,10 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
   const fetchHypotheses = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/investigation/hypothesis/${firId}`);
+      const authToken = sessionStorage.getItem("ps1_auth_token");
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${firId}`, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined,
+      });
       if (res.ok) {
         const data = await res.json();
         setHypotheses(data.hypotheses || []);
@@ -59,9 +62,13 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
       .filter(Boolean);
 
     try {
-      const res = await fetch('/api/investigation/hypothesis', {
+      const authToken = sessionStorage.getItem("ps1_auth_token");
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           fir_id: firId,
           statement,
@@ -83,8 +90,10 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
   const handleCheck = async (id: string) => {
     setCheckingId(id);
     try {
-      const res = await fetch(`/api/investigation/hypothesis/${id}/check`, {
+      const authToken = sessionStorage.getItem("ps1_auth_token");
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${id}/check`, {
         method: 'POST',
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined,
       });
       if (res.ok) {
         const data = await res.json();
@@ -101,9 +110,13 @@ export default function HypothesisWorkspace({ firId = 'DEFAULT_CASE' }: Hypothes
     if (!resolveModalId || !resolveReason.trim()) return;
 
     try {
-      const res = await fetch(`/api/investigation/hypothesis/${resolveModalId}/resolve`, {
+      const authToken = sessionStorage.getItem("ps1_auth_token");
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/investigation/hypothesis/${resolveModalId}/resolve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           status: resolveStatus,
           resolved_reason: resolveReason,

@@ -85,8 +85,10 @@ export default function CISDashboard() {
     formData.append('language', language);
 
     try {
-      const response = await fetch('/api/transcribe', {
+      const authToken = sessionStorage.getItem("ps1_auth_token");
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
         method: 'POST',
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined,
         body: formData,
       });
       if (!response.ok) throw new Error(`Transcription failed: ${response.statusText}`);
@@ -112,7 +114,7 @@ export default function CISDashboard() {
 
     try {
       const authToken = sessionStorage.getItem("ps1_auth_token");
-      const response = await fetch('/api/query', {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

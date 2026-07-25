@@ -231,15 +231,23 @@ async def kb_search(query: str, top_k: int = 10) -> dict:
         # The API returns {"status": "success", "response": "...", "retrieved_nodes": [...]}
         # We map this back to our expected {"results": [...]} format for the unified Retrieval layer.
         nodes = resp.get("retrieved_nodes", [])
-        
-        # We just need the text content for the LLM to synthesize
+
+        # BUG FIX: this previously discarded every field on each node except
+        # "content", replacing it with a fixed score of 1.0. Whatever ID/
+        # metadata fields the real endpoint returns (fir_id/document_id/id/
+        # metadata/excerpt/text -- evidence.py's add_rag_results() checks all
+        # of these) were thrown away, so every RAG-sourced EvidenceItem fell
+        # back to fir_id="unknown" with no metadata. Spreading the raw node
+        # preserves whatever fields it actually carries under their real
+        # names, while still guaranteeing content/score are present.
         results = []
         for n in nodes:
             results.append({
+                **n,
                 "content": n.get("content", ""),
-                "score": 1.0  # RAG endpoint doesn't return scores in the sample
+                "score": n.get("score", 1.0),
             })
-            
+
         return {"results": results}
 # BUG FIX: mutable default argument `params=[]` is shared across all calls.
 # Using None sentinel and replacing with a fresh list each call.
