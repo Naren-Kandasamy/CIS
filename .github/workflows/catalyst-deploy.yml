@@ -26,7 +26,7 @@ jobs:
           npm run build
       
       - name: Install Catalyst CLI
-        run: npm install -g zcatalyst-cli@1.27.0
+        run: npm install -g zcatalyst-cli@1.26.2
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -42,4 +42,4 @@ jobs:
           CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
           PROJECT_ID: "45958000000015001"
         run: |
-          npx zcatalyst-cli@1.27.0 deploy --project $PROJECT_ID --token $CATALYST_TOKEN
+          npx zcatalyst-cli@1.26.2 deploy --project $PROJECT_ID --token $CATALYST_TOKEN
