@@ -43,8 +43,25 @@ jobs:
           PROJECT_ID: "45958000000015001"
           CATALYST_ORG: "60075634347"
         run: |
+          set -o pipefail
           rm -rf functions/ps_1_cis_function/pipeline_function
           cp -r pipeline_function functions/ps_1_cis_function/
           rm -rf functions/ps_1_cis_function/shared
           cp -r shared functions/ps_1_cis_function/
-          npx zcatalyst-cli@1.26.2 deploy --project $PROJECT_ID --token $CATALYST_TOKEN
+
+          # BUG FIX: zcatalyst-cli exits 0 even when the deploy does nothing --
+          # an expired CATALYST_TOKEN prints "Error: Authentication failure" and
+          # "No components deployed!" and the job still went green. Every run
+          # since at least 2026-07-25 reported success while shipping nothing,
+          # so the backend silently kept running old code and all real deploys
+          # had to be done by hand. Inspect the output and fail explicitly.
+          npx zcatalyst-cli@1.26.2 deploy --project $PROJECT_ID --token $CATALYST_TOKEN 2>&1 | tee deploy.log
+
+          if grep -qiE "Authentication failure|No components deployed|deploy skipped" deploy.log; then
+            echo "::error::Catalyst deploy FAILED (CLI exited 0 but nothing shipped). If this is an auth failure, regenerate the token with 'catalyst token:generate' and update the CATALYST_TOKEN repo secret."
+            exit 1
+          fi
+          if ! grep -qi "DEPLOYMENT SUCCESSFUL" deploy.log; then
+            echo "::error::Catalyst deploy produced no 'DEPLOYMENT SUCCESSFUL' confirmation -- treating as a failure."
+            exit 1
+          fi

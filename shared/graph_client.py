@@ -1,9 +1,15 @@
 import asyncio
 from neo4j import AsyncGraphDatabase  # neo4j driver works with Memgraph bolt
 import os
+# BUG FIX: only load .env outside a Catalyst deployment. A developer's local
+# .env can end up inside the deployed bundle (.catalystignore is not reliably
+# honoured), and letting it seed the process environment there lets local-only
+# settings silently override the platform config -- see backend/main.py for
+# the MOCK_NOSQL_ONLY incident this caused.
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    if not os.getenv("X_ZOHO_CATALYST_LISTEN_PORT"):
+        load_dotenv()
 except ImportError:
     pass
 

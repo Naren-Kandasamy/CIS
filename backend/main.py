@@ -1,13 +1,24 @@
 from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI
 
-# BUG FIX: nothing previously loaded .env for the backend process itself --
-# only start_all.sh's manual `export $(grep ...)` did, which is fragile/shell-
-# specific and skipped entirely if uvicorn is run directly (as Catalyst's own
-# "run_command" does). load_dotenv() is a no-op in real deployment (no .env
-# file there; Catalyst injects env vars directly).
+# Loads .env for local runs -- start_all.sh's manual `export $(grep ...)` was
+# fragile/shell-specific and skipped entirely when uvicorn is run directly (as
+# Catalyst's own "run_command" does).
+#
+# BUG FIX: this used to run unconditionally, on the assumption that it was "a
+# no-op in real deployment (no .env file there)". That assumption is false --
+# .catalystignore is not reliably honoured by the deploy bundler (the same
+# reason client/node_modules gets walked during an AppSail deploy), so a
+# developer's local .env can ship inside the bundle. One carrying
+# MOCK_NOSQL_ONLY=true silently switched the DEPLOYED backend onto an empty
+# container-local mock store: every user lookup missed, so every login
+# returned "Invalid username or password", and five of those tripped the
+# lockout into a 429. Inside Catalyst the platform-injected environment
+# variables are the only source of truth.
 from dotenv import load_dotenv
-load_dotenv()
+if not os.getenv("X_ZOHO_CATALYST_LISTEN_PORT"):
+    load_dotenv()
 
 from backend.api.routes import query, health, transcribe, graph, tts, ocr, export, auth, exclusions, cases, sessions, feedback, hypothesis, translate, review_queue
 from backend.api.middleware.input_validator import InputValidationMiddleware
