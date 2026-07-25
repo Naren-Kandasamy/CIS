@@ -26,7 +26,7 @@ jobs:
           npm run build
       
       - name: Install Catalyst CLI
-        run: npm install -g zcatalyst-cli
+        run: npm install -g zcatalyst-cli@1.27.0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -37,7 +37,9 @@ jobs:
         run: |
           pip install -t backend/.packages -r backend/requirements.txt
         
-      - name: Deploy to Zoho Catalyst
+      - name: Deploy to Catalyst
         env:
           CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
-        run: catalyst deploy --project PS1-CIS --token $CATALYST_TOKEN
+          PROJECT_ID: "45958000000015001"
+        run: |
+          npx zcatalyst-cli@1.27.0 deploy --project $PROJECT_ID --token $CATALYST_TOKEN
