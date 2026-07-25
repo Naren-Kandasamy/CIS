@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Mic, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, LogOut } from 'lucide-react';
+import { Search, Mic, Pause, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, LogOut } from 'lucide-react';
 import DashboardPanel from './components/dashboard/DashboardPanel';
 import Login from './components/Login';
 import EntityDrawer from './components/dashboard/EntityDrawer';
@@ -103,6 +103,8 @@ export default function App() {
   };
 
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
 
@@ -112,6 +114,7 @@ export default function App() {
         mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
+      setIsPaused(false);
     } else {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -132,7 +135,7 @@ export default function App() {
           formData.append('language', voiceLanguage);
 
           try {
-            setIsLoading(true);
+            setIsTranscribing(true);
             const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
               method: 'POST',
               headers: {
@@ -146,22 +149,37 @@ export default function App() {
               setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
             } else {
               console.error('Transcription failed:', await response.text());
+              alert('Voice transcription failed. Please try again or type your query.');
             }
           } catch (err) {
             console.error('Error sending audio:', err);
+            alert('Voice transcription failed. Please try again or type your query.');
           } finally {
-            setIsLoading(false);
+            setIsTranscribing(false);
           }
-          
+
           stream.getTracks().forEach(track => track.stop());
         };
 
         mediaRecorder.start();
         setIsRecording(true);
+        setIsPaused(false);
       } catch (err) {
         console.error('Error accessing microphone:', err);
         alert('Could not access microphone.');
       }
+    }
+  };
+
+  const handleMicPauseToggle = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    if (isPaused) {
+      recorder.resume();
+      setIsPaused(false);
+    } else {
+      recorder.pause();
+      setIsPaused(true);
     }
   };
 
@@ -174,6 +192,22 @@ export default function App() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // BUG FIX: the Catalyst AppSail backend occasionally resets the connection
+  // (observed as a raw "TypeError: Failed to fetch", not an HTTP error
+  // response) -- a single retry papers over these transient blips instead of
+  // surfacing an error on the first hiccup.
+  const fetchQueryWithRetry = async (url: string, options: RequestInit, retries = 1): Promise<Response> => {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      if (retries > 0 && err instanceof TypeError) {
+        await new Promise(r => setTimeout(r, 800));
+        return fetchQueryWithRetry(url, options, retries - 1);
+      }
+      throw err;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,7 +233,7 @@ export default function App() {
     }]);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
+      const response = await fetchQueryWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -284,8 +318,15 @@ export default function App() {
 
     } catch (error) {
       console.error(error);
-      setMessages(prev => prev.map(msg => 
-        msg.id === assistantMsgId ? { ...msg, content: "Connection failed. Make sure the backend server is running on port 8000.", isStreaming: false, status: undefined } : msg
+      // BUG FIX: this previously said "Make sure the backend server is
+      // running on port 8000" unconditionally -- a local-dev-only assumption
+      // that's actively wrong and confusing on the deployed instance, where
+      // there's no localhost backend for an officer to check.
+      const message = error instanceof TypeError
+        ? "Unable to reach the server. Please check your connection and try again."
+        : "Something went wrong while processing your query. Please try again.";
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? { ...msg, content: message, isStreaming: false, status: undefined } : msg
       ));
     } finally {
       setIsLoading(false);
@@ -651,16 +692,55 @@ export default function App() {
               </div>
 
               <div className="input-area">
+                {(isRecording || isTranscribing) && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '6px 14px',
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)',
+                  }}>
+                    {isTranscribing ? (
+                      <span>⏳ Transcribing your audio...</span>
+                    ) : (
+                      <>
+                        <span style={{ color: '#dc2626' }}>{isPaused ? '⏸' : '●'}</span>
+                        <span>{isPaused ? 'Recording paused' : 'Recording...'}</span>
+                        <button
+                          type="button"
+                          onClick={handleMicPauseToggle}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: 'transparent',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '4px',
+                            padding: '2px 8px',
+                            fontSize: '12px',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {isPaused ? <Mic size={12} /> : <Pause size={12} />}
+                          {isPaused ? 'Resume' : 'Pause'}
+                        </button>
+                        <span>— click the mic icon to stop and transcribe</span>
+                      </>
+                    )}
+                  </div>
+                )}
                 <form onSubmit={handleSubmit} className="input-box">
                   <button type="button" className="action-btn" aria-label="Attach file">
                     <Paperclip size={20} />
                   </button>
-                  <input 
-                    type="text" 
-                    placeholder="Ask about cases, sections, or criminals..." 
+                  <input
+                    type="text"
+                    placeholder="Ask about cases, sections, or criminals..."
                     value={inputValue}
                     onChange={e => setInputValue(e.target.value)}
-                    disabled={isLoading}
+                    disabled={isLoading || isTranscribing}
                   />
                   <select
                     value={voiceLanguage}
@@ -682,16 +762,17 @@ export default function App() {
                     <option value="hi">HI</option>
                     <option value="kn">KN</option>
                   </select>
-                  <button 
-                    type="button" 
-                    className="action-btn" 
-                    aria-label="Voice input"
+                  <button
+                    type="button"
+                    className="action-btn"
+                    aria-label={isRecording ? 'Stop recording' : 'Voice input'}
                     onClick={handleMicClick}
-                    style={isRecording ? { color: 'var(--accent-primary)', opacity: 0.8 } : {}}
+                    disabled={isTranscribing}
+                    style={isRecording ? { color: '#dc2626', opacity: isPaused ? 0.5 : 1 } : {}}
                   >
                     <Mic size={20} />
                   </button>
-                  <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading} aria-label="Send message">
+                  <button type="submit" className="action-btn primary" disabled={!inputValue.trim() || isLoading || isTranscribing} aria-label="Send message">
                     <Send size={18} />
                   </button>
                 </form>
