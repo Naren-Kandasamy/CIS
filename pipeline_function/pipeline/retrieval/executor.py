@@ -40,6 +40,18 @@ async def run_graph_step(step, state):
     entities = intent.get("entities", {})
 
     city = entities.get("city", "")
+    if city:
+        city_lower = city.lower()
+        if city_lower == "bangalore":
+            city = "Bengaluru"
+        elif city_lower == "mysore":
+            city = "Mysuru"
+        elif city_lower == "belgaum":
+            city = "Belagavi"
+        elif city_lower == "mangalore":
+            city = "Mangaluru"
+        elif city_lower == "gulbarga":
+            city = "Kalaburagi"
 
     # Handle Algorithmic Queries
     if step.get("operation") == "pagerank":

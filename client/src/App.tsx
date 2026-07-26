@@ -207,7 +207,7 @@ export default function App() {
   const pollForCompletedJob = async (
     jobId: string,
     token: string | null,
-    attempts = 40,
+    attempts = 300,
     intervalMs = 3000,
   ): Promise<{ status: string; answer?: string; evidence?: any[]; visualization?: any; error?: string } | null> => {
     for (let i = 0; i < attempts; i++) {

@@ -21,10 +21,13 @@ export interface WavRecorder {
 const TARGET_SAMPLE_RATE = 16000;
 
 export async function startWavRecording(): Promise<WavRecorder> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const AudioCtx: typeof AudioContext =
     window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const ctx = new AudioCtx();
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const source = ctx.createMediaStreamSource(stream);
   const processor = ctx.createScriptProcessor(4096, 1, 1);
 

@@ -128,24 +128,14 @@ async def run_confidence_engine(evidence: EvidenceObject) -> EvidenceObject:
         item.confidence_flags = sig.flags
         
         # Apply Reasoning Feedback Loop (Trust-Weighting & Session Penalty)
-        edge_type = "NARRATIVE_SIMILARITY"
-        if item.evidence_path:
-            path = item.evidence_path.lower()
-            if "co_accused" in path: edge_type = "CO_ACCUSED"
-            elif "shared_vehicle" in path: edge_type = "SHARED_VEHICLE"
-            elif "phone_contact" in path: edge_type = "PHONE_CONTACT"
-            elif "shared_mo" in path: edge_type = "SHARED_MO"
-            elif "shared_tattoo" in path: edge_type = "SHARED_TATTOO"
-            elif "temporal_cluster" in path: edge_type = "TEMPORAL_CLUSTER"
-
-        crime_type = item.metadata.get("crime_sub_head_id") or item.metadata.get("crime_type")
-        trust = await get_trust_weight(edge_type, crime_type)
+        trust = await get_trust_weight(item.edge_type or "NARRATIVE_SIMILARITY", item.crime_type)
         
-        edge_id = item.metadata.get("edge_id") or item.fir_id
+        edge_id = item.edge_id or item.metadata.get("edge_id") or item.fir_id
         session_penalty = 0.5 if edge_id in penalized_ids else 1.0
         
         # Apply feedback demotion to both relevance score and confidence tier (implicitly via score)
-        item.relevance_score = item.relevance_score * trust * session_penalty
+        # BUG FIX: trust is already multiplied into sig.score inside compute_confidence.
+        item.relevance_score = item.relevance_score * session_penalty
         
         # Optionally re-evaluate confidence tier if score dropped significantly due to feedback
         if item.relevance_score < 0.60 and item.confidence in ["high", "medium"]:

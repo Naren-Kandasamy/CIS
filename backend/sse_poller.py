@@ -1,8 +1,14 @@
 import asyncio
 import json
 
-SSE_MAX_POLL_SECONDS = 120  # 2-minute client timeout guard
+SSE_MAX_POLL_SECONDS = 900  # 15-min backend guard; AppSail always kills connection first (~45s),
+                              # so this cap is a safety net only — it must never fire in practice.
+                              # If AppSail ever does NOT cut first, emitting the timeout error here
+                              # would set sawTerminalEvent=True on the client and bypass the
+                              # pollForCompletedJob recovery path, leaving the UI stuck. Keep this
+                              # well above the longest expected AppSail window.
 SSE_POLL_INTERVAL    = 0.5  # seconds between NoSQL reads
+
 
 async def stream_job_status(job_id: str):
     """

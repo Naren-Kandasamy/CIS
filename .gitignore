@@ -91,3 +91,6 @@ PS1_*
 # Pre-bundled pip packages (generated, never commit)
 backend/.packages/
 .packages/
+
+# Screenshots
+screenshots/

@@ -52,8 +52,14 @@ def handler(event, context):
     # In a serverless environment, background threads may be killed or atexit 
     # hooks run between invocations, leaving this executor in a "shutdown" state.
     # If not cleared, subsequent requests will crash with "cannot schedule new futures after shutdown".
+    # BUG FIX: simply clearing the cache leaked the old threads, leading to an OOM SIGKILL.
     try:
         import langchain_core.callbacks.manager
+        if hasattr(langchain_core.callbacks.manager._executor, "cache_info"):
+            if langchain_core.callbacks.manager._executor.cache_info().currsize > 0:
+                executor = langchain_core.callbacks.manager._executor()
+                if hasattr(executor, "shutdown"):
+                    executor.shutdown(wait=False)
         langchain_core.callbacks.manager._executor.cache_clear()
     except Exception as e:
         print(f"[DIAG][HANDLER] ⚠️ Failed to clear langchain_core executor cache: {e}")
