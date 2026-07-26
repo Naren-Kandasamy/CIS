@@ -650,13 +650,15 @@ export default function App() {
                                     role="button"
                                     tabIndex={0}
                                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') openEntity({ type: 'fir', id: item.fir_id ?? `evidence-${idx}`, label: item.fir_id ?? 'Case File', data: item.data ?? {}, evidenceItems: [item] }); }}
-                                    aria-label={`View details for ${item.fir_id ?? 'case'}`}
+                                    aria-label={`View details for ${item.data?.crime_no || item.fir_id || 'case'}`}
                                   >
                                     <div className="flex items-center justify-between pb-2" style={{ borderBottom: '1px dashed var(--paper-line)' }}>
-                                      <span className="dossier-id font-semibold text-xs">{item.fir_id || "No Case ID"}</span>
+                                      <div className="font-mono font-medium text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                                        {item.data?.crime_no || item.fir_id || "No Case ID"}
+                                      </div>
                                       {item.confidence && (
-                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-medium ${confidenceColor}`}>
-                                          {item.confidence.toUpperCase()}
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-sm border uppercase tracking-wider font-semibold whitespace-nowrap ${confidenceColor}`}>
+                                          {item.confidence}
                                         </span>
                                       )}
                                     </div>

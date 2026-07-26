@@ -85,10 +85,16 @@ async def run_graph_step(step, state):
 
     crime_types = entities.get("crime_types", [])
     weapon = entities.get("weapon", "")
+    fir_ids = entities.get("fir_ids", [])
+    if isinstance(fir_ids, str): fir_ids = [fir_ids]
 
     # Base Cypher query
     cypher = "MATCH (f:FIR) WHERE 1=1"
     params = {}
+    
+    if fir_ids:
+        cypher += " AND (f.crime_no IN $fir_ids OR f.id IN $fir_ids)"
+        params["fir_ids"] = fir_ids
 
     if city:
         cypher += " AND toLower(f.district) CONTAINS toLower($city)"
@@ -176,10 +182,22 @@ async def run_graph_step(step, state):
 
 from shared.catalyst_client import kb_search
 
-async def run_rag_step(step, query):
+async def run_rag_step(step, query, entities=None):
     """Execute a KB semantic search step."""
     top_k = step.get("params", {}).get("top_k", 10)
     result = await kb_search(query, top_k=top_k)
+    
+    if entities:
+        fir_ids = entities.get("fir_ids", [])
+        if isinstance(fir_ids, str): fir_ids = [fir_ids]
+        if fir_ids and result and "results" in result:
+            filtered = []
+            for hit in result["results"]:
+                meta_crime_no = hit.get("metadata", {}).get("crime_no")
+                if meta_crime_no in fir_ids:
+                    filtered.append(hit)
+            result["results"] = filtered
+
     return result
 
 async def run_sql_step(step, entities):
@@ -228,7 +246,7 @@ async def execute_retrieval(steps: list, evidence: EvidenceObject, state: dict):
         if step_type == "graph":
             coro = run_graph_step(step, state)
         elif step_type == "rag":
-            coro = run_rag_step(step, evidence.query)
+            coro = run_rag_step(step, evidence.query, evidence.entities)
         elif step_type == "sql":
             coro = run_sql_step(step, evidence.entities)
         else:
