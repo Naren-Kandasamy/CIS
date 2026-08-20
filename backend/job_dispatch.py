@@ -45,7 +45,7 @@ def query_cache_key(query: str) -> str:
     digest = hashlib.sha256(normalized.encode()).hexdigest()[:16]
     return f"cache:full_query:{digest}"
 
-async def dispatch_query_job(session_id: str, query: str) -> str:
+async def dispatch_query_job(session_id: str, query: str, language: str = "en") -> str:
     """
     Checks for a recent identical query first (full-pipeline short-circuit).
     If not cached, posts the job as an event to the Signals Custom Publisher
@@ -76,6 +76,7 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
                             "job_id": job_id,
                             "session_id": session_id,
                             "query": query,
+                            "language": language,
                         })
                     },
                 )
@@ -93,7 +94,7 @@ async def dispatch_query_job(session_id: str, query: str) -> str:
         # process as the SSE poller, so both see the same real NoSQL-backed
         # job status via shared.catalyst_client.
         print(f"[Fallback/Local Dev] Dispatching {job_id} inline via asyncio.create_task")
-        task = asyncio.create_task(_local_pipeline_runner(job_id, session_id, query))
+        task = asyncio.create_task(_local_pipeline_runner(job_id, session_id, query, language))
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
 
@@ -125,7 +126,7 @@ async def dispatch_warmup() -> bool:
         return False
 
 
-async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
+async def _local_pipeline_runner(job_id: str, session_id: str, query: str, language: str = "en"):
     """Local-dev-only pipeline runner. Replaced by Catalyst Signals in production."""
     from pipeline_function.pipeline.langgraph_router import run_langgraph_pipeline
     try:
@@ -141,7 +142,7 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str):
             history = json.loads(history_doc["value"]) if history_doc else []
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id)
+        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id, language=language)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):

@@ -340,7 +340,16 @@ async def synthesizing_response_node(state: AgentState):
     return {"final_response": ans}
 
 # Define the graph compilation inside the runner for thread-safety
-async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback, history: list = None, session_id: str = None):
+async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback, history: list = None, session_id: str = None, language: str = "en"):
+    
+    # Layer 1b Translation short-circuit
+    if language not in {"en", "hi", "kn"}:
+        try:
+            result = await translate_text(query, source_lang=language, target_lang="en")
+            query = result.get("translated_text", query)
+        except Exception as e:
+            print(f"[Translation Error] Could not translate initial query from {language}: {e}")
+
     workflow = StateGraph(AgentState)
     
     workflow.add_node("understanding_query", understanding_query_node)

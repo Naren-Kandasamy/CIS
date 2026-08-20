@@ -43,12 +43,13 @@ def handler(event, context):
     job_id = job_data["job_id"]
     session_id = job_data["session_id"]
     query = job_data["query"]
-    logger.info(f"Received job {job_id} for session {session_id}")
+    language = job_data.get("language", "en")
+    logger.info(f"Received job {job_id} for session {session_id} (language: {language})")
 
-    asyncio.run(_run_pipeline(job_id, session_id, query))
+    asyncio.run(_run_pipeline(job_id, session_id, query, language))
     context.close_with_success()
 
-async def _run_pipeline(job_id: str, session_id: str, query: str):
+async def _run_pipeline(job_id: str, session_id: str, query: str, language: str = "en"):
     # BUG FIX: no idempotency guard previously existed -- a redelivered
     # Signals event (at-least-once delivery) for the same job_id would run
     # the entire pipeline twice, double-spending LLM calls and double-writing
@@ -67,7 +68,7 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
             history = json.loads(history_doc["value"]) if history_doc else []
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id)
+        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id, language=language)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):

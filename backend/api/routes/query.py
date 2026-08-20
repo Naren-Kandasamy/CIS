@@ -21,6 +21,7 @@ QUERY_RATE_WINDOW_SECONDS = 60
 class QueryRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     query: str = Field(..., min_length=1, max_length=500)
+    language: str = Field(default="en", max_length=16)
 
     # BUG FIX (IDOR, keyspace collision): this route's session_id has no
     # format restriction and shares its NoSQL key prefixes (session_owner:,
@@ -102,7 +103,7 @@ async def query(request: QueryRequest, http_request: Request):
         raise HTTPException(401, "No authenticated session")
     await _enforce_query_rate_limit(username)
     await _authorize_session(request.session_id, username)
-    job_id = await dispatch_query_job(request.session_id, request.query)
+    job_id = await dispatch_query_job(request.session_id, request.query, request.language)
     return EventSourceResponse(stream_job_status(job_id))
 
 

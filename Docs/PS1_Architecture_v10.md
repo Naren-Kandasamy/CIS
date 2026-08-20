@@ -1203,6 +1203,10 @@ consistent with this document's existing honest-narration principle (§30).
 - [ ] Consider seeding synthetic (genuinely representative, not fabricated-to-impress) correction history before judging day, so the narrow-scope fallback has a chance to activate live rather than only showing the neutral prior
 
 **New from Integrity & Anti-Corruption Layer:**
+- [ ] **Open Question: Distributed Ledger vs. Centralized Hash Chain** — Should we implement a basic, lightweight blockchain solution outside the core Catalyst platform to protect against root-level DB tampering? 
+  - *Option A:* Centralized Hash Chain (current plan). Pros: extremely fast, low latency, runs natively in Catalyst. Cons: vulnerable to a rogue DBA rewriting or deleting the entire chain.
+  - *Option B:* Distributed Nodes (e.g., one node per district/station in Karnataka). Pros: true decentralization, prevents entire-chain deletion because no single DBA controls all nodes. Cons: high network latency, massive complexity overhead.
+  - *Option C:* Hybrid / Asynchronous Anchoring. Pros: fast synchronous writes locally in Catalyst, but asynchronously publishes the chain-head hash to an external WORM storage (Write-Once-Read-Many) or a public ledger. If it detects an anomaly (e.g., the chain was rewritten), the external monitor alerts the Vigilance Cell. Cons: requires external infrastructure integration.
 - [ ] Confirm whether `vigilance_cell` needs dual-control (two-officer sign-off) on high-impact actions — no real institutional grounding for this yet, flagged rather than guessed at
 - [ ] Reconcile `PS1_RBAC_Case_Access_v1.md`'s access model (Pull/Push/sensitive) into this document as the canonical case-visibility source, if/when it's folded in the way the other three addenda were
 - [ ] `[VERIFY]` Whether Catalyst NoSQL supports the hash-chain's sequential-write requirement cleanly (each new entry needs the previous entry's hash at write time) without introducing a write-ordering bottleneck under concurrent audit events
