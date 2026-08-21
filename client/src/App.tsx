@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Mic, Pause, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, LogOut } from 'lucide-react';
+import { Search, Mic, Pause, Paperclip, Send, Shield, Database, LayoutDashboard, Settings, LogOut, Trash2 } from 'lucide-react';
 import DashboardPanel from './components/dashboard/DashboardPanel';
 import Login from './components/Login';
 import EntityDrawer from './components/dashboard/EntityDrawer';
@@ -18,11 +18,6 @@ interface Message {
   isStreaming?: boolean;
 }
 
-const SESSION_ID = sessionStorage.getItem("ps1_session_id") ?? (() => {
-  const id = crypto.randomUUID();
-  sessionStorage.setItem("ps1_session_id", id);
-  return id;
-})();
 
 const PIPELINE_STEPS = [
   { key: 'understanding query', label: 'NER & Intent' },
@@ -52,17 +47,187 @@ export default function App() {
     setDisplayName('');
   };
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Greetings Officer. I am the PS-1 Conversational Intelligence System. How can I assist you today?'
-    }
-  ]);
+  const defaultMessages: Message[] = [{
+    id: '1',
+    role: 'assistant',
+    content: 'Greetings Officer. I am the PS-1 Conversational Intelligence System. How can I assist you today?'
+  }];
+  const [sessionsMessages, setSessionsMessages] = useState<Record<string, Message[]>>({});
+  
+  const updateSessionMessages = (sessionId: string, updater: (prev: Message[]) => Message[]) => {
+    setSessionsMessages(prev => {
+      const current = prev[sessionId] || defaultMessages;
+      return { ...prev, [sessionId]: updater(current) };
+    });
+  };
   const [inputValue, setInputValue] = useState('');
   const [voiceLanguage, setVoiceLanguage] = useState('kn');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCreatingCase, setIsCreatingCase] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [activeView, setActiveView] = useState<'query' | 'dashboard'>('query');
+
+  const [cases, setCases] = useState<any[]>([]);
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const messages = activeSessionId && sessionsMessages[activeSessionId] ? sessionsMessages[activeSessionId] : defaultMessages;
+  const [caseSessions, setCaseSessions] = useState<Record<string, any[]>>({});
+  
+  const fetchCases = async (currentActiveCaseId?: string | null) => {
+    if (!authToken) return;
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/cases`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCases(data.cases || []);
+        if (data.cases && data.cases.length > 0) {
+          const firstCaseId = data.cases[0].case_id;
+          // Auto-expand if nothing is active
+          if (!currentActiveCaseId && !activeCaseId) {
+             setActiveCaseId(firstCaseId);
+             fetchSessions(firstCaseId);
+          }
+        }
+      }
+    } catch(e) { console.error("Error fetching cases", e); }
+  };
+
+  const fetchSessions = async (caseId: string) => {
+    if (!authToken) return;
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/cases/${caseId}/sessions`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCaseSessions(prev => ({ ...prev, [caseId]: data.sessions || [] }));
+      }
+    } catch(e) { console.error("Error fetching sessions", e); }
+  };
+
+  const deleteCase = async (caseId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this case? This action cannot be undone.")) return;
+    
+    // Optimistic update
+    setCases(prev => prev.filter(c => c.case_id !== caseId));
+    if (activeCaseId === caseId) setActiveCaseId(null);
+
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/cases/${caseId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error("Delete case failed");
+    } catch(err) { 
+      console.error("Error deleting case", err); 
+      fetchCases(); // Revert on failure
+    }
+  };
+
+  const deleteSession = async (caseId: string, sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this session?")) return;
+    
+    // Optimistic update
+    setCaseSessions(prev => ({
+      ...prev,
+      [caseId]: prev[caseId]?.filter(s => s.session_id !== sessionId) || []
+    }));
+    if (activeSessionId === sessionId) setActiveSessionId(null);
+
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error("Delete session failed");
+    } catch(err) { 
+      console.error("Error deleting session", err); 
+      fetchSessions(caseId); // Revert on failure
+    }
+  };
+
+  const createCase = async () => {
+    if (isCreatingCase) return;
+    const title = prompt("Enter Case Title:");
+    if (!title) return;
+    setIsCreatingCase(true);
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/cases`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, crime_no: null, district: null })
+      });
+      if (res.ok) {
+        const newCase = await res.json();
+        setCases(prev => [newCase, ...prev]);
+        setActiveCaseId(newCase.case_id);
+        await createSession(newCase.case_id);
+      }
+    } catch(e) { console.error("Error creating case", e); }
+    finally { setIsCreatingCase(false); }
+  };
+
+  const createSession = async (caseId: string) => {
+    if (isCreatingSession) return;
+    setIsCreatingSession(true);
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/cases/${caseId}/sessions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const newSession = await res.json();
+        setActiveSessionId(newSession.session_id);
+        updateSessionMessages(newSession.session_id, () => [{ id: '1', role: 'assistant', content: 'New session started. How can I assist?' }]);
+        fetchSessions(caseId);
+      }
+    } catch(e) { console.error("Error creating session", e); }
+    finally { setIsCreatingSession(false); }
+  };
+
+  const loadSession = async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    try {
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const historyArray = data.history || [];
+        updateSessionMessages(sessionId, () => {
+          if (historyArray.length === 0) {
+            return [{ id: '1', role: 'assistant', content: 'New session started. How can I assist?' }];
+          }
+          return [
+            { id: '1', role: 'assistant', content: `Restored session history.` },
+            ...historyArray.flatMap((h: any, idx: number) => [
+              {
+                id: `hist-${idx}-u`,
+                role: 'user',
+                content: h.q
+              },
+              {
+                id: `hist-${idx}-a`,
+                role: 'assistant',
+                content: h.a,
+                evidence: h.evidence,
+                visualization: h.visualization
+              }
+            ])
+          ];
+        });
+      }
+    } catch(e) { console.error("Error loading session", e); }
+  };
+
+  useEffect(() => {
+    fetchCases();
+  }, [authToken]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { selectedEntity, openEntity, closeDrawer } = useEntityDrawer();
 
@@ -82,7 +247,7 @@ export default function App() {
         },
         body: JSON.stringify({
           event_id: crypto.randomUUID(),
-          session_id: SESSION_ID,
+          session_id: activeSessionId,
           officer_id: displayName || 'officer',
           timestamp: new Date().toISOString(),
           query_text: messages[messages.length - 2]?.content || '',
@@ -230,6 +395,10 @@ export default function App() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading || isTranscribing) return;
+    if (!activeSessionId) {
+      alert('Please select or create a case session first.');
+      return;
+    }
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -237,12 +406,13 @@ export default function App() {
       content: inputValue
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const targetSessionId = activeSessionId;
+    updateSessionMessages(targetSessionId, prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
 
     const assistantMsgId = crypto.randomUUID();
-    setMessages(prev => [...prev, {
+    updateSessionMessages(targetSessionId, prev => [...prev, {
       id: assistantMsgId,
       role: 'assistant',
       content: '',
@@ -258,7 +428,7 @@ export default function App() {
           'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify({
-          session_id: SESSION_ID,
+          session_id: activeSessionId,
           query: userMessage.content,
           language: voiceLanguage
         })
@@ -307,7 +477,7 @@ export default function App() {
               continue;
             }
             if (eventType === 'done' || eventType === 'error') sawTerminalEvent = true;
-            setMessages(prev => prev.map(msg => {
+            updateSessionMessages(targetSessionId, prev => prev.map(msg => {
               if (msg.id !== assistantMsgId) return msg;
               if (eventType === 'ping') return msg; // keepalive, ignore
               if (eventType === 'progress' && data.status) {
@@ -354,7 +524,7 @@ export default function App() {
       // terminal event, poll for the finished job instead of giving up.
       if (!sawTerminalEvent && jobId) {
         const recovered = await pollForCompletedJob(jobId, authToken);
-        setMessages(prev => prev.map(msg => {
+        updateSessionMessages(targetSessionId, prev => prev.map(msg => {
           if (msg.id !== assistantMsgId) return msg;
           if (recovered?.status === 'done') {
             return {
@@ -385,7 +555,7 @@ export default function App() {
       const message = error instanceof TypeError
         ? "Unable to reach the server. Please check your connection and try again."
         : "Something went wrong while processing your query. Please try again.";
-      setMessages(prev => prev.map(msg =>
+      updateSessionMessages(targetSessionId, prev => prev.map(msg =>
         msg.id === assistantMsgId ? { ...msg, content: message, isStreaming: false, status: undefined } : msg
       ));
     } finally {
@@ -411,6 +581,76 @@ export default function App() {
           </header>
 
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} aria-label="Main Navigation">
+
+            <div style={{ padding: '0 12px 12px 12px', borderBottom: '1px solid var(--paper-line)', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Cases</span>
+                <button onClick={createCase} disabled={isCreatingCase} style={{ background: 'transparent', border: 'none', color: isCreatingCase ? 'var(--text-tertiary)' : 'var(--accent-primary)', cursor: isCreatingCase ? 'not-allowed' : 'pointer', fontSize: '18px' }}>+</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '30vh', overflowY: 'auto' }}>
+                {cases.map(c => (
+                  <div key={c.case_id}>
+                    <div 
+                      onClick={() => { setActiveCaseId(c.case_id); fetchSessions(c.case_id); }}
+                      style={{ 
+                        padding: '6px 8px', 
+                        fontSize: '13px', 
+                        cursor: 'pointer',
+                        borderRadius: '4px',
+                        background: activeCaseId === c.case_id ? 'var(--sidebar-accent)' : 'transparent',
+                        color: activeCaseId === c.case_id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <span className="truncate">{c.title}</span>
+                      <button 
+                        onClick={(e) => deleteCase(c.case_id, e)} 
+                        className="opacity-50 hover:opacity-100 hover:text-red-500 transition-opacity" 
+                        style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '2px' }}
+                        title="Delete Case"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                    {activeCaseId === c.case_id && (
+                      <div style={{ paddingLeft: '12px', borderLeft: '1px dashed var(--paper-line)', marginLeft: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <button onClick={() => createSession(c.case_id)} disabled={isCreatingSession} style={{ textAlign: 'left', background: 'transparent', border: 'none', color: isCreatingSession ? 'var(--text-tertiary)' : 'var(--accent-secondary)', fontSize: '11px', cursor: isCreatingSession ? 'not-allowed' : 'pointer' }}>{isCreatingSession ? 'Creating...' : '+ New Session'}</button>
+                        {(caseSessions[c.case_id] || []).map(s => (
+                          <div 
+                            key={s.session_id} 
+                            onClick={() => loadSession(s.session_id)}
+                            style={{ 
+                              fontSize: '11px', 
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              borderRadius: '2px',
+                              background: activeSessionId === s.session_id ? 'var(--bg-tertiary)' : 'transparent',
+                              color: activeSessionId === s.session_id ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <span className="truncate">{s.title || "New Session..."}</span>
+                            <button 
+                              onClick={(e) => deleteSession(c.case_id, s.session_id, e)} 
+                              className="opacity-50 hover:opacity-100 hover:text-red-500 transition-opacity" 
+                              style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '2px' }}
+                              title="Delete Session"
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={() => setActiveView('query')}

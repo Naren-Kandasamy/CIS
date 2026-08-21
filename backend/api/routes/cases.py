@@ -11,11 +11,12 @@
 import json
 import secrets
 import time
+import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from shared.catalyst_client import nosql_get, nosql_set, get_case_lock, get_lock
+from shared.catalyst_client import nosql_get, nosql_set, get_case_lock, get_lock, nosql_delete
 from shared.auth import get_user
 
 router = APIRouter()
@@ -38,15 +39,6 @@ class PinItemRequest(BaseModel):
 
 
 async def _require_collaborator(case_id: str, username: str) -> dict:
-    # BUG FIX: this used to raise a distinct 404 ("Case not found") vs 403
-    # ("Not a collaborator") -- letting any authenticated officer use the
-    # status code as an existence oracle to enumerate valid case_ids they
-    # aren't authorized on (case_id = f"c_{secrets.token_hex(4)}", only 32
-    # bits of entropy). Both "doesn't exist" and "exists but you're not on
-    # it" now return the identical 403, so the two are indistinguishable
-    # from the caller's side. No caller needs the distinction: every route
-    # below only wants "may this officer proceed," never "does this case
-    # exist independent of who's asking."
     doc = await nosql_get(f"case:{case_id}")
     if not doc:
         raise HTTPException(403, "Not authorized for this case")
@@ -57,19 +49,6 @@ async def _require_collaborator(case_id: str, username: str) -> dict:
 
 
 async def _add_case_to_user_index(username: str, case_id: str):
-    # BUG FIX: this read-modify-write of user_cases:{username} used to run
-    # completely unlocked in create_case, and in add_collaborator it ran
-    # under only the per-CASE lock (get_case_lock), not one keyed to this
-    # target user -- so two concurrent add_collaborator calls adding the
-    # same officer to two DIFFERENT cases (different case locks, so both
-    # proceed concurrently) could each read the same stale user_cases:bob
-    # snapshot and the later write would silently drop the earlier one's
-    # case_id, with case:{id}.collaborators still correctly listing bob
-    # (protected by its own case lock) but GET /api/cases never showing him
-    # that case -- unrecoverable via retry, since re-adding a collaborator
-    # who's already listed on the case document is a no-op. Lock keyed to
-    # the target user closes both the create_case and add_collaborator
-    # races on this specific index.
     async with get_lock(f"user_cases:{username}"):
         doc = await nosql_get(f"user_cases:{username}")
         case_ids = json.loads(doc["value"]) if doc else []
@@ -77,6 +56,14 @@ async def _add_case_to_user_index(username: str, case_id: str):
             case_ids.append(case_id)
             await nosql_set(f"user_cases:{username}", json.dumps(case_ids))
 
+async def _remove_case_from_user_index(username: str, case_id: str):
+    async with get_lock(f"user_cases:{username}"):
+        doc = await nosql_get(f"user_cases:{username}")
+        if doc:
+            case_ids = json.loads(doc["value"])
+            if case_id in case_ids:
+                case_ids.remove(case_id)
+                await nosql_set(f"user_cases:{username}", json.dumps(case_ids))
 
 @router.post("/api/cases")
 async def create_case(body: CreateCaseRequest, request: Request):
@@ -109,12 +96,43 @@ async def list_cases(request: Request):
     case_ids = json.loads(user_cases_doc["value"]) if user_cases_doc else []
 
     cases = []
-    for cid in case_ids:
-        doc = await nosql_get(f"case:{cid}")
-        if doc:
-            cases.append(json.loads(doc["value"]))
+    if case_ids:
+        case_docs = await asyncio.gather(*(nosql_get(f"case:{cid}") for cid in case_ids))
+        cases = [json.loads(doc["value"]) for doc in case_docs if doc]
+        
     cases.sort(key=lambda c: c["last_activity_at"], reverse=True)
     return {"cases": cases}
+
+
+@router.delete("/api/cases/{case_id}")
+async def delete_case(case_id: str, request: Request):
+    username = request.state.username
+    async with get_case_lock(case_id):
+        case = await _require_collaborator(case_id, username)
+        
+        # Remove from all collaborators' indexes
+        for collab in case.get("collaborators", []):
+            await _remove_case_from_user_index(collab, case_id)
+
+        # Delete all sessions associated with this case
+        sessions_doc = await nosql_get(f"case_sessions:{case_id}")
+        session_ids = json.loads(sessions_doc["value"]) if sessions_doc else []
+        
+        delete_tasks = []
+        for sid in session_ids:
+            delete_tasks.append(nosql_delete(f"session_meta:{sid}"))
+            delete_tasks.append(nosql_delete(f"history:{sid}"))
+            
+        delete_tasks.extend([
+            nosql_delete(f"case_sessions:{case_id}"),
+            nosql_delete(f"case_board:{case_id}"),
+            nosql_delete(f"case:{case_id}")
+        ])
+        
+        if delete_tasks:
+            await asyncio.gather(*delete_tasks)
+        
+    return {"status": "deleted"}
 
 
 @router.post("/api/cases/{case_id}/collaborators")
@@ -176,10 +194,10 @@ async def list_case_sessions(case_id: str, request: Request):
     session_ids = json.loads(sessions_doc["value"]) if sessions_doc else []
 
     sessions = []
-    for sid in session_ids:
-        meta_doc = await nosql_get(f"session_meta:{sid}")
-        if meta_doc:
-            sessions.append(json.loads(meta_doc["value"]))
+    if session_ids:
+        meta_docs = await asyncio.gather(*(nosql_get(f"session_meta:{sid}") for sid in session_ids))
+        sessions = [json.loads(doc["value"]) for doc in meta_docs if doc]
+        
     sessions.sort(key=lambda s: s["last_activity_at"], reverse=True)
     return {"sessions": sessions}
 
