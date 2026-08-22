@@ -1,7 +1,7 @@
 # PS-1: Conversational Crime Intelligence System
-## Architecture Document v9 — Consolidated Design
+## Architecture Document v10.1 — Coreference Correction Amendment
 
-**Supersedes:** `PS1_Architecture_v8.md`
+**Supersedes:** `PS1_Architecture_v10.md`
 **Folds in (previously separate addenda, now merged into the single source of truth):**
 - `PS1_Voice_Language_Layer_v2.md` — Zia ASR/TTS/Translation, replacing the generic "Catalyst Kannada NLP" placeholder
 - `PS1_Evidence_Language_Detection.md` — ingestion-time language tagging of FIR evidence + retrieval-time fallback
@@ -12,7 +12,62 @@
 
 ---
 
-## 0. Changelog — v8 → v9 (Read This First)
+## 0-pre. Changelog — v10 → v10.1 (Read This First)
+
+This is a targeted corrective amendment. One architectural deviation introduced by a previous implementation agent has been identified and corrected. No capability is removed; one brittle non-deterministic component is replaced with a deterministic session-memory mechanism already implied by the base architecture.
+
+### Change
+
+| # | Change | Old (v10) | New (v10.1) | Why |
+|---|---|---|---|---|
+| C5 | Coreference resolution mechanism | `query_rewriter` — an LLM call that reconstructed the prior query from session context | Deterministic `resolve_coreference_node` — reads stored entity JSON from Catalyst NoSQL and merges with current turn's entities via plain dict operation | LLM-based rewriting is non-deterministic: the model may produce slightly different entity phrasings on each call, causing divergent DB queries for what should be identical context. This violates the §2 architectural principle ("LLM plans and synthesizes — systems retrieve") and contradicts the `coreference_needed` sub_intent design already specified in §8. The query_rewriter was never in the architecture spec; it was a hallucinated solution by a previous agent. |
+
+### Additions
+
+| # | Addition | Section | Why |
+|---|---|---|---|
+| A15 | `resolve_coreference_node` — deterministic LangGraph node for coreference resolution | §8, §9, §13, §17 | Replaces the query_rewriter with the mechanism the architecture always implied: structured entity JSON stored in session, replayed on coreference turns |
+| A16 | Session state extended to persist `prior_entity_json` and `prior_evidence_items` | §13 | Required so coreference resolution and `follow_up` synthesis both have raw structured data to work from, not reconstructed text |
+
+### Deletions
+
+| # | Deletion | Why |
+|---|---|---|
+| D1 | `query_rewriter` component | Non-deterministic, never in the architecture spec, fully superseded by `resolve_coreference_node` + session entity persistence. `underspecified_query` clarification (the other problem it was solving) is already handled by the `fallback` intent → clarification node path in the Intent Firewall. |
+
+---
+
+## 0. Changelog — v9 → v10 (Read This First)
+
+This revision has one architectural change and zero capability removals. All v9 capabilities (voice/language layer, evidence language detection, reasoning feedback loop, integrity/anti-corruption layer) carry forward completely unchanged.
+
+### Change
+
+| # | Change | Old (v9) | New (v10) | Why |
+|---|---|---|---|---|
+| C1 | Catalyst QuickML KB usage model | Described as fully programmable: both upload and query via REST API | Upload is **UI-only** (manual, pre-demo); query/search is **fully programmable** via a deployed QuickML RAG pipeline REST endpoint | Verified empirically: no REST API exists for KB document upload. QuickML KB upload is a no-code UI operation. However, once documents are uploaded and the pipeline is deployed in the console, a standard `POST` endpoint is generated that our code can call. This is a platform constraint, not a design flaw — and it does not reduce runtime capability. |
+| C2 | `kb_upload` function purpose | Called at ingestion time to push each FIR into the KB | Replaced by `generate_kb_upload_files()` — a pre-demo utility that chunks FIR narratives into `<450KB` text files ready for manual console upload | The function's *job* still exists; its *mechanism* changes from a live API call to file generation. |
+| C3 | `kb_search` function call signature | Called with just `{"query": ..., "top_k": ...}` against `CATALYST_KB_ENDPOINT` | Now also sends `X-QUICKML-ENDPOINT-KEY` header from `CATALYST_KB_ENDPOINT_KEY` env var | The deployed QuickML RAG pipeline endpoint requires an endpoint key, same pattern as all other QuickML model endpoints. |
+| C4 | KB content strategy | Implied: all FIR fields | Explicit: **only** `narrative` + `mo_descriptor` free-text fields (stripped of all structured data). Each document ≈ 300–800 bytes → ~2–10 upload files for 4,000 FIRs. | The KB is a semantic search engine, not a database. Structured fields (IDs, dates, names, sections) belong in ZTSQL. Only free-text fields with semantic meaning need vector indexing. |
+
+### Additions
+
+| # | Addition | Section | Why |
+|---|---|---|---|
+| A13 | `CATALYST_KB_ENDPOINT_KEY` environment variable | §16, §32 | QuickML deployed pipeline endpoints require an endpoint key header — was missing from v9's env var list |
+| A14 | New §20a: KB Content Strategy + Upload Guide | §20a | Explicit guidance on what content goes into the KB, why, and how to chunk it for manual upload |
+
+### Deletions
+
+None. All v9 capabilities carry forward.
+
+---
+
+## 0a. Changelog — v8 → v9 (Preserved)
+
+*(Full v8→v9 changelog below, preserved for audit trail.)*
+
+## 0b. Changelog — v8 → v9 (Read This First)
 
 This section exists because the user's instruction was explicit: additions/changes/deletions must be called out, not buried in prose, or they're hard to detect against the pre-existing architecture. Every row below maps to a section further down.
 
@@ -96,8 +151,8 @@ Combine:
 | LLM | GLM-4.7-Flash Instruct (Catalyst hosted) | 128k context, data private, no external key |
 | LLM fallback | Groq + Llama 3.1 70B (offline/dev only) | Not for production |
 | NER + Intent | GLM-4.7-Flash via structured prompt | Single call, combined NER + intent |
-| Embeddings | Catalyst KB managed | No model loaded in AppSail |
-| Semantic search | Catalyst KB + RAG | Built-in chunking, reranking, citations |
+| Embeddings | Catalyst KB managed (hidden behind QuickML RAG pipeline) | No embedding model loaded in AppSail — Catalyst manages this internally `[C1]` |
+| Semantic search | Catalyst KB + RAG (QuickML deployed pipeline, **query-only via REST**) | `[C1]` Documents uploaded manually via console UI (pre-demo, one-time); queries are fully programmatic via deployed endpoint + OAuth token + endpoint key |
 | ~~Kannada ASR~~ **Zia Audio-to-Text Transcription** | Catalyst Zia (`quickml/.../zia/audio/transcribe`) | **[C1]** en/hi/kn; multipart/form-data; see §7 |
 | ~~Kannada TTS~~ **Zia Text-to-Audio Synthesis** | Catalyst Zia (`quickml/.../zia/tts/synthesize`) | **[C1]** en/hi/kn; pinned neutral emotion/moderate speed for officer-facing use; see §7 |
 | **Zia Text Translation** `[NEW — A1]` | Catalyst Zia (`quickml/.../zia/translate`) | Covers en, hi, kn, ta, te, ml, mr, bn, gu, pa, or — used for (a) officer query normalization and (b) evidence normalization (A2) |
@@ -138,6 +193,7 @@ Combine:
 | faster-whisper (local) | Catalyst Kannada ASR API → now specifically Zia Audio-to-Text Transcription |
 | gTTS / pyttsx3 | Catalyst Kannada TTS API → now specifically Zia Text-to-Audio Synthesis |
 | Qdrant Cloud | Catalyst KB + RAG |
+| Self-managed vector DB (Pinecone, Weaviate, etc.) | Catalyst KB + RAG — same semantic capability without the manual upload step, but introduces external dependency and API key management outside Catalyst's OAuth flow |
 | multilingual-e5-large | Catalyst managed embeddings |
 | MuRIL / IndicBERT | GLM-4.7-Flash prompt-based NER |
 | Cross-encoder reranker | Custom Python Evidence assembler |
@@ -147,12 +203,13 @@ Combine:
 | Neovis.js | Cytoscape.js (no browser DB connection) |
 | riskScore | activityScore (heuristic, not ML) |
 
-**Evaluated and rejected (new in v9 — a candidate was seriously considered and explicitly turned down, not silently absent):**
+**Evaluated and rejected (v9 candidates, plus v10 addition):**
 
-| Candidate | Considered For | Verdict | Why (full reasoning in §7) |
+| Candidate | Considered For | Verdict | Why |
 |---|---|---|---|
 | Sarvam AI (Shuka / ASR API) | Replacing Zia ASR for stronger Kanglish/dialect accuracy | **Rejected for hackathon build; kept as a documented Phase 3 idea** | Wins on raw linguistic accuracy alone, but loses on every other axis: external dependency, adds RAM to an already-thin AppSail container, separate API key management outside Catalyst's OAuth flow, cuts against the organizer-confirmed "Catalyst-first" principle. The accuracy gap is the one risk this architecture already partially mitigates (Layer 1 code-switch normalization) |
 | LoRA fine-tuning of GLM-4.7-Flash / Qwen VLM | Making the reasoning loop (A4) "real learning" instead of system-level adaptation | **Ruled out — not feasible, not just undesirable** | Both models are Catalyst-*hosted* inference endpoints called via API (`QuickML.deployment.READ` scope is for invoking a deployed model, not training one). There is no verified path to attaching a LoRA adapter to a hosted model you don't have parameter access to. This is a hard platform constraint, not a design preference — see §10 |
+| Catalyst DataStore ZTSQL keyword search as KB replacement `[NEW — v10]` | Replacing the KB entirely with ZTSQL LIKE-based keyword matching | **Considered, rejected in favour of the real KB** | Would have been fully programmable (no manual upload) but delivers keyword matching only — not semantic/vector search. A search for "armed robbery" would miss FIRs describing "accused threatened victim at knifepoint." Since the QuickML KB does expose a query REST endpoint once deployed, and manual upload is a manageable one-time pre-demo operation (~2–10 files for 4,000 FIRs), the accuracy cost of keyword-only retrieval is not worth paying. |
 
 ---
 
@@ -204,7 +261,8 @@ Layer 1  -- Preprocessing                                          [CHANGED -- C
             ├─ 1c. Transliteration        : indic-transliteration (local, unchanged)
             └─ 1d. Code-switch normalize  : GLM-4.7-Flash prompt-based (unchanged)
 Layer 2  -- Query Understanding (NER + Intent + DAG Planner)
-Layer 3  -- Retrieval (Memgraph + Catalyst KB + ZTSQL + Evidence Assembly)
+            + resolve_coreference_node replaces query_rewriter  [CHANGED -- C5/A15]
+Layer 3  -- Retrieval (Memgraph + Catalyst KB RAG endpoint + ZTSQL + Evidence Assembly)
             + ranking now multiplies relevance_score by trust_weight   [NEW -- A4/C4]
             + should_translate_evidence conditional edge (fallback)    [NEW -- A3]
 Layer 4  -- Confidence Engine
@@ -216,6 +274,8 @@ Layer 6  -- Output (chat / voice / dashboard / PDF)
 Layer 7  -- Session Memory + Feedback (Catalyst NoSQL)
             + this is where "Feedback" in the name finally has a       [NEW -- A4]
               real mechanism behind it (v8 had the label, not the loop)
+            + prior_entity_json + prior_evidence_items persisted       [NEW -- A16]
+              after every synthesis turn (feeds coreference + follow_up)
 Layer 8  -- Offline Ingestion Pipeline (ingestion time only)
             8b. Language Detection (langdetect, per free-text field)    [NEW -- A2]
             8c. Conditional Translation (Zia, only if non-viable lang)  [NEW -- A2]
@@ -378,17 +438,54 @@ async def translate_text(text: str, source_lang: str, target_lang: str = "en") -
 
 ---
 
-## 8. Layer 2 — Query Understanding
-
-*(Unchanged from v8 — no addendum touched NER/Intent or the DAG planner directly. Trust weighting, §10, affects retrieval and confidence, not NER.)*
+## 8. Layer 2 — Query Understanding `[CHANGED — C5/A15]`
 
 ### NER + Intent (Single GLM-4.7-Flash Call)
 
-Combined into one call. Temperature 0.0. Entities: PERSON, LOCATION, FIR_ID, DATE, IPC_SECTION, CRIME_TYPE. Coreference flagged as `coreference_needed` sub_intent, resolved against session memory in LangGraph.
+Combined into one call. Temperature 0.0. Entities: PERSON, LOCATION, FIR_ID, DATE, IPC_SECTION, CRIME_TYPE. Coreference flagged as `coreference_needed` sub_intent, resolved against session memory in LangGraph via `resolve_coreference_node` (see below). **`query_rewriter` is removed — [D1].**
+
+### `[NEW — A15]` `resolve_coreference_node` — Deterministic Coreference Resolution
+
+When the NER call tags a query with `coreference_needed`, LangGraph routes to this node before retrieval. It reads the stored entity JSON from the prior turn in Catalyst NoSQL and merges it with the current turn's entities. No LLM call. No query reconstruction.
+
+```python
+# pipeline_function/pipeline/langgraph_router.py (addition)
+
+async def resolve_coreference_node(state: dict) -> dict:
+    """
+    Deterministic coreference resolution — NOT an LLM call.
+    Reads prior_entity_json from session and merges with current turn's entities.
+    Current turn's explicit entities always win; prior entities fill gaps only.
+    """
+    session_raw = await nosql_get(f"session:{state['session_id']}")
+    session_obj = json.loads(session_raw["value"]) if session_raw else {}
+
+    prior_entities = session_obj.get("prior_entity_json", {})
+    current_entities = state["extracted_entities"]
+
+    # Merge: current turn overrides, prior fills gaps — pure dict op, ~microseconds
+    merged = {**prior_entities, **current_entities}
+    state["extracted_entities"] = merged
+    return state
+```
+
+**DAG wiring:**
+
+```
+understanding_query
+        │
+        ▼ (conditional: coreference_needed in sub_intents?)
+        ├── YES → resolve_coreference_node → retrieval_node
+        └── NO  → retrieval_node (existing path, unchanged)
+```
+
+**Latency note:** Catalyst NoSQL read is ~20–80ms. This replaces a GLM-4.7-Flash rewriter call (~2–6s). Coreference turns are now *faster*, not slower.
+
+`[VERIFY]` Exact field name for `extracted_entities` in LangGraph state — must match whatever the NER call populates. Confirm the `sub_intents` list structure in the NER output schema.
 
 ### Query Planner — Full LangGraph DAG
 
-Production uses full DAG planner via LangGraph (`langgraph_router.py`). This file now also hosts the new conditional edge from §9.
+Production uses full DAG planner via LangGraph (`langgraph_router.py`). This file also hosts the `should_translate_evidence` conditional edge (§9) and the Intent Firewall routing (Intent Firewall v3).
 
 ---
 
@@ -407,7 +504,7 @@ EvidenceItem:
 
 ### Retrieval Sources, Convergence Boosting, Per-Source Timeouts
 
-*(Unchanged from v8 — Memgraph/Catalyst KB/ZTSQL sources, 30%-boost convergence rule, and the 5.0s/4.0s/3.0s per-source timeout budgets all carry forward untouched.)*
+*(Unchanged from v9 — Memgraph/Catalyst KB RAG endpoint/ZTSQL sources, 30%-boost convergence rule, and the 5.0s/4.0s/3.0s per-source timeout budgets all carry forward untouched. The KB source timeout of 4.0s now applies to the deployed QuickML pipeline endpoint, not a generic REST URL.)*
 
 ### `[NEW — A3]` Evidence-Language Fallback: Retrieval-Time Conditional Edge
 
@@ -560,12 +657,34 @@ Each cited piece of evidence in a synthesized answer needs a **per-citation cont
 
 ---
 
-## 13. Layer 7 — Session Memory + Feedback `[CHANGED — A4 gives this section's name a real mechanism]`
+## 13. Layer 7 — Session Memory + Feedback `[CHANGED — A4, A16]`
 
 - **Session memory:** Catalyst NoSQL stores conversation state per `session_id` — resolved entities, prior results, investigator corrections. Now also stores the ephemeral same-session correction penalty (`session_penalty:{session_id}`), TTL'd to session length (8 hours).
-- **Multi-turn coreference:** unchanged from v8.
+- **Multi-turn coreference `[CHANGED — A15/A16]`:** `resolve_coreference_node` (§8) reads `prior_entity_json` from session. This field is written by `output_node` after every successful retrieval + synthesis turn (see below). The `query_rewriter` is removed — [D1].
 - **Investigator corrections — previously an unbacked claim, now a real mechanism (§19a):** every correction/confirmation writes a `CorrectionEvent` (permanent audit trail + correction library) and updates the `MethodologyTrust` scoreboard (persistent, slow-moving), in addition to the instant same-session penalty.
 - **Audit logs:** unchanged — SHA-256 tamper-evident hash on every query.
+
+### `[NEW — A16]` Session State Write — Extended Fields
+
+`output_node` (Layer 6) must persist the following after every successful synthesis turn, in addition to existing session writes:
+
+```python
+# output_node (existing) — append to current session write
+
+session_raw = await nosql_get(f"session:{state['session_id']}")
+session_obj = json.loads(session_raw["value"]) if session_raw else {}
+
+session_obj["prior_entity_json"] = state["extracted_entities"]
+# Raw EvidenceItem objects — NOT synthesized text. Required for follow_up guard (Intent Firewall v3 §2.2)
+session_obj["prior_evidence_items"] = [e.dict() for e in state["retrieved_evidence"]]
+session_obj["prior_query"] = state["query"]
+
+await nosql_set(f"session:{state['session_id']}", json.dumps(session_obj), ttl=3600 * 8)
+```
+
+**Why raw objects, not text:** `resolve_coreference_node` needs structured entity JSON to merge, not a string to re-parse. The `follow_up` guard (Intent Firewall v3 §2.2) needs raw `EvidenceItem` dicts to ground synthesis — storing synthesized text instead would create LLM-over-LLM reasoning with no raw data anchor.
+
+`[VERIFY]` Exact current shape of the session NoSQL write in `output_node` — append these keys alongside existing writes, do not replace them.
 
 ---
 
@@ -579,7 +698,7 @@ Each cited piece of evidence in a synthesized answer needs a **per-citation cont
 3. plant_stories.py              -- 4 expanded stories (500 FIRs)
 4. generate_narratives.py        -- GLM-4.7-Flash narratives via Catalyst LLM
    4b. tag_and_normalize_language()   [NEW -- A2, runs per-FIR before ingest_one's write]
-5. ingest_all.py                 -- KB + Memgraph + ZTSQL simultaneously
+5. ingest_all.py                 -- Memgraph + ZTSQL simultaneously (KB upload is pre-demo manual step, see §20a)
 6. compute_derived_edges.py      -- SHARED_MO, SHARED_TATTOO, TEMPORAL_CLUSTER
 7. run_mage_algorithms.py        -- Louvain, Betweenness, PageRank, WCC via MAGE
 8. compute_scores.py             -- activityScore per accused
@@ -628,7 +747,9 @@ async def _tag_field(fir: FIRSchema, field: str) -> FIRSchema:
 async def ingest_one(fir: FIRSchema):
     fir = await tag_and_normalize_language(fir)   # NEW -- runs before the write
     await asyncio.gather(
-        upload_fir_to_kb(fir),       # gets canonical/translated text for indexing
+        # NOTE [v10]: KB upload removed from ingest_one() -- KB documents are generated
+        #   by generate_kb_upload_files() as chunked text files and uploaded manually
+        #   to the Catalyst QuickML console before the demo. See §20a.
         write_fir_to_memgraph(fir),  # unchanged structural data
         write_fir_to_ztsql(fir)      # stores both original and canonical text
     )
@@ -659,7 +780,7 @@ def is_viable(language_code: str | None) -> bool:
 
 ### Derived Edge Computation, Edge Pruning, MAGE Algorithms
 
-*(Unchanged from v8 — incremental O(M log N) derived-edge computation via Catalyst KB semantic search, monthly archival pruning of SHARED_MO/TEMPORAL_CLUSTER, MAGE algorithm suite. Not touched by any addendum.)*
+*(Unchanged from v9 — incremental O(M log N) derived-edge computation via Catalyst KB RAG pipeline semantic search [query-side], monthly archival pruning of SHARED_MO/TEMPORAL_CLUSTER, MAGE algorithm suite.)*
 
 ---
 
@@ -729,7 +850,8 @@ CATALYST_ORG_ID=                  # NEW -- e.g. 60075634347, used for Zia header
 CATALYST_SIGNALS_PUBLISHER_URL=   # unchanged from v8
 CATALYST_LLM_ENDPOINT=
 CATALYST_VLM_ENDPOINT=
-CATALYST_KB_ENDPOINT=
+CATALYST_KB_ENDPOINT=         # Deployed QuickML RAG pipeline URL (from console after deploy)
+CATALYST_KB_ENDPOINT_KEY=     # X-QUICKML-ENDPOINT-KEY value (from console after deploy) [NEW -- v10/A13]
 # CATALYST_ASR_ENDPOINT / CATALYST_TTS_ENDPOINT -- REMOVED. Zia ASR/TTS/Translate
 #   URLs are stable platform constants hardcoded in catalyst_client.py (see Section 7),
 #   not per-project deployment URLs, so they don't need an env var.
@@ -758,6 +880,8 @@ shared/
   feedback_models.py     -- [NEW] CorrectionEvent, MethodologyTrust (Sec 19a)
   feedback_engine.py     -- [NEW] get_trust_weight, record_feedback_event, smoothing (Sec 19a)
 ```
+
+**Removed from pipeline_function/pipeline/langgraph_router.py — [D1]:** `query_rewriter` node and any wiring that routed `coreference_needed` queries through it. Replace with `resolve_coreference_node` (§8).
 
 Import rule unchanged: `shared/` imports nothing from `backend/` or `data/`.
 
@@ -947,6 +1071,62 @@ async def _apply_session_penalty(session_id: str, edge_id: str):
 
 ---
 
+## 20a. KB Content Strategy + Upload Guide `[NEW — v10/A14]`
+
+### What Goes In the KB (and What Does Not)
+
+The Catalyst QuickML KB is a **semantic vector search engine**, not a general-purpose store. Only content where meaning-based fuzzy retrieval adds value should be indexed there. Structured, exact-match data belongs in ZTSQL.
+
+| Content | Goes to KB? | Rationale |
+|---|---|---|
+| `narrative` (free-text crime description) | ✅ **Yes — highest priority** | "Stabbing" should match "knife attack"; "entered rear window" should match "broke in through back" |
+| `mo_descriptor` (modus operandi text) | ✅ **Yes — highest priority** | MO similarity search is the core semantic use-case; exact-keyword search would miss synonyms |
+| Accused names, ages, IDs | ❌ No | Exact match → ZTSQL |
+| Dates, IPC sections, crime codes | ❌ No | Exact match → ZTSQL |
+| District, location coordinates | ❌ No | Graph / ZTSQL |
+| Structural relationships (co-accused, shared vehicle, phone contact) | ❌ No | Memgraph |
+
+### Document Format for Upload
+
+Each document uploaded to the KB should be a lightweight plain-text representation:
+
+```
+FIR_ID: KAR-BEL-2024-0042
+DISTRICT: Belagavi
+CRIME_TYPE: Robbery
+MO: Accused gained entry through unlocked rear door during early morning hours. Threatened occupants with bladed weapon before demanding valuables.
+NARRATIVE: Victim reported waking to find three masked individuals in the bedroom. Primary accused displayed a knife and instructed all occupants to remain silent. Accused took mobile phones, jewellery, and cash before fleeing on a two-wheeler.
+```
+
+**Why include `FIR_ID`, `DISTRICT`, `CRIME_TYPE` as metadata headers?** These are not searchable content — they are structured anchors so the returned KB document can be cross-referenced back to the ZTSQL `cases` table and Memgraph for structured evidence. Without `FIR_ID`, a KB hit cannot be linked to anything.
+
+### Size Estimate and Upload Plan
+
+| Variable | Value |
+|---|---|
+| Average bytes per document (narrative + MO + metadata headers) | ~400–900 bytes |
+| Total FIRs | ~4,000 |
+| Total KB content | ~1.6 MB – 3.6 MB |
+| Max file size per upload (Catalyst limit) | 450 KB (safely under the 500 KB cap) |
+| **Files needed** | **~4–8 upload files** |
+
+### Pre-Demo Upload Process
+
+This is a one-time, pre-demo manual operation. After `ingest_all.py` has been run:
+
+1. Run `python generate_kb_upload_files.py` — produces `kb_upload_chunk_001.txt`, `kb_upload_chunk_002.txt`, etc. in `data/kb_chunks/`
+2. In the Catalyst console: QuickML → Knowledge Base → Create KB → Upload Documents → upload each file
+3. Deploy the KB as a RAG pipeline endpoint
+4. From the deployed endpoint details page, copy:
+   - The **Deployment URL** → paste into `.env` as `CATALYST_KB_ENDPOINT`
+   - The **Endpoint Key** → paste into `.env` as `CATALYST_KB_ENDPOINT_KEY`
+5. Run `python test_kb.py` to verify the search endpoint returns results
+
+**When to re-upload:** only if the underlying FIR dataset changes significantly. The KB is not a live-updating store — it is a curated semantic index. For the hackathon, one upload before judging is sufficient.
+
+---
+
+
 ## 21. Memgraph — Confirmed Graph DB
 
 *(Unchanged from v8.)*
@@ -1112,9 +1292,19 @@ consistent with this document's existing honest-narration principle (§30).
 - [ ] Consider seeding synthetic (genuinely representative, not fabricated-to-impress) correction history before judging day, so the narrow-scope fallback has a chance to activate live rather than only showing the neutral prior
 
 **New from Integrity & Anti-Corruption Layer:**
+- [ ] **Open Question: Distributed Ledger vs. Centralized Hash Chain** — Should we implement a basic, lightweight blockchain solution outside the core Catalyst platform to protect against root-level DB tampering? 
+  - *Option A:* Centralized Hash Chain (current plan). Pros: extremely fast, low latency, runs natively in Catalyst. Cons: vulnerable to a rogue DBA rewriting or deleting the entire chain.
+  - *Option B:* Distributed Nodes (e.g., one node per district/station in Karnataka). Pros: true decentralization, prevents entire-chain deletion because no single DBA controls all nodes. Cons: high network latency, massive complexity overhead.
+  - *Option C:* Hybrid / Asynchronous Anchoring. Pros: fast synchronous writes locally in Catalyst, but asynchronously publishes the chain-head hash to an external WORM storage (Write-Once-Read-Many) or a public ledger. If it detects an anomaly (e.g., the chain was rewritten), the external monitor alerts the Vigilance Cell. Cons: requires external infrastructure integration.
 - [ ] Confirm whether `vigilance_cell` needs dual-control (two-officer sign-off) on high-impact actions — no real institutional grounding for this yet, flagged rather than guessed at
 - [ ] Reconcile `PS1_RBAC_Case_Access_v1.md`'s access model (Pull/Push/sensitive) into this document as the canonical case-visibility source, if/when it's folded in the way the other three addenda were
 - [ ] `[VERIFY]` Whether Catalyst NoSQL supports the hash-chain's sequential-write requirement cleanly (each new entry needs the previous entry's hash at write time) without introducing a write-ordering bottleneck under concurrent audit events
+
+**New from Coreference Fix (C5/A15/A16):**
+- [ ] `[VERIFY]` Exact field name for `extracted_entities` in LangGraph state — `resolve_coreference_node` reads and writes this key; must match what the NER call actually populates
+- [ ] `[VERIFY]` Confirm `sub_intents` list structure in NER output schema — the conditional DAG edge checks for `coreference_needed` in this list
+- [ ] `[VERIFY]` Exact current shape of session NoSQL write in `output_node` — new fields (`prior_entity_json`, `prior_evidence_items`, `prior_query`) must be appended alongside existing keys, not replace them
+- [ ] Confirm `query_rewriter` is fully removed from `langgraph_router.py` and no other node references it
 
 **Other:**
 - [ ] Begin Phase 1 implementation incorporating all three addenda — the Signals gate was already passed in v8; this revision adds three capabilities on top of an otherwise-unchanged hosting/retrieval/confidence foundation

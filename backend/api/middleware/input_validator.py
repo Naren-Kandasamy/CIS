@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-MAX_TEXT_QUERY_LEN = 500
+MAX_TEXT_QUERY_LEN = 2000
 MAX_AUDIO_SIZE_BYTES = 5 * 1024 * 1024
 MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024
 # BUG FIX: ExportRequest's own Pydantic limits (query<=2000, answer<=20000,
@@ -26,11 +26,23 @@ DENYLIST_PATTERNS = [
     # Cypher
     r"(?i)\b(MATCH\s*\(|MERGE\s*\(|CREATE\s*\(|YIELD\s+.*?\s+RETURN|UNWIND\s+.*?\s+AS)\b",
     r"-\[.*?\]->", # Cypher relationship
-    # Prompt injection
-    r"(?i)ignore previous instructions",
-    r"(?i)system prompt",
-    r"(?i)you are a\b",
-    r"(?i)disregard previous",
+    # Prompt injection (Legacy)
+    r"(?i)\bignore previous instructions\b",
+    r"(?i)\bsystem prompt\b",
+    r"(?i)\byou are a\b",
+    r"(?i)\bdisregard previous\b",
+    # Prompt injection (Conversational Bypass Patterns from Intent Firewall v3)
+    r"(?i)ignore\s+(previous|prior|above|all)\s+instructions?",
+    r"(?i)disregard\s+your\s+(system|prompt|instructions?)",
+    r"(?i)you\s+are\s+now\s+(a|an)\s+\w+",
+    r"(?i)forget\s+(everything|all|your)\s+",
+    r"(?i)new\s+instructions?\s*:",
+    r"(?i)act\s+as\s+(if|though)\s+",
+    r"(?i)pretend\s+(you\s+are|to\s+be)\s+",
+    r"(?i)from\s+now\s+on\s+you\s+(are|will|must|should)",
+    r"(?i)your\s+real\s+purpose\s+is",
+    r"(?i)reveal\s+(your\s+)?(system\s+)?prompt",
+    r"(?i)what\s+(are\s+your|is\s+your)\s+(system\s+)?instructions?",
 ]
 
 class InputValidationMiddleware:
@@ -107,7 +119,7 @@ class InputValidationMiddleware:
                     
                     query_text = str(query_text)
                     if len(query_text) > MAX_TEXT_QUERY_LEN:
-                        return await self._send_error(scope, receive, send, 400, "Query exceeds 500 characters limit")
+                        return await self._send_error(scope, receive, send, 400, "Query exceeds 2000 characters limit")
                     
                     for pattern in DENYLIST_PATTERNS:
                         if re.search(pattern, query_text):

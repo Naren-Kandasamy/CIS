@@ -140,9 +140,12 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str, langu
         async with get_session_lock(session_id):
             history_doc = await nosql_get(f"history:{session_id}")
             history = json.loads(history_doc["value"]) if history_doc else []
+            
+            session_doc = await nosql_get(f"session:{session_id}")
+            session_state = json.loads(session_doc["value"]) if session_doc else {}
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id, language=language)
+        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):
@@ -154,6 +157,17 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str, langu
                 history.append({"q": query, "a": job["result"]["answer"]})
                 history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
+                
+                # Write back the session state for coreference and follow-up
+                # GUARD: only overwrite valid investigative state if the new query wasn't a firewall block/fallback
+                intent = job["result"].get("intent_parsed", {}).get("intent")
+                if intent not in ["malicious", "greeting", "fallback"]:
+                    new_session_state = {
+                        "prior_query": query,
+                        "prior_entity_json": job["result"].get("intent_parsed", {}).get("entities", {}),
+                        "prior_evidence_items": job["result"].get("evidence", [])
+                    }
+                    await nosql_set(f"session:{session_id}", json.dumps(new_session_state))
 
     except Exception as e:
         import traceback

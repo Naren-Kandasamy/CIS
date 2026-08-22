@@ -14,7 +14,7 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
     async with get_ner_cache_lock(normalized_query):
         cached = await get_cached_ner(normalized_query)
         if cached:
-            return cached
+            return _normalize_entities(cached)
 
         prompt = build_ner_prompt(normalized_query)
 
@@ -33,6 +33,12 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
             # standard logging level (suppressed unless DEBUG is enabled).
             logger.debug(f"\\n[DEBUG RAW LLM RESPONSE]: {raw}\\n")
             result = json.loads(raw.strip())
+            
+            # Check for firewall rejection
+            firewall_match = re.search(r'<firewall>REJECT:\s*(.*?)</firewall>', raw, re.DOTALL)
+            if firewall_match:
+                result['firewall_reason'] = firewall_match.group(1).strip()
+                
             # BUG-03 FIX: normalize entities for deterministic city detection
             result = _normalize_entities(result)
             await set_cached_ner(normalized_query, result)
@@ -42,6 +48,12 @@ async def extract_ner_and_intent(normalized_query: str) -> dict:
             if match:
                 try:
                     result = json.loads(match.group())
+                    
+                    # Check for firewall rejection
+                    firewall_match = re.search(r'<firewall>REJECT:\s*(.*?)</firewall>', raw, re.DOTALL)
+                    if firewall_match:
+                        result['firewall_reason'] = firewall_match.group(1).strip()
+
                     result = _normalize_entities(result)
                     await set_cached_ner(normalized_query, result)
                     return result
@@ -91,6 +103,24 @@ def _normalize_entities(result: dict) -> dict:
                 entities["city"] = loc
                 print(f"[NER Normalize] Promoted '{loc}' from locations -> city")
                 break
+
+    # If the LLM successfully identified malicious intent but forgot the firewall tag, supply a default reason
+    if result.get("intent") == "malicious" and "firewall_reason" not in result:
+        result["firewall_reason"] = "Malicious intent detected by LLM (no specific reason provided)"
+
+    # Strict intent schema validation
+    valid_intents = {"lookup", "broad_search", "follow_up", "greeting", "fallback", "malicious"}
+    raw_intent = str(result.get("intent", "")).lower()
+    
+    if raw_intent not in valid_intents:
+        if raw_intent in ["summarize", "summarise", "summary"]:
+            result["intent"] = "follow_up"
+        elif raw_intent in ["search", "find", "get", "query"]:
+            result["intent"] = "lookup"
+        else:
+            # If we don't recognize it, but there are entities, treat as lookup. Else fallback.
+            has_entities = any(bool(v) for v in entities.values() if isinstance(v, (list, str)))
+            result["intent"] = "lookup" if has_entities else "fallback"
 
     result["entities"] = entities
     return result

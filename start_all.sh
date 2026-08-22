@@ -8,9 +8,9 @@ if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
-echo "Starting PS-1 Backend (Port 8000)..."
+echo "Starting PS-1 Backend (Port 8001)..."
 # Start the FastAPI backend
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8001 &
 BACKEND_PID=$!
 
 echo "Starting PS-1 Frontend (Port 5173)..."
@@ -20,7 +20,7 @@ FRONTEND_PID=$!
 echo "=========================================="
 echo "Both servers running."
 echo "Frontend: http://localhost:5173"
-echo "Backend:  http://localhost:8000"
+echo "Backend:  http://localhost:8001"
 echo "Press Ctrl+C to stop."
 echo "=========================================="
 
