@@ -41,6 +41,7 @@ jobs:
         env:
           CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
           PROJECT_ID: "45958000000015001"
+          CATALYST_ORG: "60075634347"
         run: |
           set -o pipefail
           rm -rf functions/ps_1_cis_function/pipeline_function
@@ -60,11 +61,13 @@ jobs:
           # locally it works only because `catalyst login` persists
           # "active_dc": "in". Without --dc the CLI presents an India token to
           # the default (US) endpoint and fails with "unable to refresh access
-          # token" -> every component skipped, nothing deployed.
+          # token" -> every component skipped, nothing deployed. --org is
+          # passed explicitly for the same reason.
           npx zcatalyst-cli@1.26.2 deploy \
             --project $PROJECT_ID \
             --token $CATALYST_TOKEN \
-            --dc in 2>&1 | tee deploy.log
+            --dc in \
+            --org $CATALYST_ORG 2>&1 | tee deploy.log
 
           if grep -qiE "Authentication failure|No components deployed|deploy skipped" deploy.log; then
             echo "::error::Catalyst deploy FAILED (CLI exited 0 but nothing shipped). If this is an auth failure, regenerate the token with 'catalyst token:generate' and update the CATALYST_TOKEN repo secret."
