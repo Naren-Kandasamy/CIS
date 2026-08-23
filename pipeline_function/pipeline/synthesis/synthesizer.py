@@ -147,8 +147,23 @@ EVIDENCE:\n{items_text or 'No evidence retrieved.'}
 TRACE: {chr(10).join(evidence.reasoning_trace) or 'None'}
 Generate {'concise bullet (3-5)' if evidence.urgency == 'field_urgent' else 'full analytical'} response:"""
 
+    # Determine synthesis mode based on evidence context
+    if not evidence.items:
+        synthesis_mode = "profile"
+    elif evidence.intent in ["greeting", "fallback", "malicious"]:
+        synthesis_mode = "followup"
+    elif len(evidence.items) < 3:
+        synthesis_mode = "thin"
+    else:
+        synthesis_mode = "report"
+
+    system_prompt = SYNTHESIS_SYSTEM.format(
+        synthesis_mode=synthesis_mode,
+        evidence_count=len(evidence.items)
+    )
+
     try:
-        text = await llm_complete(prompt=prompt, system=SYNTHESIS_SYSTEM,
+        text = await llm_complete(prompt=prompt, system=system_prompt,
             temperature=0.1, max_tokens=300 if evidence.urgency == "field_urgent" else 800)
         text += partial_notice
     except Exception as e:
