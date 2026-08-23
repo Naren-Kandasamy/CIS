@@ -611,3 +611,34 @@ async def nosql_set(key: str, value: str, ttl: int = None):
     if ttl:
         item["expires_at"] = {"N": str(int(time.time()) + ttl)}
     await _nosql_request("POST", "/item", [{"item": item, "return": "NULL"}])
+
+async def nosql_delete(key: str):
+    """
+    Delete an item from the real Catalyst NoSQL AppKeyValueStore table with local fallback.
+    """
+    if _should_use_mock_nosql():
+        import json
+        import os
+        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.nosql_mock_db.json"))
+        async with _get_mock_db_lock():
+            if os.path.exists(db_path):
+                try:
+                    with open(db_path, "r") as f:
+                        data = json.load(f)
+                    if key in data:
+                        del data[key]
+                        with open(db_path, "w") as f:
+                            json.dump(data, f, indent=2)
+                except Exception as e:
+                    print(f"Failed to delete from local mock NoSQL DB: {e}")
+        return
+
+    try:
+        # The Python SDK delete_items method uses DELETE /item with a list of keys
+        await _nosql_request("DELETE", "/item", [{"item_key": {"S": key}}])
+    except Exception as e:
+        print(f"Warning: nosql_delete DELETE call failed: {e}. Falling back to TTL expiration.")
+        # If the exact DELETE endpoint format changes, fall back to soft-deleting via 1-second TTL.
+        # Use valid empty JSON structures so concurrent readers don't crash before the row expires.
+        fallback_val = "[]" if key.startswith(("history:", "case_sessions:")) else "{}"
+        await nosql_set(key, fallback_val, ttl=1)

@@ -43,12 +43,13 @@ def handler(event, context):
     job_id = job_data["job_id"]
     session_id = job_data["session_id"]
     query = job_data["query"]
-    logger.info(f"Received job {job_id} for session {session_id}")
+    language = job_data.get("language", "en")
+    logger.info(f"Received job {job_id} for session {session_id} (language: {language})")
 
-    asyncio.run(_run_pipeline(job_id, session_id, query))
+    asyncio.run(_run_pipeline(job_id, session_id, query, language))
     context.close_with_success()
 
-async def _run_pipeline(job_id: str, session_id: str, query: str):
+async def _run_pipeline(job_id: str, session_id: str, query: str, language: str = "en"):
     # BUG FIX: no idempotency guard previously existed -- a redelivered
     # Signals event (at-least-once delivery) for the same job_id would run
     # the entire pipeline twice, double-spending LLM calls and double-writing
@@ -65,9 +66,12 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
         async with get_session_lock(session_id):
             history_doc = await nosql_get(f"history:{session_id}")
             history = json.loads(history_doc["value"]) if history_doc else []
+            
+            session_doc = await nosql_get(f"session:{session_id}")
+            session_state = json.loads(session_doc["value"]) if session_doc else {}
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_id=session_id)
+        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):
@@ -79,6 +83,17 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
                 history.append({"q": query, "a": job["result"]["answer"]})
                 history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
+                
+                # Write back the session state for coreference and follow-up
+                # GUARD: only overwrite valid investigative state if the new query wasn't a firewall block/fallback
+                intent = job["result"].get("intent_parsed", {}).get("intent")
+                if intent not in ["malicious", "greeting", "fallback"]:
+                    new_session_state = {
+                        "prior_query": query,
+                        "prior_entity_json": job["result"].get("intent_parsed", {}).get("entities", {}),
+                        "prior_evidence_items": job["result"].get("evidence", [])
+                    }
+                    await nosql_set(f"session:{session_id}", json.dumps(new_session_state))
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")

@@ -71,27 +71,26 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
             session_state = json.loads(session_doc["value"]) if session_doc else {}
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
+        result_data = await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):
-            job = await read_job_status(job_id)
-            if job and job.get("status") == "done":
+            if result_data:
                 # Re-read history inside the lock to catch concurrent updates
                 history_doc = await nosql_get(f"history:{session_id}")
                 history = json.loads(history_doc["value"]) if history_doc else []
-                history.append({"q": query, "a": job["result"]["answer"]})
+                history.append({"q": query, "a": result_data.get("answer", "")})
                 history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
                 
                 # Write back the session state for coreference and follow-up
                 # GUARD: only overwrite valid investigative state if the new query wasn't a firewall block/fallback
-                intent = job["result"].get("intent_parsed", {}).get("intent")
+                intent = result_data.get("intent_parsed", {}).get("intent")
                 if intent not in ["malicious", "greeting", "fallback"]:
                     new_session_state = {
                         "prior_query": query,
-                        "prior_entity_json": job["result"].get("intent_parsed", {}).get("entities", {}),
-                        "prior_evidence_items": job["result"].get("evidence", [])
+                        "prior_entity_json": result_data.get("intent_parsed", {}).get("entities", {}),
+                        "prior_evidence_items": result_data.get("evidence", [])
                     }
                     await nosql_set(f"session:{session_id}", json.dumps(new_session_state))
 
