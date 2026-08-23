@@ -24,19 +24,23 @@ async def warm_connections():
 
 _warmed_up = False
 
+async def _main_async(job_id: str, session_id: str, query: str, language: str):
+    global _warmed_up
+    if not _warmed_up:
+        try:
+            await warm_connections()
+        except Exception as e:
+            print(f"Warm-up failed (non-fatal): {e}")
+        _warmed_up = True
+
+    await _run_pipeline(job_id, session_id, query, language)
+
 def handler(event, context):
     """
     Triggered as a Signals Function target -- invoked when the Rule routes an
     event from the Custom Publisher here. Runs the full LangGraph pipeline
     inside this single invocation.
     """
-    global _warmed_up
-    if not _warmed_up:
-        try:
-            asyncio.run(warm_connections())
-        except Exception as e:
-            print(f"Warm-up failed (non-fatal): {e}")
-        _warmed_up = True
     raw_data = event.get_raw_data()
     job_data = raw_data['events'][0]['data']
 
@@ -46,7 +50,7 @@ def handler(event, context):
     language = job_data.get("language", "en")
     logger.info(f"Received job {job_id} for session {session_id} (language: {language})")
 
-    asyncio.run(_run_pipeline(job_id, session_id, query, language))
+    asyncio.run(_main_async(job_id, session_id, query, language))
     context.close_with_success()
 
 async def _run_pipeline(job_id: str, session_id: str, query: str, language: str = "en"):
