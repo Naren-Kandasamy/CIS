@@ -179,18 +179,26 @@ Generate {'concise bullet (3-5)' if evidence.urgency == 'field_urgent' else 'ful
         text += partial_notice
 
     # --- 4. Log Claims for Contradiction Tracking ---
+    tasks = []
     for item in evidence.items:
         if item.confidence.upper() in {"HIGH", "MEDIUM"}:
             accused_id = item.accused_ids[0] if item.accused_ids else None
-            # Do not block the synthesis return waiting for the DB write
-            import asyncio
-            asyncio.create_task(log_claim(
-                fir_id=item.fir_id,
-                accused_id=accused_id,
-                evidence_ref=item.evidence_path,
-                confidence_tier=item.confidence.upper(),
-                snippet=item.similarity_reason or "Generic match"
-            ))
+            # BUG FIX: In a serverless asyncio.run() environment, creating a background
+            # task without awaiting it will cause a "RuntimeError: cannot schedule new futures after shutdown"
+            # when the event loop closes. We MUST await the database write before the function finishes.
+            tasks.append(
+                log_claim(
+                    fir_id=item.fir_id,
+                    accused_id=accused_id,
+                    evidence_ref=item.evidence_path,
+                    confidence_tier=item.confidence.upper(),
+                    snippet=item.similarity_reason or "Generic match"
+                )
+            )
+
+    if tasks:
+        import asyncio
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     return {
         "text": text,
