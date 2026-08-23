@@ -41,6 +41,21 @@ async def warm_connections():
 # pipeline_function/main.py.
 _warmed_up = False
 
+async def _main_async(job_id: str, session_id: str, query: str, language: str):
+    global _warmed_up
+    if not _warmed_up:
+        print("[DIAG][HANDLER] Cold start — warming up Memgraph connection...")
+        try:
+            await warm_connections()
+            print("[DIAG][HANDLER] ✅ Warm-up complete")
+        except Exception as e:
+            print(f"[DIAG][HANDLER] ⚠️ Warm-up failed (non-fatal): {e}")
+        _warmed_up = True
+
+    print(f"[DIAG][HANDLER] Starting pipeline for job {job_id}")
+    await _run_pipeline(job_id, session_id, query, language)
+    print(f"[DIAG][HANDLER] ✅ Pipeline complete for job {job_id}")
+
 def handler(event, context):
     """
     Triggered as a Signals Function target. Runs the full LangGraph pipeline.
@@ -106,35 +121,24 @@ def handler(event, context):
         job_id = job_data["job_id"]
         session_id = job_data["session_id"]
         query = job_data["query"]
-        print(f"[DIAG][HANDLER] ✅ Parsed job_id={job_id} session={session_id} query={query[:60]!r}")
+        language = job_data.get("language", "en")
+        print(f"[DIAG][HANDLER] ✅ Parsed job_id={job_id} session={session_id} query={query[:60]!r} language={language}")
     except Exception as e:
         print(f"[DIAG][HANDLER] ❌ Event parsing failed: {e}")
         traceback.print_exc()
         context.close_with_failure()
         return
 
-    # ── Step 2: Warm up connections on cold start ──────────────────────────
-    if not _warmed_up:
-        print("[DIAG][HANDLER] Cold start — warming up Memgraph connection...")
-        try:
-            asyncio.run(warm_connections())
-            print("[DIAG][HANDLER] ✅ Warm-up complete")
-        except Exception as e:
-            print(f"[DIAG][HANDLER] ⚠️ Warm-up failed (non-fatal): {e}")
-        _warmed_up = True
-
-    # ── Step 3: Run pipeline ───────────────────────────────────────────────
-    print(f"[DIAG][HANDLER] Starting pipeline for job {job_id}")
+    # ── Step 2 & 3: Warm up and Run pipeline ───────────────────────────────
     try:
-        asyncio.run(_run_pipeline(job_id, session_id, query))
-        print(f"[DIAG][HANDLER] ✅ Pipeline complete for job {job_id}")
+        asyncio.run(_main_async(job_id, session_id, query, language))
         context.close_with_success()
     except Exception as e:
         print(f"[DIAG][HANDLER] ❌ Pipeline crashed: {e}")
         traceback.print_exc()
         context.close_with_failure()
 
-async def _run_pipeline(job_id: str, session_id: str, query: str):
+async def _run_pipeline(job_id: str, session_id: str, query: str, language: str = "en"):
     print(f"[DIAG][PIPELINE] _run_pipeline started for job {job_id}")
 
     # ── Idempotency check ──────────────────────────────────────────────────
@@ -157,30 +161,41 @@ async def _run_pipeline(job_id: str, session_id: str, query: str):
         async with get_session_lock(session_id):
             history_doc = await nosql_get(f"history:{session_id}")
             history = json.loads(history_doc["value"]) if history_doc else []
+
+            session_doc = await nosql_get(f"session:{session_id}")
+            session_state = json.loads(session_doc["value"]) if session_doc else {}
         print(f"[DIAG][PIPELINE] History loaded: {len(history)} entries")
 
         # ── Run LangGraph pipeline ─────────────────────────────────────────
         print(f"[DIAG][PIPELINE] Invoking run_langgraph_pipeline...")
-        await run_langgraph_pipeline(job_id, query, write_job_status, history)
+        result_data = await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
         print(f"[DIAG][PIPELINE] ✅ run_langgraph_pipeline returned")
 
         # ── Write updated history ──────────────────────────────────────────
         print(f"[DIAG][PIPELINE] Writing updated history...")
         async with get_session_lock(session_id):
-            job = await read_job_status(job_id)
-            if job and job.get("status") == "done":
+            if result_data:
                 history_doc = await nosql_get(f"history:{session_id}")
                 history = json.loads(history_doc["value"]) if history_doc else []
-                history.append({"q": query, "a": job["result"]["answer"]})
+                history.append({"q": query, "a": result_data.get("answer", "")})
                 history = history[-10:]
                 await nosql_set(f"history:{session_id}", json.dumps(history))
                 print(f"[DIAG][PIPELINE] ✅ History updated ({len(history)} entries)")
+
+                intent = result_data.get("intent_parsed", {}).get("intent")
+                if intent not in ["malicious", "greeting", "fallback"]:
+                    new_session_state = {
+                        "prior_query": query,
+                        "prior_entity_json": result_data.get("intent_parsed", {}).get("entities", {}),
+                        "prior_evidence_items": result_data.get("evidence", [])
+                    }
+                    await nosql_set(f"session:{session_id}", json.dumps(new_session_state))
 
     except Exception as e:
         print(f"[DIAG][PIPELINE] ❌ Pipeline failed at step: {e}")
         traceback.print_exc()
         try:
-            await write_job_status(job_id, status="failed", error=str(e))
+            await write_job_status(job_id, status="failed", error="Pipeline processing failed, please retry.")
         except Exception as write_error:
             print(f"[DIAG][PIPELINE] ❌ Also failed to write failed status: {write_error}")
         raise  # re-raise so handler can call close_with_failure()
