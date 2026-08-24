@@ -56,17 +56,18 @@ async def _main_async(job_id: str, session_id: str, query: str, language: str):
     await _run_pipeline(job_id, session_id, query, language)
     print(f"[DIAG][HANDLER] ✅ Pipeline complete for job {job_id}")
 
+_loop = None
+
 def handler(event, context):
     """
     Triggered as a Signals Function target. Runs the full LangGraph pipeline.
     """
-    global _warmed_up
+    global _warmed_up, _loop
     print("[DIAG][HANDLER] handler() called")
 
     # CRITICAL WORKAROUND: langchain_core caches a global ThreadPoolExecutor.
     # In a serverless environment, background threads may be killed or atexit 
     # hooks run between invocations, leaving this executor in a "shutdown" state.
-    # If not cleared, subsequent requests will crash with "cannot schedule new futures after shutdown".
     # BUG FIX: simply clearing the cache leaked the old threads, leading to an OOM SIGKILL.
     try:
         import langchain_core.callbacks.manager
@@ -78,6 +79,15 @@ def handler(event, context):
         langchain_core.callbacks.manager._executor.cache_clear()
     except Exception as e:
         print(f"[DIAG][HANDLER] ⚠️ Failed to clear langchain_core executor cache: {e}")
+
+    # BUG FIX: anyio (used by httpx) caches its ThreadPoolExecutor globally.
+    # Using `asyncio.run()` creates a new loop per invocation, but when it exits,
+    # it shuts down the executor. Subsequent invocations will try to use the 
+    # shut down executor and crash with "cannot schedule new futures after shutdown".
+    # We use a persistent global event loop to keep the executor alive.
+    if _loop is None or _loop.is_closed():
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
 
     # ── Step 1: Parse the incoming event ──────────────────────────────────
     try:
@@ -101,16 +111,12 @@ def handler(event, context):
             
         print(f"[DIAG][HANDLER] Final job_data keys: {list(job_data.keys())}")
 
-        # Warm-up ping: there is no job to run. A cold container costs ~11s of
-        # import/connection setup, which lands on whichever officer happens to
-        # send the first query -- and is enough to push a slow query past the
-        # SSE window. This pays that cost up front instead. Checked before the
-        # job fields below, since a warm-up event carries none of them.
+        # Warm-up ping
         if job_data.get("warmup"):
             print("[DIAG][HANDLER] Warm-up ping received")
             if not _warmed_up:
                 try:
-                    asyncio.run(warm_connections())
+                    _loop.run_until_complete(warm_connections())
                     _warmed_up = True
                     print("[DIAG][HANDLER] ✅ Warm-up complete")
                 except Exception as e:
@@ -131,7 +137,7 @@ def handler(event, context):
 
     # ── Step 2 & 3: Warm up and Run pipeline ───────────────────────────────
     try:
-        asyncio.run(_main_async(job_id, session_id, query, language))
+        _loop.run_until_complete(_main_async(job_id, session_id, query, language))
         context.close_with_success()
     except Exception as e:
         print(f"[DIAG][HANDLER] ❌ Pipeline crashed: {e}")
