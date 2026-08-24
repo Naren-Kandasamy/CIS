@@ -12,6 +12,8 @@ export interface WavRecorder {
   pause(): void;
   resume(): void;
   isPaused(): boolean;
+  /** Returns the Web Audio AnalyserNode for visualizing audio data, if available. */
+  getAnalyser(): AnalyserNode | null;
   /** Stops capture, releases the mic, and returns an audio/wav Blob. */
   stop(): Promise<Blob>;
 }
@@ -34,6 +36,10 @@ export async function startWavRecording(): Promise<WavRecorder> {
   const chunks: Float32Array[] = [];
   let paused = false;
 
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  source.connect(analyser);
+
   processor.onaudioprocess = (e) => {
     if (paused) return;
     // Copy: the underlying buffer is reused across callbacks.
@@ -47,6 +53,7 @@ export async function startWavRecording(): Promise<WavRecorder> {
     pause() { paused = true; },
     resume() { paused = false; },
     isPaused() { return paused; },
+    getAnalyser() { return analyser; },
     async stop() {
       processor.onaudioprocess = null;
       const inputRate = ctx.sampleRate;

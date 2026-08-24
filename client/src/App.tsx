@@ -7,6 +7,7 @@ import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
 import ReactMarkdown from 'react-markdown';
 import { fetchWithRetry } from './lib/utils';
 import { startWavRecording, type WavRecorder } from './lib/wavRecorder';
+import { VoiceVisualizer } from './components/chat/VoiceVisualizer';
 
 interface Message {
   id: string;
@@ -988,6 +989,7 @@ export default function App() {
                       <>
                         <span style={{ color: '#dc2626' }}>{isPaused ? '⏸' : '●'}</span>
                         <span>{isPaused ? 'Recording paused' : 'Recording...'}</span>
+                        <VoiceVisualizer analyser={wavRecorderRef.current?.getAnalyser() || null} isPaused={isPaused} />
                         <button
                           type="button"
                           onClick={handleMicPauseToggle}
