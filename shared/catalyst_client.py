@@ -407,15 +407,14 @@ async def text_to_speech(text: str, language: str = "kn",
 
 async def translate_text(text: str, source_lang: str, target_lang: str = "en") -> dict:
     """Zia Text Translation. New Layer 1b hop -- only called when source_lang not in ZIA_VOICE_LANGS."""
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            ZIA_TRANSLATE_URL,
-            headers=await _zia_headers_json(),
-            json={"source_language": source_lang, "target_language": target_lang, "text": text},
-            timeout=15.0,
-        )
-        r.raise_for_status()
-        return r.json()   # {"translated_text": ..., "processing_time": ...}
+    # Using GLM-4.7-Flash for translation as the QuickML Zia Translate endpoint is failing with undocumented 'zoho-inputstream' errors.
+    sys_prompt = f"You are a professional translator. Translate the following text from {source_lang} to {target_lang}. Output ONLY the translated text, no conversational filler or markdown."
+    try:
+        translated = await llm_complete(text, sys_prompt, temperature=0.1, max_tokens=1000)
+        return {"translated_text": translated.strip(), "processing_time": 0}
+    except Exception as e:
+        print(f"[LLM TRANSLATE ERROR] Failed to translate: {e}")
+        raise
 
 async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str,
                                     filename: str = "recording.wav") -> str:
