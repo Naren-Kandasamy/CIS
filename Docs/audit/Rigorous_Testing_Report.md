@@ -26,7 +26,7 @@ Tested the query understanding layer for fault tolerance.
 - **NER extraction:** Working correctly.
 - **LLM Caching (Layer 1):** Working correctly (bypassing LLM when exact query repeats).
 - **JSON Decoding:** Robustly handling malformed outputs.
-- **Exponential Backoff & Degradation (Layers 2 & 3):** Successfully caught Qwen 14B rate limits (after 3 attempts) and triggered the fallback intent (`lookup`).
+- **Exponential Backoff & Degradation (Layers 2 & 3):** Successfully caught GLM-4.7-Flash rate limits (after 3 attempts) and triggered the fallback intent (`lookup`).
 
 **Result: ✅ All Tests Passed**
 

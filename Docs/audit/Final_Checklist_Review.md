@@ -9,7 +9,7 @@ This list aggregates all the unchecked items across the official project phases 
 - [x] **Memgraph on Oracle Cloud (Initial Setup)**: Get the Oracle VM provisioned, install Docker, run Memgraph + MAGE, and create schema constraints.
 - [x] **AppSail FastAPI Deployment**: Deploy the FastAPI backend skeleton to Zoho Catalyst AppSail.
 - [x] **React Shell on Catalyst Slate**: Deploy the frontend React application to Zoho Catalyst Slate (Web Client).
-- [x] **API Keys & LLM Connection**: Renew the `CATALYST_API_TOKEN` and confirm a Qwen 14B test call from the pipeline Function returns valid JSON in the cloud.
+- [x] **API Keys & LLM Connection**: Renew the `CATALYST_API_TOKEN` and confirm a GLM-4.7-Flash test call from the pipeline Function returns valid JSON in the cloud.
 - [x] **KB Initialization**: Upload the first batch of FIR documents into the Catalyst KB and ensure they are searchable.
 - [x] **Function Memory Limit**: Configure pipeline Function memory explicitly at 512MB (`catalyst functions:config --memory 512`) to prevent out-of-memory errors.
 - [x] **Prompt Injection Denylist (Layer 0a)**: Add a regex-based denylist to the `QueryRequest` model in `query.py` to block Cypher/SQL injection keywords before reaching the LLM.

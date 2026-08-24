@@ -423,7 +423,27 @@ async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str,
     Layer 1 orchestrator: ASR -> (conditional) translate -> plain text into Layer 2.
     """
     if declared_language in ZIA_VOICE_LANGS:
-        return await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
+        raw_transcript = await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
+        
+        # Tier 4: Native Script Translation (translate Hindi/Kannada to English)
+        if declared_language != "en":
+            try:
+                translation_res = await translate_text(raw_transcript, source_lang=declared_language, target_lang="en")
+                english_transcript = translation_res.get("translated_text", raw_transcript)
+            except Exception as e:
+                print(f"[TRANSLATE ERROR] Failed to translate: {e}")
+                english_transcript = raw_transcript
+        else:
+            english_transcript = raw_transcript
+            
+        # Tier 2: LLM Phonetic Correction (using GLM-4.7-Flash)
+        sys_prompt = "You are a transcription corrector for Karnataka Police. The input is a raw, phonetically garbled voice transcript. Fix obvious phonetic errors based on police context (e.g., 'Delhi Gavi' -> 'Belagavi', 'I told me' -> 'Show me'). Output ONLY the corrected text, no conversational filler or markdown."
+        try:
+            corrected = await llm_complete(english_transcript, sys_prompt, temperature=0.1, max_tokens=150)
+            return corrected.strip()
+        except Exception as e:
+            print(f"[PHONETIC CORRECTION ERROR] LLM failed: {e}")
+            return english_transcript.strip()
 
     raise ValueError(
         f"Zia ASR does not support '{declared_language}'. "

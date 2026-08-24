@@ -29,7 +29,14 @@ export async function startWavRecording(): Promise<WavRecorder> {
   if (ctx.state === 'suspended') {
     await ctx.resume();
   }
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const stream = await navigator.mediaDevices.getUserMedia({ 
+    audio: { 
+      sampleRate: TARGET_SAMPLE_RATE, 
+      echoCancellation: true, 
+      noiseSuppression: true, 
+      autoGainControl: true 
+    } 
+  });
   const source = ctx.createMediaStreamSource(stream);
   const processor = ctx.createScriptProcessor(4096, 1, 1);
 
@@ -61,7 +68,10 @@ export async function startWavRecording(): Promise<WavRecorder> {
       source.disconnect();
       stream.getTracks().forEach((t) => t.stop());
       try { await ctx.close(); } catch { /* already closed */ }
-      return encodeWav(downsample(flatten(chunks), inputRate, TARGET_SAMPLE_RATE), TARGET_SAMPLE_RATE);
+      
+      const flatSamples = flatten(chunks);
+      const resampled = await downsampleWithOfflineCtx(flatSamples, inputRate, TARGET_SAMPLE_RATE);
+      return encodeWav(resampled, TARGET_SAMPLE_RATE);
     },
   };
 }
@@ -73,6 +83,33 @@ function flatten(chunks: Float32Array[]): Float32Array {
   let offset = 0;
   for (const c of chunks) { out.set(c, offset); offset += c.length; }
   return out;
+}
+
+async function downsampleWithOfflineCtx(samples: Float32Array, inputRate: number, outputRate: number): Promise<Float32Array> {
+  if (inputRate === outputRate) return samples;
+  
+  const OfflineAudioCtx = window.OfflineAudioContext || (window as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+  if (!OfflineAudioCtx) return downsample(samples, inputRate, outputRate); // fallback
+  
+  // Create an offline context at the target sample rate
+  const duration = samples.length / inputRate;
+  const offlineCtx = new OfflineAudioCtx(1, Math.ceil(duration * outputRate), outputRate);
+  
+  // Create an audio buffer for the source data
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const tempCtx = new AudioCtx();
+  const buffer = tempCtx.createBuffer(1, samples.length, inputRate);
+  buffer.copyToChannel(samples, 0);
+  tempCtx.close();
+  
+  // Play the buffer into the offline context to resample it
+  const source = offlineCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(offlineCtx.destination);
+  source.start(0);
+  
+  const renderedBuffer = await offlineCtx.startRendering();
+  return renderedBuffer.getChannelData(0);
 }
 
 function downsample(samples: Float32Array, from: number, to: number): Float32Array {

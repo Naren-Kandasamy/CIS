@@ -1,4 +1,4 @@
-import json, re, logging
+import json, re, logging, difflib
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient as llm_complete
 from pipeline_function.pipeline.cache import get_cached_ner, set_cached_ner, get_ner_cache_lock
 from shared.ner_prompt import build_ner_prompt, NER_INTENT_SYSTEM
@@ -99,10 +99,17 @@ def _normalize_entities(result: dict) -> dict:
     # Promote district from locations -> city if city not already set
     if not entities.get("city"):
         for loc in entities.get("locations", []):
-            if loc.strip().lower() in _KSP_DISTRICTS:
+            loc_lower = loc.strip().lower()
+            if loc_lower in _KSP_DISTRICTS:
                 entities["city"] = loc
                 print(f"[NER Normalize] Promoted '{loc}' from locations -> city")
                 break
+            else:
+                matches = difflib.get_close_matches(loc_lower, _KSP_DISTRICTS, n=1, cutoff=0.7)
+                if matches:
+                    entities["city"] = matches[0]
+                    print(f"[NER Normalize] Fuzzy matched '{loc}' to district '{matches[0]}' -> city")
+                    break
 
     # If the LLM successfully identified malicious intent but forgot the firewall tag, supply a default reason
     if result.get("intent") == "malicious" and "firewall_reason" not in result:

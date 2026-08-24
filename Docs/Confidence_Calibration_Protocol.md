@@ -10,7 +10,7 @@ To mitigate this, the PS-1 system features a **Confidence Engine**. Whenever the
 *   🔴 **LOW CONFIDENCE:** The database lacked sufficient evidence; the answer is highly speculative.
 
 ### The Problem (Why We Are Doing This)
-Because we are utilizing a frozen model (Zoho Catalyst Qwen 14B) that cannot be fine-tuned, the Confidence Engine relies on prompt engineering and graph retrieval density to calculate its score. On Demo Day, the judges will inevitably ask: *"How do we know your Confidence UI is actually telling the truth? How do we know a 'HIGH CONFIDENCE' badge guarantees an accurate answer?"*
+Because we are utilizing a frozen model (Zoho Catalyst GLM-4.7-Flash) that cannot be fine-tuned, the Confidence Engine relies on prompt engineering and graph retrieval density to calculate its score. On Demo Day, the judges will inevitably ask: *"How do we know your Confidence UI is actually telling the truth? How do we know a 'HIGH CONFIDENCE' badge guarantees an accurate answer?"*
 
 ### The Solution (What Exactly Needs to be Done)
 We will conduct a **Blind Evaluation Protocol** across a statistically massive sample size of 1,000 queries. We will extract 1,000 queries from the system, let the internal Confidence Engine badge them (High/Medium/Low), and then have an independent external evaluator (Claude) strictly grade the *actual accuracy* of those 1,000 answers on a 3-point scale. 

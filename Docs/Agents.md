@@ -9,7 +9,7 @@ You operate within a 3-layer architecture that separates concerns to maximize re
 
 ## 0. Read this first — project shape, not generic advice
 
-PS-1 is a hybrid GraphRAG system (Memgraph + Catalyst KB/RAG + ZTSQL + Qwen 14B) split across two Zoho Catalyst deployment targets:
+PS-1 is a hybrid GraphRAG system (Memgraph + Catalyst KB/RAG + ZTSQL + GLM-4.7-Flash) split across two Zoho Catalyst deployment targets:
 
 - **`backend/`** — AppSail, thin front door only. Validates input, checks cache, fires a Signals Custom Publisher event, polls NoSQL job state over SSE. **Never** calls the LLM, VLM, Memgraph, KB, or ZTSQL directly. ~160MB RAM, 30s request budget.
 - **`pipeline_function/`** — Catalyst Function, triggered as a Signals Function target (Custom Publisher → Rule → Function). This is where LangGraph, NER/intent, the DAG planner, all retrieval, the confidence engine, and synthesis actually run. 15-minute budget, configure memory to 512MB explicitly.
@@ -46,7 +46,7 @@ Before touching code in an unfamiliar area, grep the relevant section number bel
 **Layer 2: Orchestration (Decision making)** — this is you.
 - Read the directive, call the right script in `execution/`, `ingestion/`, `data/scripts/`, or `pipeline_function/pipeline/` in the right order, handle errors, ask for clarification, update directives with learnings.
 - You do not hand-roll Cypher, hand-write Memgraph traversals, or manually compute confidence scores in conversation — those are deterministic logic that already lives in (or belongs in) `pipeline_function/pipeline/` and `pipeline_function/graph/`. If the script doesn't exist yet, write it there, not as throwaway code in your response.
-- You do not directly call Qwen 14B / Qwen 7B VLM / Catalyst KB / ZTSQL "manually" to answer a question about the data — go through `shared/catalyst_client.py` so retries, timeouts, and resilience patterns are applied uniformly (Implementation §8). One-off bypasses are exactly how the rate-limit stall problem (Architecture §11) becomes invisible until demo day.
+- You do not directly call GLM-4.7-Flash / Qwen 7B VLM / Catalyst KB / ZTSQL "manually" to answer a question about the data — go through `shared/catalyst_client.py` so retries, timeouts, and resilience patterns are applied uniformly (Implementation §8). One-off bypasses are exactly how the rate-limit stall problem (Architecture §11) becomes invisible until demo day.
 
 **Layer 3: Execution (Doing the work)**
 - Deterministic Python in `execution/` (general tooling), `ingestion/` (offline pipeline), `pipeline_function/pipeline/` (live query pipeline), and `data/scripts/` (dataset generation + evaluation).
@@ -65,7 +65,7 @@ The architecture and implementation docs are long and detailed by design — tha
 2. **Don't paste large code blocks from the docs into your own output** unless the user needs to review/approve them — implement directly in the target file instead.
 3. **Don't regenerate `shared/models.py`, `shared/ner_examples.py`, or the canonical dictionaries from memory.** They are single sources of truth (Implementation §5, §18) — read them, import them, extend them. Re-deriving them inline risks silent drift between what the docs specify and what the code does.
 4. **Batch related Catalyst/Memgraph reads** rather than issuing one query per fact when several are needed for the same task — this isn't just a token concern, it's the same `asyncio.gather` parallelism principle the retrieval layer itself uses (Architecture §9) for the same reason: serialized round-trips are the expensive part, not computation.
-5. **Don't dump the full synthetic dataset (4,000 FIRs) or full eval sets into context** to "check" something — query/filter with a script and report the result, the same way the pipeline itself is forbidden from letting the LLM touch raw DB output (Architecture §2: "LLM never directly queries raw data" applies to you too, not just to Qwen 14B).
+5. **Don't dump the full synthetic dataset (4,000 FIRs) or full eval sets into context** to "check" something — query/filter with a script and report the result, the same way the pipeline itself is forbidden from letting the LLM touch raw DB output (Architecture §2: "LLM never directly queries raw data" applies to you too, not just to GLM-4.7-Flash).
 6. **Reference, don't restate, the open-items list** ("To Discuss / Remaining" in both docs) when relevant — link the item, don't reproduce the whole multi-paragraph history of how it was resolved unless the user is actively working that item.
 
 ---
