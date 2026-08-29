@@ -150,13 +150,17 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str, langu
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):
             if result_data:
-                # Update conversation history
-                history = session_state.get("history", [])
-                history.append({"role": "user", "content": query})
-                history.append({"role": "assistant", "content": result_data.get("answer", "")})
-                # Keep history bounded (last 6 turns = 3 user, 3 assistant)
-                history = history[-6:]
-                session_state["history"] = history
+                # Persist conversation history under history:{session_id} in the
+                # same {q, a} shape the Signals pipeline_function writer uses, so
+                # GET /api/sessions/{sid} can restore the transcript on reload.
+                # (Previously the local runner only mutated an in-memory
+                # session_state["history"] that was never written back -- local
+                # sessions always reloaded empty.)
+                history_doc = await nosql_get(f"history:{session_id}")
+                history = json.loads(history_doc["value"]) if history_doc else []
+                history.append({"q": query, "a": result_data.get("answer", "")})
+                history = history[-10:]  # Cap history to 10 turns
+                await nosql_set(f"history:{session_id}", json.dumps(history))
 
                 intent = result_data.get("intent_parsed", {}).get("intent")
                 if intent not in ["malicious", "greeting", "fallback"]:

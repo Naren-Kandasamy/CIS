@@ -98,6 +98,8 @@ export const createSession = (caseId: string) =>
   apiFetch<SessionMeta>(`/api/cases/${caseId}/sessions`, { method: 'POST' });
 export const getSession = (sessionId: string) =>
   apiFetch<SessionDetailResponse>(`/api/sessions/${sessionId}`);
+export const renameSession = (sessionId: string, title: string) =>
+  apiFetch<SessionMeta>(`/api/sessions/${sessionId}`, { method: 'PATCH', body: { title } });
 export const deleteSession = (sessionId: string) =>
   apiFetch<{ status: string }>(`/api/sessions/${sessionId}`, { method: 'DELETE' });
 

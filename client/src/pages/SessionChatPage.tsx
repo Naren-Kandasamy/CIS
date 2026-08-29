@@ -1,44 +1,39 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Search, Mic, Pause, Paperclip, Send, Shield, Database } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { streamQuery } from '../lib/sse';
-import { pollForCompletedJob } from '../lib/pollJob';
-import { apiFetch, getSession, transcribe } from '../lib/api';
+import { transcribe } from '../lib/api';
 import { startWavRecording, type WavRecorder } from '../lib/wavRecorder';
 import { VoiceVisualizer } from '../components/chat/VoiceVisualizer';
 import { PIPELINE_STEPS, type Message, type QueryLanguage } from '../types/chat';
 import { useAuthStore } from '../stores/authStore';
-import { useCasesStore } from '../stores/casesStore';
+import { useChatStore } from '../stores/chatStore';
 import { useEntityStore } from '../stores/entityStore';
 
-// Phase 1: the chat, lifted out of App.tsx and bound to the :sessionId route.
-// Message state is local for now; Phase 2 moves it into chatStore and Phase 3
-// splits this into ChatView / MessageList / MessageBubble / InputBar.
+// Phase 2: message state now lives in chatStore (keyed by :sessionId) so the SSE
+// loop patches messages from outside the React tree. This component is a thin
+// consumer -- Phase 3 splits it into ChatView / MessageList / MessageBubble /
+// InputBar.
 
-const greeting = (): Message[] => [
-  {
-    id: 'greet',
-    role: 'assistant',
-    content: 'Session ready. Ask about cases, sections, suspects or locations for this file.',
-  },
-];
+const EMPTY: Message[] = [];
 
 export default function SessionChatPage() {
   const { caseId, sessionId } = useParams();
   const token = useAuthStore((s) => s.token);
   const displayName = useAuthStore((s) => s.displayName);
   const logout = useAuthStore((s) => s.logout);
-  const fetchSessions = useCasesStore((s) => s.fetchSessions);
-  const touchCase = useCasesStore((s) => s.touchCase);
   const openEntity = useEntityStore((s) => s.open);
 
-  const [messages, setMessages] = useState<Message[]>(greeting);
+  const messages = useChatStore((s) => (sessionId ? s.messagesBySession[sessionId] : undefined) ?? EMPTY);
+  const isLoading = useChatStore((s) => (sessionId ? s.loadingBySession[sessionId] : false) ?? false);
+  const feedbackStatus = useChatStore((s) => s.feedbackStatus);
+  const loadHistory = useChatStore((s) => s.loadHistory);
+  const sendQuery = useChatStore((s) => s.sendQuery);
+  const submitFeedback = useChatStore((s) => s.submitFeedback);
+
   const [inputValue, setInputValue] = useState('');
   const [voiceLanguage, setVoiceLanguage] = useState<QueryLanguage>('kn');
-  const [isLoading, setIsLoading] = useState(false);
 
-  const [feedbackStatus, setFeedbackStatus] = useState<Record<string, { verdict: 'confirmed' | 'corrected' }>>({});
   const [activeCorrectionId, setActiveCorrectionId] = useState<string | null>(null);
   const [correctionExplanation, setCorrectionExplanation] = useState('');
 
@@ -48,120 +43,31 @@ export default function SessionChatPage() {
   const wavRecorderRef = useRef<WavRecorder | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isFirstTurnRef = useRef(true);
 
   // Load this session's history whenever the route id changes.
   useEffect(() => {
     if (!sessionId) return;
-    let cancelled = false;
-    setMessages(greeting());
-    isFirstTurnRef.current = true;
-    getSession(sessionId)
-      .then((data) => {
-        if (cancelled) return;
-        const history = data.history ?? [];
-        if (history.length === 0) return;
-        isFirstTurnRef.current = false;
-        setMessages([
-          { id: 'restored', role: 'assistant', content: 'Restored session history.' },
-          ...history.flatMap((h, idx) => [
-            { id: `hist-${idx}-u`, role: 'user' as const, content: h.q },
-            {
-              id: `hist-${idx}-a`,
-              role: 'assistant' as const,
-              content: h.a,
-              evidence: h.evidence as Message['evidence'],
-              visualization: h.visualization as Message['visualization'],
-            },
-          ]),
-        ]);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
+    loadHistory(sessionId);
+  }, [sessionId, loadHistory]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const patch = useCallback(
-    (id: string, fn: (m: Message) => Message) =>
-      setMessages((prev) => prev.map((m) => (m.id === id ? fn(m) : m))),
-    [],
-  );
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading || isTranscribing || !sessionId) return;
 
-    const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: inputValue };
-    const assistantMsgId = crypto.randomUUID();
-    const queryText = userMessage.content;
-
-    setMessages((prev) => [
-      ...prev,
-      userMessage,
-      { id: assistantMsgId, role: 'assistant', content: '', status: 'dispatching job', isStreaming: true },
-    ]);
+    const queryText = inputValue;
     setInputValue('');
-    setIsLoading(true);
-
-    const wasFirstTurn = isFirstTurnRef.current;
-    isFirstTurnRef.current = false;
-
-    try {
-      const { jobId, sawTerminalEvent } = await streamQuery(
-        { sessionId, query: queryText, language: voiceLanguage, token },
-        {
-          onUnauthorized: logout,
-          onProgress: (status) => patch(assistantMsgId, (m) => ({ ...m, status })),
-          onEvidence: (evidence) => patch(assistantMsgId, (m) => ({ ...m, evidence })),
-          onVisualization: (visualization) => patch(assistantMsgId, (m) => ({ ...m, visualization })),
-          onToken: (tok) => patch(assistantMsgId, (m) => ({ ...m, content: tok, isStreaming: false, status: undefined })),
-          onDone: () => patch(assistantMsgId, (m) => ({ ...m, isStreaming: false, status: undefined })),
-          onError: (msg) =>
-            patch(assistantMsgId, (m) => ({ ...m, content: `Error: ${msg}`, isStreaming: false, status: undefined })),
-        },
-      );
-
-      if (!sawTerminalEvent && jobId) {
-        const recovered = await pollForCompletedJob(jobId, token);
-        patch(assistantMsgId, (m) =>
-          recovered?.status === 'done'
-            ? {
-                ...m,
-                content: recovered.answer ?? m.content,
-                evidence: recovered.evidence ?? m.evidence,
-                visualization: recovered.visualization ?? m.visualization,
-                isStreaming: false,
-                status: undefined,
-              }
-            : {
-                ...m,
-                content:
-                  recovered?.error ??
-                  'This query took longer than expected and the connection closed. Please try again.',
-                isStreaming: false,
-                status: undefined,
-              },
-        );
-      }
-
-      if (caseId) {
-        touchCase(caseId);
-        if (wasFirstTurn) fetchSessions(caseId).catch(() => {}); // pick up the server-set title
-      }
-    } catch (error) {
-      const message =
-        error instanceof TypeError
-          ? 'Unable to reach the server. Please check your connection and try again.'
-          : 'Something went wrong while processing your query. Please try again.';
-      patch(assistantMsgId, (m) => ({ ...m, content: message, isStreaming: false, status: undefined }));
-    } finally {
-      setIsLoading(false);
-    }
+    await sendQuery({
+      sessionId,
+      caseId,
+      text: queryText,
+      language: voiceLanguage,
+      token,
+      onUnauthorized: logout,
+    });
   };
 
   const handleFeedbackSubmit = async (
@@ -169,28 +75,17 @@ export default function SessionChatPage() {
     verdict: 'confirmed' | 'corrected',
     explanation?: string,
   ) => {
-    const key = item.edge_id || item.fir_id;
-    try {
-      await apiFetch('/api/feedback/correction', {
-        method: 'POST',
-        body: {
-          event_id: crypto.randomUUID(),
-          session_id: sessionId,
-          officer_id: displayName || 'officer',
-          timestamp: new Date().toISOString(),
-          query_text: messages[messages.length - 2]?.content || '',
-          edge_type: item.edge_type || 'NARRATIVE_SIMILARITY',
-          crime_type: item.crime_type || null,
-          edge_id: item.edge_id || null,
-          verdict,
-          explanation: explanation || null,
-        },
-      });
-      setFeedbackStatus((prev) => ({ ...prev, [key]: { verdict } }));
+    const ok = await submitFeedback({
+      sessionId,
+      item,
+      verdict,
+      explanation,
+      queryText: messages[messages.length - 2]?.content || '',
+      officerId: displayName || 'officer',
+    });
+    if (ok) {
       setActiveCorrectionId(null);
       setCorrectionExplanation('');
-    } catch {
-      /* surfaced inline by leaving the controls in place */
     }
   };
 

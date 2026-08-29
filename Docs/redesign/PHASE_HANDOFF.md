@@ -41,8 +41,8 @@ Design decisions locked with the user:
 |---|---|---|
 | 0 — Foundation | ✅ done (`8819a56`) | types module, SSE extraction, dead-code purge |
 | 1 — Router + shell + folder grid | ✅ done (`7992d08`) | routes, stores, AppShell, folder room, chat page |
-| 2 — State migration | ⏳ next | chat `messagesBySession` → `chatStore`; session-id contract |
-| 3 — Chat extraction | pending | split SessionChatPage into chat/* components; delete App.tsx |
+| 2 — State migration | ✅ done | chat `messagesBySession` → `chatStore`; session-id + title contract |
+| 3 — Chat extraction | ⏳ next | split SessionChatPage into chat/* components; delete App.tsx |
 | 4 — Case Workspace + backend persistence | pending | `case_board_layout` API, `hypotheses_by_case`, per-case workspace |
 | 5 — Corkboard | pending | React Flow spike → freeform board, yarn edges, retire HypothesisWorkspace |
 | 6 — Theme refinement | pending | token reconciliation, Login tokenize, index.css split, board tokens |
@@ -158,7 +158,67 @@ a large empty gap; `App.tsx` orphaned (delete end of Phase 3).
 
 ---
 
-## Phase 2 — NEXT. Goal
+## Phase 2 — DONE
+
+**New — `client/src/stores/chatStore.ts`** (zustand): owns
+`messagesBySession: Record<string, Message[]>`, `loadingBySession`,
+`feedbackStatus`. Actions:
+- `loadHistory(sessionId)` — reset to greeting, then `getSession` → hydrate
+  `restored` + `hist-N-u/-a` turns (byte-identical to the old effect body).
+- `patchMessage(sessionId, id, fn)` — the single message-patch reducer.
+- `sendQuery({sessionId, caseId?, text, language, token, onUnauthorized?})` —
+  pushes user + assistant placeholder, runs `streamQuery` with handlers wired to
+  `get().patchMessage(...)` (no stale closures), `pollForCompletedJob` recovery,
+  then `touchCase` + first-turn `renameSession` → `fetchSessions`. Reducer bodies
+  copied verbatim from Phase 1's `patch(...)` calls. `wasFirstTurn` is derived
+  (`!messages.some(m => m.role === 'user')`) — the `isFirstTurnRef` is gone.
+- `submitFeedback({sessionId, item, verdict, explanation, queryText, officerId})`
+  — the `/api/feedback/correction` POST; returns `boolean` ok.
+
+**Changed — `pages/SessionChatPage.tsx`**: now a thin `chatStore` consumer.
+Selector-scoped reads (`messagesBySession[sessionId]`, `loadingBySession`,
+`feedbackStatus`). Local state kept: `inputValue`, `voiceLanguage`,
+`activeCorrectionId`, `correctionExplanation`, voice/recording. **Exact JSX
+preserved** (Phase 3 splits it). `handleSubmit` → `sendQuery`; `handleFeedbackSubmit`
+→ `submitFeedback`.
+
+**Session-id + title contract:**
+- `crypto.randomUUID` audit: only legit uses remain — `chatStore` message ids
+  (user + assistant placeholder) and the feedback `event_id`. No session minting.
+- **New `PATCH /api/sessions/{session_id}` `{title}`** in `backend/api/routes/sessions.py`
+  (`SessionPatchRequest`, min 1 / max 120 chars, `_require_collaborator`,
+  re-read under `get_case_lock`). `lib/api.ts` → `renameSession(sessionId, title)`.
+  `chatStore.sendQuery` calls it on the first turn with `text.trim().slice(0, 80)`,
+  then `fetchSessions` so the sidebar shows the query as the session label.
+- **`history:{session_id}` local-dev fix** — `backend/job_dispatch.py`
+  `_local_pipeline_runner` was mutating an in-memory `session_state["history"]`
+  (in `{role,content}` shape) that was **never written back**, so local sessions
+  always reloaded empty. Now appends `{q, a}` to `history:{session_id}` capped at
+  10 turns — matching the Signals path in `pipeline_function/main.py`. Production
+  path was already correct; `functions/ps_1_cis_function/job_dispatch.py` is a
+  41-line status-helper shim with no runner, so no mirror change.
+
+**Test — `client/src/stores/chatStore.test.ts`** (5 cases, mocks `../lib/utils`
+`fetchWithRetry`): SSE token/evidence/visualization parity onto the assistant
+message; no-terminal stream → status-poll recovery; multi-turn history
+accumulation; `loadHistory` hydrate + empty-history greeting fallback. All green
+(13 total with `sse.test.ts`).
+
+**Verified live in Chrome**: login → folder → new session (`+`) → query → full
+7-step pipeline through `chatStore` → answer + 11-citation evidence → Confirm
+feedback records → sidebar session relabels to the first query → **reload
+restores the transcript** ("Restored session history." + turns). Zero console
+errors. Known Phase-1 debt still open: a cold deep-link to a session URL leaves
+the sidebar without case context until `/cases` is visited (casesStore empty).
+
+**Gate status:** `npx vitest run` 13/13 · `npx vite build` clean · touched files
+tsc-clean. Backend was restarted (no `--reload`) to pick up the two backend
+changes — restart it after any future backend edit:
+`source .venv/bin/activate && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001`.
+
+---
+
+## Phase 2 — original goal (for reference)
 
 Move the chat's per-session message state out of the component into a store, and
 adopt the server-issued session-id contract. This is the riskiest state change —
@@ -206,3 +266,47 @@ mirror), `backend/api/routes/sessions.py` + `cases.py` (session-id / title),
 `chatStore`; `vite build` + `vitest` green; new `chatStore.test.ts` passes;
 committed as `feat(client): Phase 2 — chat state store + session-id contract`.
 Then update this file's Phase 2 section, mark Phase 3 as next, and stop for /compact.
+
+---
+
+## Phase 3 — NEXT. Goal
+
+Split `pages/SessionChatPage.tsx` (~330 lines of inline JSX) into
+`components/chat/*`, preserving every behavior, and **delete the orphaned
+`client/src/App.tsx`** (nothing imports it since Phase 1; auth/shell now live in
+`AppShell` + `authStore`).
+
+**Do:**
+1. `pages/SessionChatPage.tsx` stays the route entry — reads `:sessionId`,
+   subscribes `chatStore`, `loadHistory` on mount — but renders `<ChatView>`.
+2. New `components/chat/`:
+   - `ChatView.tsx` — the `.chat-container` layout (message list + input area).
+   - `MessageList.tsx` — maps messages, owns `messagesEndRef` autoscroll.
+   - `MessageBubble.tsx` — avatar + `ReactMarkdown` + `QUERY`/`FIELD REPORT`
+     stamp; hosts `PipelineProgress` + `EvidencePanel`.
+   - `PipelineProgress.tsx` — the `PIPELINE_STEPS` stepper (status pill + dots).
+   - `EvidencePanel.tsx` / `EvidenceCard.tsx` — the `<details>` evidence block;
+     card opens `entityStore.open`; hosts `FeedbackControls`.
+   - `FeedbackControls.tsx` — Confirm / Correct + explanation textarea; calls
+     `chatStore.submitFeedback` (move `activeCorrectionId` /
+     `correctionExplanation` local state in here).
+   - `InputBar.tsx` — Paperclip, text input, EN/HI/KN select, Mic, Send.
+   - `hooks/useVoiceRecorder.ts` — lift the `wavRecorder` mic/transcribe/pause
+     flow out of the page; keeps rendering `components/chat/VoiceVisualizer.tsx`.
+3. Delete `client/src/App.tsx` and `client/src/App.css` if still present. Grep
+   for any lingering import first.
+4. Playwright parity (or live Chrome): progress pill appears→hides, evidence
+   renders, feedback records, SSE "stream cut → poll recovers" path.
+
+**Risk:** pure structural refactor — no store/API changes. Keep prop-drilling
+shallow (pass `sessionId` + store selectors down, or let leaf components select
+from `chatStore` themselves). Don't change class names — `styles/*` and the
+Case File CSS target them.
+
+**Entry points:** `pages/SessionChatPage.tsx` (the JSX to split),
+`stores/chatStore.ts` (already the data source), `components/chat/VoiceVisualizer.tsx`,
+`lib/wavRecorder.ts`, `App.tsx` (delete target).
+
+**Exit criteria:** chat identical; `App.tsx` gone; `vite build` + `vitest`
+green; committed `feat(client): Phase 3 — chat component extraction + drop App.tsx`.
+Update this file, mark Phase 4 next, stop for /compact.
