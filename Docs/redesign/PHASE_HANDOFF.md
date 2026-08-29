@@ -882,3 +882,53 @@ own — **separate from the cases**, not inside a case.
   behind a key. Same as the reference screenshot; markers + zoom/pan work.
   Switching to plain OSM tiles would drop the watermark but also the
   sepia-dossier tint.
+
+---
+
+## Post-Phase-7 — Entity relation network wired to the graph DB (`a712218`)
+
+Both ER networks were rendering hardcoded demo elements. They now query
+the Memgraph investigation graph.
+
+**Backend — `backend/api/routes/graph.py`** (was `return {"nodes": [], "edges": []}`):
+- `GET /api/cases/{case_id}/graph` — per-case. Seed FIR ids = that case's
+  pinned citations + hypothesis `fir_id` / `linked_entity_ids`; one hop over
+  `(:Accused)-[:ACCUSED_IN]->(:FIR)` and `(:Victim)-[:VICTIM_IN]->(:FIR)`,
+  `FIR.district` as a Location node. `_require_collaborator`-gated.
+- `GET /api/graph` — officer-wide. Union of seed FIRs across every case in
+  `user_cases:{username}`. An Accused linked to FIRs from ≥ 2 distinct
+  cases gets `data.shared = true` + `data.caseCount` — the cross-case
+  bridge. `data.firCount` on every accused.
+- Cytoscape `elements` shape (matches the pipeline's viz). Graph DB down →
+  `{elements: [], degraded: true}` at 200. Caps: 400 seed FIRs / 1200
+  elements. Backend-only, **no `functions/` mirror**.
+- **Schema gotcha**: this dataset labels offenders `:Accused` (54 nodes /
+  2086 `ACCUSED_IN`), *not* `:Person`. The query pipeline's
+  `MATCH (p:Person)-[r]->(f:FIR)` in
+  `pipeline_function/pipeline/langgraph_router.py` therefore builds an
+  empty graph — that's the real reason the ER network only ever showed
+  demo data. Worth fixing in the pipeline too (out of scope here).
+
+**Frontend:**
+- `lib/api.ts`: `getGlobalGraph()`, `getCaseGraph(caseId)`, `GraphResponse`.
+- `NetworkGraph.tsx`: new `fallbackToDemo` prop (default `true` keeps
+  legacy callers on the demo graph). When `false`, an empty dataset shows
+  an empty-state, not the demo. New node styles: `victim` (gold, heart
+  glyph) and `.shared` (4px gold ring) for cross-case accused.
+- `GlobalDashboardPage.tsx`: fetches `/api/graph`, 4-item legend
+  (Accused / FIR / Location / Victim), surfaces
+  `shared_accused_count` in the panel copy.
+- `WorkspaceGraphs.tsx`: ER network now from `/api/cases/:id/graph`; the
+  Leaflet map still derives its markers client-side (the graph carries
+  `district`, not lat/long).
+
+**Tests** — `tests/test_graph_endpoints.py` (5): cross-case `shared`
+flagging, degraded-fallback, per-case collaborator gate, per-case element
+assembly. `pytest` needs `pytest`+`pytest-asyncio` (installed into
+`.venv` during Phase 7). 33 pass in the wider run.
+
+**Verified live** (Chrome, Test Case Beta): `/dashboard` and the case
+workspace both render real FIR/Location nodes from the two pinned
+citations; zero console errors. The demo case's pinned FIRs have no
+`ACCUSED_IN` edges in Memgraph, so no Accused nodes show for it — correct;
+pinning an accused-bearing FIR fills the network in (covered by the tests).
