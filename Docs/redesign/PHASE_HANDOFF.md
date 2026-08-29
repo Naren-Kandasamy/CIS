@@ -44,7 +44,8 @@ Design decisions locked with the user:
 | 2 — State migration | ✅ done (`db6247e`) | chat `messagesBySession` → `chatStore`; session-id + title contract |
 | 3 — Chat extraction | ✅ done | split SessionChatPage into `components/chat/*`; `useVoiceRecorder`; deleted App.tsx |
 | 4 — Case Workspace + backend persistence | ✅ done | `case_board_layout` API, `hypotheses_by_case`, `boardStore`, persistent per-case workspace, chat "Pin to board" |
-| 5 — Corkboard | ⏳ next | React Flow spike → freeform board, yarn edges, retire HypothesisWorkspace |
+| 5 — Corkboard | ✅ done | hand-rolled pan/zoom board, draggable pinned cards, red-yarn links, hypothesis check/resolve inline, retired HypothesisWorkspace + DashboardPanel |
+| 6 — Theme refinement | ⏳ next | token reconciliation in `index.css`, `Login.tsx` tokenization, split `index.css` into `styles/*`, delete 4 orphaned analytics charts, `--text-tertiary` contrast |
 | 6 — Theme refinement | pending | token reconciliation, Login tokenize, index.css split, board tokens |
 | 7 — Verification | continuous | Playwright + backend tests + impeccable audit |
 
@@ -506,10 +507,111 @@ persistence`. Update this file, mark Phase 5 next, stop for /compact.
 
 ---
 
-## Phase 5 — NEXT. Goal
+## Phase 5 — DONE
 
-The freeform **paper corkboard** at `/cases/:caseId/board` (today a stub
-EmptyState in `pages/CorkboardPage.tsx`). Full detail in the plan file §"Phase 5".
+The freeform **paper corkboard** at `/cases/:caseId/board`, persistent per case.
+
+### Spike outcome — hand-rolled, NOT React Flow
+
+`@xyflow/react` was **not added**. A corkboard is freeform absolute-positioned
+paper with an SVG yarn layer — not a node-graph needing a layout engine, handles
+or connection validation. React Flow would have shipped ~40KB + its own CSS to
+scope away, for features we don't use. Went with the plan's documented fallback:
+a single CSS `transform: translate() scale()` on a `.corkboard-surface`, pointer
+events on `window` during drag (no pointer capture, so `[data-no-drag]`
+descendants keep their own clicks), a native non-passive `wheel` listener for
+cursor-anchored zoom, and a hand-drawn `<svg>` yarn layer. Zero new deps.
+
+### Backend
+
+None — Phase 4 already shipped `GET`/`PUT /api/cases/:id/board/layout` and
+`GET`/`POST /api/cases/:id/hypotheses`.
+
+### Frontend — new files
+
+- **`stores/boardStore.ts`** (extended): `setLayout`, `upsertCard`, `patchCard`,
+  `removeCard`, `persistLayout(caseId, delayMs=800)` (module-scoped debounce
+  timers, PUT without rollback — drags already applied locally), `applyHypothesis`
+  (upsert one record after resolve). Plus exported **`deriveBoardCards(layout,
+  hypotheses, pins)`** — the server layout doc is authoritative for *placed*
+  cards; hypotheses / citation pins / suspect pins with no layout entry are
+  materialized at a deterministic FNV-hash scatter position (`hyp:<id>`,
+  `fir:<firId>`, `suspect:<id>`), and stop being synthesized once dragged (which
+  writes them to the layout).
+- **`hooks/useHypotheses.ts`** — wraps the four calls unchanged: list + create in
+  `boardStore` (shared with the workspace strip), `check` / `resolve` local
+  (transient `checkLogs` + `busyId` state here).
+- **`components/board/`**:
+  - `CorkboardCanvas.tsx` — owns `view {x,y,k}`, pan (drag empty cork), wheel
+    zoom (clamped 0.4–2, cursor-anchored), toolbar zoom/fit/reset, auto-fit once
+    after `loadingByCase[caseId]` flips false, link mode (`toggleLink` — click
+    two cards to cord, click a corded pair to cut), `addNote`, `addCardForEntity`
+    (from a hypothesis's dashed entity chip), yarn-edge derivation (explicit
+    `card.connections` solid + implicit hypothesis→refId dashed), fresh-edge
+    animation for ~700ms after a link is drawn.
+  - `BoardCardFrame.tsx` — draggable pinned-paper wrapper; screen delta ÷ zoom;
+    `[data-no-drag]` guard; renders `Pushpin` + children; `<3px` move = select.
+  - `HypothesisNoteCard.tsx` — ruled index card, status ribbon
+    (open/confirmed/refuted), statement, entity chips (● has card / dashed +add),
+    inline Check / Confirm / Refute with a reason textarea; check log renders
+    under the body.
+  - `SuspectTile.tsx` (initials plate), `FirCard.tsx` (id + type + district +
+    confidence), `FreeNoteCard.tsx` (double-click → textarea, blur commits, trash
+    button), `Pushpin.tsx` (`--pin-color` custom prop), `YarnLayer.tsx` (quadratic
+    bezier with downward sag; `stroke-dashoffset` draw animation gated on
+    `prefers-reduced-motion`), `BoardToolbar.tsx`.
+- **`styles/board.css`** (new, `@import`ed into `index.css` after `casefolder.css`)
+  — every rule scoped under `.corkboard`: cork surface (speckle grain, wood
+  border, inset shadow), pins, index-card rules, yarn, toolbar, `.board-page` /
+  `.board-stage` wrappers.
+- **`pages/CorkboardPage.tsx`** — rewritten: `loadCase` on mount, `deriveBoardCards`
+  via `useMemo`, EmptyState until cards exist, else `<CorkboardCanvas>`.
+- `stores/entityStore` reused — suspect / FIR card click opens the app-level
+  `EntityDrawer`.
+
+### Retired
+
+- **Deleted** `components/dashboard/HypothesisWorkspace.tsx` (broken `str`
+  pseudo-types, direct `sessionStorage`) and `components/dashboard/DashboardPanel.tsx`
+  (its only importer). Both were already orphaned after Phase 4. Phase 4's handoff
+  said DashboardPanel goes in Phase 6 — done early here since deleting
+  HypothesisWorkspace broke its import.
+- **Still orphaned, for Phase 6 deletion**: `components/stats.tsx`,
+  `recent-conversations.tsx`, `conversation-volume-chart.tsx`,
+  `channel-breakdown-chart.tsx` (+ `delta.tsx` if unused).
+
+### Gates
+
+`cd client`: `npx vite build` clean (309 modules), `npx vitest run` 13/13,
+`npx tsc -p tsconfig.app.json` — **0 errors in any Phase 5 file** (repo-wide count
+dropped 37 → 27, the two deleted dashboard files took 10 pre-existing errors with
+them), `npx oxlint src/` — 24 findings, all pre-existing (was 25; one fewer after
+the DashboardPanel delete), **0 in `components/board/` or the new store/hook**.
+
+### Live-verified in Chrome (real backend, Test Case Beta `c_98e67a51`)
+
+Board renders with cork surface + pushpins + 1 hypothesis card (OPEN ribbon) + 2
+FIR cards (from Phase 4's pins). Pan / wheel-zoom / toolbar zoom / fit / reset all
+work. **Dragged the hypothesis card → reload → position restored.** Link mode:
+corded hypothesis ↔ FIR → red sagging yarn → **reload → yarn restored** (persisted
+in `BoardCard.connections`). Clicked **Check** → `POST …/hypothesis/:id/check`
+round-trip, log rendered inline under the statement. Zero console errors
+throughout. Auto-fit now waits for the layout doc so cards land centred (earlier
+it fit to synth scatter positions and never re-fit).
+
+### Known follow-ups (not blocking)
+
+- Check logs are session-transient (no server list endpoint to re-read them).
+- No per-card resize handle (cards use fixed per-kind dimensions).
+- `deriveBoardCards` scatter can still overlap for hash collisions on 3+ unplaced
+  cards; harmless once dragged.
+
+---
+
+## Phase 5 — original goal (for reference)
+
+The freeform **paper corkboard** at `/cases/:caseId/board`. Full detail in the
+plan file §"Phase 5".
 
 **Canvas tech — `@xyflow/react` (React Flow v12), spike first (~half the phase):**
 cork `<Background>` + one `SuspectTile` node + one `YarnEdge` at zoom ≠ 1.
@@ -550,3 +652,61 @@ into `.dossier-*` / `.message`.
 hypotheses editable there; `vite build` + `vitest` green; live-verified in
 Chrome. Commit `feat: Phase 5 — corkboard hypothesis/evidence board`. Update this
 file, mark Phase 6 next, stop for /compact.
+
+---
+
+## Phase 6 — NEXT. Goal
+
+Theme refinement — keep the "Case File" identity, no visual redesign. Full detail
+in the plan file §"Phase 6".
+
+**Do:**
+- **Token reconciliation** (`client/src/index.css`): `:root` defines two parallel
+  sets with duplicated literals (`--bg-*`/`--accent-*`/`--text-*` vs shadcn
+  `--background`/`--primary`/…); `.dark` is a verbatim copy (no-op). Make the
+  custom primitives the single source of truth; shadcn tokens **reference** them
+  (`--background: var(--bg-primary)`, `--primary: var(--accent-primary)`, charts →
+  `--accent-*`/`--accent-gold`, …). Collapse or delete `.dark`. Keep `@theme
+  inline`.
+- **Contrast fix**: `--text-tertiary #8a7d67` on `--bg-primary #e9e1cd` ≈ 3.0:1 —
+  fails ≥4.5:1 for body text. Darken to ~`#6f6047` or restrict to large /
+  decorative labels; audit every usage.
+- **`Login.tsx` tokenization**: ~40 inline hex / `fontFamily` literals + an
+  `inkBorder()` helper → replace with tokens; move chrome into `styles/auth.css`
+  (`.auth-screen`, `.auth-card`, `.auth-field`, classification bar, folded
+  corner); `inkBorder()` → CSS `:focus-within` + `[aria-invalid]`. Same markup.
+- **`index.css` reorg**: split into ordered `@import`ed partials under
+  `client/src/styles/`: `tokens.css` → `base.css` → `theme-casefile.css` →
+  `dashboard.css` (`.dossier-*`) → `entity-drawer.css` → `auth.css` (new) →
+  `casefolder.css` → `sidebar.css` → `ui.css` → `board.css`. `index.css` keeps
+  only font `@import`, tailwind/tw-animate/shadcn imports, the partials, `@theme
+  inline`, `@layer base`.
+- **Delete orphans**: `components/stats.tsx`, `recent-conversations.tsx`,
+  `conversation-volume-chart.tsx`, `channel-breakdown-chart.tsx` (+ `delta.tsx`,
+  `formater.ts` if grep-clean). `DashboardPanel.tsx` + `HypothesisWorkspace.tsx`
+  already deleted in Phase 5.
+- **Cosmetic debt noted earlier**: folder tiles read a little flat; chat greeting
+  spacing; entity-drawer `border-left:3px` review.
+- **Motion audit**: only two authored moments — folder open (Phase 1) + yarn
+  draw (Phase 5). Everything else stays 120–280ms ease. Honor
+  `prefers-reduced-motion`.
+- **Audit**: `impeccable/scripts/detect.mjs` + `palette.mjs`; manual pass against
+  `craft-floor.md` for required states (hover / disabled / loading / error /
+  empty / focus / responsive) on every redesign component; 65–75ch prose measure.
+
+**Exit criteria:** `vite build` + `vitest` green; tokens single-sourced;
+`--text-tertiary` passes contrast; Login has no inline literals; orphans gone;
+live-verified in Chrome. Commit `feat: Phase 6 — theme reconciliation`. Update
+this file, mark Phase 7 next, stop for /compact.
+
+---
+
+## Phase 7 — verification (after Phase 6)
+
+Playwright `tests/test_ui_redesign_playwright.py` (folder-grid landing, dialog
+case create, session URL shape, query → progress → evidence, board drag →
+reload persists, pin → reload persists, SSE poll-recovery). Backend
+`tests/test_cases_board_layout.py` (PUT/GET layout, 201-card / oversized-text /
+oversized-connections → 422, case-lock, `delete_case` cleanup) + hypothesis
+`case_id` tests. Impeccable screenshot audit at 1440 / 768 / 375 for `/login`,
+`/cases`, `/cases/:id`, `/cases/:id/sessions/:sid`, `/cases/:id/board`.

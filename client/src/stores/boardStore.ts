@@ -37,7 +37,25 @@ interface BoardState {
   pin: (input: PinInput) => Promise<void>;
   putLayout: (caseId: string, cards: BoardCard[]) => Promise<void>;
   addHypothesis: (input: AddHypothesisInput) => Promise<HypothesisRecord>;
+
+  // ── corkboard (Phase 5) — local layout edits + a debounced server flush ──
+  /** Replace the whole local layout for a case (no network). */
+  setLayout: (caseId: string, cards: BoardCard[]) => void;
+  /** Insert a card, or replace the one with the same id, in the local layout. */
+  upsertCard: (caseId: string, card: BoardCard) => void;
+  /** Shallow-merge a patch into an existing local card (no-op if absent). */
+  patchCard: (caseId: string, id: string, patch: Partial<BoardCard>) => void;
+  /** Drop a card from the local layout. */
+  removeCard: (caseId: string, id: string) => void;
+  /** Debounced PUT of the current local layout (drags are already applied). */
+  persistLayout: (caseId: string, delayMs?: number) => void;
+  /** Upsert a single hypothesis record into hypothesesByCase (after resolve). */
+  applyHypothesis: (caseId: string, record: HypothesisRecord) => void;
 }
+
+// Debounce timers for persistLayout, keyed by case id — module-scoped so they
+// survive re-renders and store recreation is not a concern (store is a singleton).
+const _flushTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 export const useBoardStore = create<BoardState>((set, get) => ({
   pinsByCase: {},
@@ -126,4 +144,154 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     }));
     return hypothesis;
   },
+
+  setLayout: (caseId, cards) =>
+    set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: cards } })),
+
+  upsertCard: (caseId, card) =>
+    set((s) => {
+      const prev = s.layoutByCase[caseId] ?? [];
+      const idx = prev.findIndex((c) => c.id === card.id);
+      const next = idx === -1 ? [...prev, card] : prev.map((c) => (c.id === card.id ? card : c));
+      return { layoutByCase: { ...s.layoutByCase, [caseId]: next } };
+    }),
+
+  patchCard: (caseId, id, patch) =>
+    set((s) => {
+      const prev = s.layoutByCase[caseId] ?? [];
+      if (!prev.some((c) => c.id === id)) return {};
+      return {
+        layoutByCase: {
+          ...s.layoutByCase,
+          [caseId]: prev.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        },
+      };
+    }),
+
+  removeCard: (caseId, id) =>
+    set((s) => ({
+      layoutByCase: {
+        ...s.layoutByCase,
+        [caseId]: (s.layoutByCase[caseId] ?? []).filter((c) => c.id !== id),
+      },
+    })),
+
+  persistLayout: (caseId, delayMs = 800) => {
+    if (_flushTimers[caseId]) clearTimeout(_flushTimers[caseId]);
+    _flushTimers[caseId] = setTimeout(() => {
+      delete _flushTimers[caseId];
+      const cards = get().layoutByCase[caseId] ?? [];
+      api
+        .putBoardLayout(caseId, cards)
+        .then(({ cards: saved }) =>
+          set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: saved } })),
+        )
+        .catch(() => {
+          // Keep the local layout; the next drag/link retries the flush.
+        });
+    }, delayMs);
+  },
+
+  applyHypothesis: (caseId, record) =>
+    set((s) => {
+      const prev = s.hypothesesByCase[caseId] ?? [];
+      const idx = prev.findIndex((h) => h.hypothesis_id === record.hypothesis_id);
+      const next =
+        idx === -1 ? [record, ...prev] : prev.map((h) => (h.hypothesis_id === record.hypothesis_id ? record : h));
+      return { hypothesesByCase: { ...s.hypothesesByCase, [caseId]: next } };
+    }),
 }));
+
+// ── derived board cards ────────────────────────────────────────────────────
+// The server layout doc (case_board_layout) is authoritative for *placed* cards.
+// Hypotheses and pins that have no layout entry yet are materialized here at a
+// deterministic scatter position; once the user drags one it is written to the
+// layout and this synthesis no longer applies to it.
+
+const SCATTER_COLS = 4;
+
+function hashStr(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function scatter(id: string, idx: number): { x: number; y: number; rotation: number } {
+  const h = hashStr(id);
+  const col = idx % SCATTER_COLS;
+  const row = Math.floor(idx / SCATTER_COLS);
+  return {
+    x: 80 + col * 300 + ((h % 40) - 20),
+    y: 80 + row * 280 + (((h >> 6) % 40) - 20),
+    rotation: ((h >> 12) % 9) - 4,
+  };
+}
+
+export function deriveBoardCards(
+  layout: BoardCard[] | undefined,
+  hypotheses: HypothesisRecord[] | undefined,
+  pins: PinnedItem[] | undefined,
+): BoardCard[] {
+  const out: BoardCard[] = layout ? [...layout] : [];
+  const ids = new Set(out.map((c) => c.id));
+  const push = (card: BoardCard) => {
+    if (ids.has(card.id)) return;
+    ids.add(card.id);
+    out.push(card);
+  };
+
+  (hypotheses ?? []).forEach((h) => {
+    const id = `hyp:${h.hypothesis_id}`;
+    if (ids.has(id)) return;
+    push({
+      id,
+      kind: 'hypothesis',
+      refId: h.hypothesis_id,
+      w: 250,
+      h: 200,
+      color: 'var(--pin-gold)',
+      connections: [],
+      ...scatter(id, out.length),
+    });
+  });
+
+  (pins ?? []).forEach((p) => {
+    const c = p.content as Record<string, any>;
+    if (p.content_type === 'citation') {
+      const fir = String(c.fir_id ?? c.data?.crime_no ?? '').trim();
+      if (!fir) return;
+      const id = `fir:${fir}`;
+      if (ids.has(id)) return;
+      push({
+        id,
+        kind: 'fir',
+        refId: fir,
+        w: 220,
+        h: 120,
+        color: 'var(--pin-green)',
+        connections: [],
+        ...scatter(id, out.length),
+      });
+    } else if (p.content_type === 'suspect') {
+      const sid = String(c.id ?? c.label ?? c.name ?? '').trim();
+      if (!sid) return;
+      const id = `suspect:${sid}`;
+      if (ids.has(id)) return;
+      push({
+        id,
+        kind: 'suspect',
+        refId: sid,
+        w: 150,
+        h: 175,
+        color: 'var(--pin-blue)',
+        connections: [],
+        ...scatter(id, out.length),
+      });
+    }
+  });
+
+  return out;
+}
