@@ -75,7 +75,14 @@ async def lifespan(app: FastAPI):
     from shared.graph_client import close as close_graph_driver
     await close_graph_driver()
 
-app = FastAPI(lifespan=lifespan)
+# Disable public Swagger/Redoc API documentation for security.
+# Exposing the API schema of a police intelligence system is an information disclosure vulnerability.
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
+)
 
 import os
 
