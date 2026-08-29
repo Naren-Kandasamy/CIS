@@ -1,0 +1,236 @@
+/* Shared primitives introduced by the redesign: modal, empty state, buttons,
+   dialog forms, the routed app shell. Case File idiom, token-driven. */
+
+/* ── app shell / routed layout ─────────────────────────────────────────── */
+.shell-main {
+  flex: 1;
+  min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.route-fallback {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.85rem;
+}
+
+/* chat page fills the shell; its message list does the scrolling */
+.shell-main > .chat-container {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* per-case workspace + board pages */
+.workspace-page {
+  padding: 40px clamp(24px, 5vw, 56px);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 100%;
+}
+
+.workspace-head {
+  border-bottom: 1px dashed var(--glass-border);
+  padding-bottom: 16px;
+}
+
+.workspace-head h1 {
+  font-size: clamp(1.4rem, 2.6vw, 1.8rem);
+  color: var(--text-primary);
+}
+
+.workspace-head p {
+  margin-top: 4px;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+.workspace-page .empty-state {
+  margin-top: 8vh;
+}
+
+/* ── buttons ───────────────────────────────────────────────────────────── */
+.btn-primary,
+.btn-danger,
+.btn-ghost {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: var(--radius, 0.3rem);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--accent-primary);
+  color: var(--primary-foreground, #f4eeda);
+  border-color: var(--accent-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-primary-hover, #6f211c);
+}
+
+.btn-danger {
+  background: var(--accent-primary);
+  color: #f4eeda;
+  border-color: var(--accent-primary);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--accent-primary-hover, #6f211c);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--glass-border);
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.btn-primary:disabled,
+.btn-danger:disabled,
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── modal ─────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(36, 29, 20, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 24px;
+  box-shadow: 0 24px 60px -20px rgba(36, 29, 20, 0.55);
+}
+
+.modal-title {
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.modal-description {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* ── dialog form fields ────────────────────────────────────────────────── */
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dialog-field > span {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.dialog-field input {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.dialog-field input:focus-visible {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.dialog-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.dialog-error {
+  color: var(--accent-primary);
+  font-size: 0.78rem;
+}
+
+/* ── empty state ───────────────────────────────────────────────────────── */
+.empty-state {
+  margin: auto;
+  max-width: 380px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+  color: var(--text-tertiary);
+}
+
+.empty-state-title {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.empty-state-message {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.empty-state-action {
+  display: flex;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay {
+    backdrop-filter: none;
+  }
+}

@@ -1,0 +1,181 @@
+/* Routed case-drawer sidebar. Sits on top of the existing .sidebar base rules
+   in index.css (folder spine, punched holes, brand). */
+
+.drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.drawer-link,
+.drawer-sublink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.drawer-link:hover,
+.drawer-sublink:hover {
+  color: var(--text-primary);
+  background: var(--sidebar-accent);
+}
+
+.drawer-link.active,
+.drawer-sublink.active {
+  color: var(--text-primary);
+  background: var(--sidebar-accent);
+  font-weight: 600;
+}
+
+.drawer-link--action {
+  color: var(--accent-primary);
+}
+
+.drawer-case {
+  margin: 10px 0 4px;
+  padding: 10px 0 4px;
+  border-top: 1px solid var(--paper-line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.drawer-case-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: 4px 12px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-sublink {
+  padding: 8px 12px 8px 14px;
+  font-size: 0.82rem;
+}
+
+.drawer-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.drawer-sessions-head button {
+  background: transparent;
+  border: none;
+  color: var(--accent-secondary);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.drawer-sessions-head button:hover {
+  background: var(--sidebar-accent);
+}
+
+.drawer-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+  margin-left: 10px;
+  border-left: 1px dashed var(--paper-line);
+}
+
+.drawer-sessions-empty {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  padding: 4px 8px;
+  font-style: italic;
+}
+
+.drawer-session-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawer-session-link {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-session-link:hover {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.drawer-session-link.active {
+  color: var(--accent-primary);
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.drawer-session-del {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  transition: opacity 0.14s ease, color 0.14s ease;
+}
+
+.drawer-session-row:hover .drawer-session-del {
+  opacity: 1;
+}
+
+.drawer-session-del:hover {
+  color: var(--accent-primary);
+}
+
+.drawer-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--paper-line);
+}
+
+.drawer-user {
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.drawer-user strong {
+  color: var(--text-primary);
+}

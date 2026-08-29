@@ -2,6 +2,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./styles/ui.css";
+@import "./styles/sidebar.css";
+@import "./styles/casefolder.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -23,6 +26,7 @@
 
   /* Ink / stamp accents */
   --accent-primary: #8a2a24;
+  --accent-primary-hover: #6f211c;
   --accent-glow: rgba(138, 42, 36, 0.28);
   --accent-secondary: #2f4a3c;
   --accent-gold: #a9791f;
