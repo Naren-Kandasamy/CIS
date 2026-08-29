@@ -7,6 +7,7 @@ from typing import Optional, List
 class HypothesisRecord(BaseModel):
     hypothesis_id: str
     fir_id: str
+    case_id: Optional[str] = None      # set when the hypothesis is case-scoped (Phase 4)
     officer_id: str
     statement: str                    # free text, officer-authored
     linked_entity_ids: List[str]      # accused_ids / fir_ids / person_ids referenced

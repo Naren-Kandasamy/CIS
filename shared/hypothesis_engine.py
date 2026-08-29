@@ -29,7 +29,16 @@ async def create_hypothesis(record: HypothesisRecord) -> None:
     # again in list_hypotheses(fir_id) -- unrecoverable via retry. Same bug
     # class already fixed for review_queue_engine.py's index and cases.py's
     # user_cases index; guarded with the existing per-key lock registry here.
-    index_key = f"hypotheses_by_fir:{record.fir_id}"
+    await _add_to_index(f"hypotheses_by_fir:{record.fir_id}", record.hypothesis_id)
+
+    # Phase 4: also index by case_id when the hypothesis is case-scoped, so the
+    # per-case workspace can list hypotheses without a FIR. Same locked
+    # read-modify-write as the FIR index above.
+    if record.case_id:
+        await _add_to_index(f"hypotheses_by_case:{record.case_id}", record.hypothesis_id)
+
+
+async def _add_to_index(index_key: str, hypothesis_id: str) -> None:
     async with get_lock(index_key):
         existing = await nosql_get(index_key)
         if existing and "value" in existing:
@@ -39,7 +48,7 @@ async def create_hypothesis(record: HypothesisRecord) -> None:
                 ids = set()
         else:
             ids = set()
-        ids.add(record.hypothesis_id)
+        ids.add(hypothesis_id)
         await nosql_set(index_key, json.dumps(list(ids)))
 
 
@@ -55,9 +64,7 @@ async def get_hypothesis(hypothesis_id: str) -> Optional[HypothesisRecord]:
         return None
 
 
-async def list_hypotheses(fir_id: str) -> List[HypothesisRecord]:
-    """Lists all hypotheses for a given FIR ID."""
-    index_key = f"hypotheses_by_fir:{fir_id}"
+async def _list_by_index(index_key: str) -> List[HypothesisRecord]:
     raw_index = await nosql_get(index_key)
     if not raw_index or "value" not in raw_index:
         return []
@@ -75,6 +82,16 @@ async def list_hypotheses(fir_id: str) -> List[HypothesisRecord]:
     # Sort newest first
     records.sort(key=lambda x: x.created_date, reverse=True)
     return records
+
+
+async def list_hypotheses(fir_id: str) -> List[HypothesisRecord]:
+    """Lists all hypotheses for a given FIR ID."""
+    return await _list_by_index(f"hypotheses_by_fir:{fir_id}")
+
+
+async def list_hypotheses_by_case(case_id: str) -> List[HypothesisRecord]:
+    """Lists all hypotheses indexed under a case (Phase 4)."""
+    return await _list_by_index(f"hypotheses_by_case:{case_id}")
 
 
 async def get_last_check(hypothesis_id: str) -> Optional[HypothesisCheckLog]:

@@ -1,5 +1,9 @@
+import { useState, type MouseEvent } from 'react';
+import { useParams } from 'react-router-dom';
+import { Pin } from 'lucide-react';
 import type { Message } from '../../types/chat';
 import type { FeedbackVerdict } from '../../stores/chatStore';
+import { useBoardStore } from '../../stores/boardStore';
 import { FeedbackControls } from './FeedbackControls';
 
 // Phase 3: a single retrieved-evidence citation card, extracted verbatim from
@@ -38,6 +42,41 @@ export function EvidenceCard({
   onCancelCorrection,
   onSubmitFeedback,
 }: EvidenceCardProps) {
+  const { caseId, sessionId } = useParams();
+  const pin = useBoardStore((s) => s.pin);
+  const casePins = useBoardStore((s) => (caseId ? s.pinsByCase[caseId] : undefined));
+  const [pinBusy, setPinBusy] = useState(false);
+
+  const alreadyPinned = !!casePins?.some(
+    (p) =>
+      p.content_type === 'citation' &&
+      ((p.content as Record<string, unknown>).fir_id ?? null) === (item.fir_id ?? null) &&
+      item.fir_id != null,
+  );
+
+  const pinThis = async (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!caseId || !sessionId || alreadyPinned || pinBusy) return;
+    setPinBusy(true);
+    try {
+      await pin({
+        caseId,
+        sourceSessionId: sessionId,
+        contentType: 'citation',
+        content: {
+          fir_id: item.fir_id,
+          confidence: item.confidence,
+          crime_type: item.crime_type ?? item.data?.crime_type,
+          data: item.data ?? {},
+        },
+      });
+    } catch {
+      /* leave un-pinned; store already rolled back */
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
   const confidenceTier = String(item.confidence ?? '').toLowerCase();
   const confidenceColor =
     confidenceTier === 'high'
@@ -73,13 +112,34 @@ export function EvidenceCard({
         <div className="font-mono font-medium text-sm truncate" style={{ color: 'var(--text-primary)' }}>
           {item.data?.crime_no || item.fir_id || 'No Case ID'}
         </div>
-        {item.confidence && (
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded-sm border uppercase tracking-wider font-semibold whitespace-nowrap ${confidenceColor}`}
-          >
-            {item.confidence}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {item.confidence && (
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-sm border uppercase tracking-wider font-semibold whitespace-nowrap ${confidenceColor}`}
+            >
+              {item.confidence}
+            </span>
+          )}
+          {caseId && sessionId && item.fir_id && (
+            <button
+              type="button"
+              onClick={pinThis}
+              disabled={alreadyPinned || pinBusy}
+              aria-label={alreadyPinned ? 'Pinned to case board' : 'Pin to case board'}
+              title={alreadyPinned ? 'Pinned to case board' : 'Pin to case board'}
+              className="flex items-center"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: alreadyPinned ? 'default' : 'pointer',
+                color: alreadyPinned ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                opacity: pinBusy ? 0.5 : 1,
+              }}
+            >
+              <Pin size={13} fill={alreadyPinned ? 'currentColor' : 'none'} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
         {item.data?.crime_type && (

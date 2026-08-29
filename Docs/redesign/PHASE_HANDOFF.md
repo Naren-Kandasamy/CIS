@@ -43,8 +43,8 @@ Design decisions locked with the user:
 | 1 — Router + shell + folder grid | ✅ done (`7992d08`) | routes, stores, AppShell, folder room, chat page |
 | 2 — State migration | ✅ done (`db6247e`) | chat `messagesBySession` → `chatStore`; session-id + title contract |
 | 3 — Chat extraction | ✅ done | split SessionChatPage into `components/chat/*`; `useVoiceRecorder`; deleted App.tsx |
-| 4 — Case Workspace + backend persistence | ⏳ next | `case_board_layout` API, `hypotheses_by_case`, per-case workspace |
-| 5 — Corkboard | pending | React Flow spike → freeform board, yarn edges, retire HypothesisWorkspace |
+| 4 — Case Workspace + backend persistence | ✅ done | `case_board_layout` API, `hypotheses_by_case`, `boardStore`, persistent per-case workspace, chat "Pin to board" |
+| 5 — Corkboard | ⏳ next | React Flow spike → freeform board, yarn edges, retire HypothesisWorkspace |
 | 6 — Theme refinement | pending | token reconciliation, Login tokenize, index.css split, board tokens |
 | 7 — Verification | continuous | Playwright + backend tests + impeccable audit |
 
@@ -374,11 +374,85 @@ Update this file, mark Phase 4 next, stop for /compact.
 
 ---
 
-## Phase 4 — NEXT. Goal
+## Phase 4 — DONE
 
-Per-case **Case Workspace** page backed by **persistent** server state (today the
-dashboard only reflects the last query's in-memory result). Backend work lands
-first. Full detail in the plan file §"Phase 4"; summary:
+Per-case **Case Workspace** now reads **persistent** server state instead of the
+last query's in-memory visualization.
+
+**Backend — `backend/api/routes/cases.py`:**
+- `GET /api/cases/{id}/board/layout` → `{ cards: [] }` (empty if absent).
+- `PUT /api/cases/{id}/board/layout` `{ cards }` — full replace under
+  `get_case_lock` + `_require_collaborator`, writes `case_board_layout:{id}` =
+  `{ cards, updated_at, updated_by }`. `BoardCardModel` caps enforced (422):
+  `kind` enum, `color` regex `^(#hex|word|var(--x))$`, `text` ≤ 2000,
+  `connections` ≤ 50, `cards` ≤ 200, float coords. Field name `refId` matches the
+  client JSON verbatim.
+- `GET /api/cases/{id}/hypotheses` → `list_hypotheses_by_case(id)`.
+- `POST /api/cases/{id}/hypotheses` `{ statement, linked_entity_ids, fir_id? }` —
+  injects `case_id`; `fir_id` falls back to `case_id` when none given.
+- `delete_case` `delete_tasks` gained `case_board_layout:{id}` +
+  `hypotheses_by_case:{id}`.
+- `shared/hypothesis_models.py`: `case_id: Optional[str] = None` on
+  `HypothesisRecord`. `shared/hypothesis_engine.py`: `create_hypothesis` also
+  writes the `hypotheses_by_case:{case_id}` index (locked RMW, factored into
+  `_add_to_index`); new `list_hypotheses_by_case` (factored `_list_by_index`).
+  `backend/api/routes/hypothesis.py`: `HypothesisCreateRequest.case_id` optional,
+  passed through — the 4 `/api/investigation/hypothesis*` routes stay
+  byte-compatible.
+- **Mirror**: `functions/ps_1_cis_function/shared/hypothesis_{models,engine}.py`
+  copied (`diff -q` clean). `cases.py` / `hypothesis.py` are backend-only, not
+  mirrored. `catalyst_client.py` mirror drift is pre-existing, not touched here.
+- Verified by curl against the live backend: empty→PUT→GET layout round-trip,
+  422 on bad `kind`, hypothesis create + list + `case_id` echoed, `delete_case`
+  runs the new deletes. (`_require_collaborator` 500s on a *reload after delete*
+  — pre-existing fragility shared by every case route, not introduced here.)
+
+**Frontend:**
+- `client/src/stores/boardStore.ts` (new, zustand): `pinsByCase`, `layoutByCase`,
+  `hypothesesByCase`, `loadingByCase`; `fetchBoard/fetchLayout/fetchHypotheses`,
+  `loadCase` (parallel), `pin` (optimistic append + re-read), `putLayout`
+  (optimistic, Phase 5 consumer), `addHypothesis`. `lib/api.ts` gained
+  `createCaseHypothesis`.
+- `pages/CaseWorkspacePage.tsx` rewritten: calls `loadCase(caseId)`; renders
+  `HypothesisStrip` + `CitationsTable` + `KeySuspectsList` + `WorkspaceGraphs`
+  from persisted pins/hypotheses; "Nothing pinned to this case yet" EmptyState;
+  header "Evidence board" link. No longer imports `DashboardPanel`.
+- `client/src/components/workspace/` (new): `CitationsTable` (pins
+  `content_type==='citation'` → rows → `entityStore.open`), `KeySuspectsList`
+  (`'suspect'` pins), `HypothesisStrip` (list + inline add via
+  `boardStore.addHypothesis`), `WorkspaceGraphs` (derives cytoscape elements +
+  leaflet markers client-side from pinned FIRs/suspects; only mounts a view when
+  it has real derived data so the components' demo fallbacks never show).
+- `components/chat/EvidenceCard.tsx`: added a "Pin to board" icon button
+  (`useParams` for `caseId`/`sessionId`, `boardStore.pin`, `e.stopPropagation()`).
+  Filled pin + disabled once `pinsByCase` shows a citation with that `fir_id`.
+- **Orphaned by this phase, delete in Phase 6**: `components/dashboard/DashboardPanel.tsx`
+  and the analytics charts it pulled (`stats.tsx`, `recent-conversations.tsx`,
+  `conversation-volume-chart.tsx`, `channel-breakdown-chart.tsx`). Left in place
+  to keep the diff contained. `HypothesisWorkspace.tsx` also now orphaned —
+  Phase 5 retires it.
+- **Deliberate deviation from the plan**: the plan said *move* the 4 analytics
+  charts under `components/workspace/`. They are chat-analytics mockups (volume,
+  channel-breakdown) with no persistent-case meaning, so purpose-built
+  `CitationsTable`/`KeySuspectsList` were written instead and the old files left
+  to be deleted in Phase 6.
+
+**Gates:** `npx vite build` clean · `npx vitest run` 13/13 · new/touched files
+tsc-clean (`tsconfig.app.json` total unchanged at 37 pre-existing) · `oxlint src/`
+— new files clean, 25 pre-existing warnings in untouched files.
+
+**Live-verified in Chrome** (Test Case Beta, real backend): workspace shows
+"Nothing pinned" empty state → open session → run query → expand Retrieved
+Evidence → click pin on two citation cards (icon fills) → Workspace now lists
+2 Pinned Citations + derived Entity Relation Network (2 FIR nodes) → add a
+hypothesis via the strip ("1 recorded", OPEN) → **full page reload**: both pins
+and the hypothesis persist. Zero console errors.
+
+**Commit:** `feat: Phase 4 — case workspace + board persistence`.
+
+---
+
+## Phase 4 — original goal (for reference)
 
 ### 4.1 Backend — extend `backend/api/routes/cases.py` (keep NoSQL key conventions)
 
@@ -429,3 +503,50 @@ is persistent + per-case:
 (pin a citation → reload → still there); `vite build` + `vitest` green; backend
 imports clean + live-verified. Commit `feat: Phase 4 — case workspace + board
 persistence`. Update this file, mark Phase 5 next, stop for /compact.
+
+---
+
+## Phase 5 — NEXT. Goal
+
+The freeform **paper corkboard** at `/cases/:caseId/board` (today a stub
+EmptyState in `pages/CorkboardPage.tsx`). Full detail in the plan file §"Phase 5".
+
+**Canvas tech — `@xyflow/react` (React Flow v12), spike first (~half the phase):**
+cork `<Background>` + one `SuspectTile` node + one `YarnEdge` at zoom ≠ 1.
+Fallback if the aesthetic fights the viewport: `dnd-kit` +
+`react-zoom-pan-pinch` + hand-rolled SVG yarn. React Flow ships its own CSS —
+`@import` it and scope every override under a `.corkboard` root so it can't bleed
+into `.dossier-*` / `.message`.
+
+**Backend is already done** (Phase 4): `GET`/`PUT /api/cases/:id/board/layout`
+(the `case_board_layout` doc, `BoardCard[]`) and `GET`/`POST
+/api/cases/:id/hypotheses` exist and are wrapped in `lib/api.ts` +
+`stores/boardStore.ts` (`layoutByCase`, `putLayout`, `hypothesesByCase`,
+`addHypothesis`). Phase 5 is frontend-only.
+
+**Do:**
+- `pages/CorkboardPage.tsx` — `boardStore.loadCase(caseId)` then `<ReactFlow>`
+  with `nodeTypes` / `edgeTypes` + a cork `<Background>`.
+- `stores/boardStore.ts` — extend with derived `edges`, `moveCard/addCard/
+  updateCard/removeCard/linkCards`, and debounce `putLayout` (~800ms) on drag.
+- `components/board/`: `HypothesisNoteCard` (index-card, status ribbon
+  open/confirmed/refuted), `SuspectTile` (photo + `Pushpin`), `FirCard`,
+  `FreeNoteCard`, `YarnEdge` (red bezier + sag + pushpin caps), `Pushpin`,
+  `BoardToolbar` (add-card palette, zoom, fit).
+- `hooks/useHypotheses.ts` — wraps the 4 existing hypothesis calls unchanged:
+  list via `GET /api/cases/:id/hypotheses`; create via `POST
+  /api/investigation/hypothesis` (now takes `case_id`) or the case wrapper;
+  check `POST …/{id}/check` → render `HypothesisCheckLog` on the card; resolve
+  `POST …/{id}/resolve` → flips the ribbon.
+- Behaviour: every hypothesis materialises as a card `id = "hyp:" +
+  hypothesis_id`; cards with no layout entry auto-place (grid scatter) then
+  persist. For each `linked_entity_id`, draw a `YarnEdge` to a board card whose
+  `refId` matches, else offer "＋ add card for <id>". `onNodeDragStop` →
+  `moveCard` → debounced `persistLayout`.
+- **Retire `components/dashboard/HypothesisWorkspace.tsx`** (flat list, broken
+  `str` types, direct `sessionStorage` reads) — now orphaned since Phase 4.
+
+**Exit criteria:** board persists (add card → drag → reload → position kept);
+hypotheses editable there; `vite build` + `vitest` green; live-verified in
+Chrome. Commit `feat: Phase 5 — corkboard hypothesis/evidence board`. Update this
+file, mark Phase 6 next, stop for /compact.

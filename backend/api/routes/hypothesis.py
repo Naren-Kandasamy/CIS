@@ -28,6 +28,7 @@ router = APIRouter()
 # finite.
 class HypothesisCreateRequest(BaseModel):
     fir_id: str = Field(max_length=128)
+    case_id: Optional[str] = Field(None, max_length=128)
     statement: str = Field(max_length=2000)
     linked_entity_ids: List[str] = Field(default_factory=list, max_length=100)
 
@@ -54,6 +55,7 @@ async def create_hypothesis_endpoint(payload: HypothesisCreateRequest, request: 
     record = HypothesisRecord(
         hypothesis_id=str(uuid.uuid4()),
         fir_id=payload.fir_id,
+        case_id=payload.case_id,
         officer_id=_officer_id(request),
         statement=payload.statement,
         linked_entity_ids=payload.linked_entity_ids,

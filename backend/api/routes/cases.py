@@ -11,15 +11,52 @@
 import json
 import secrets
 import time
+import uuid
 import asyncio
+from datetime import datetime, timezone
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from shared.catalyst_client import nosql_get, nosql_set, get_case_lock, get_lock, nosql_delete
 from shared.auth import get_user
+from shared.hypothesis_models import HypothesisRecord
+from shared.hypothesis_engine import create_hypothesis, list_hypotheses_by_case
 
 router = APIRouter()
+
+# ── Board card layout (Phase 4) ─────────────────────────────────────────────
+# case_board_layout:{case_id} is a single mutable doc holding WHERE cards sit on
+# the corkboard. It is deliberately separate from the append-only pin log
+# case_board:{case_id} (WHAT was pinned, with audit fields). Full-replace on PUT
+# plus a client-side debounce is enough at this scale; no per-card PATCH in v1.
+_COLOR_RE = r"^(#[0-9a-fA-F]{3,8}|[a-zA-Z-]{1,24}|var\(--[a-z0-9-]{1,40}\))$"
+_MAX_CARDS = 200
+
+
+class BoardCardModel(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    kind: Literal["hypothesis", "suspect", "fir", "note"]
+    refId: Optional[str] = Field(None, max_length=128)
+    x: float
+    y: float
+    w: float
+    h: float
+    color: str = Field(pattern=_COLOR_RE, max_length=64)
+    rotation: Optional[float] = None
+    text: Optional[str] = Field(None, max_length=2000)
+    connections: List[str] = Field(default_factory=list, max_length=50)
+
+
+class BoardLayoutPutRequest(BaseModel):
+    cards: List[BoardCardModel] = Field(default_factory=list, max_length=_MAX_CARDS)
+
+
+class CaseHypothesisCreateRequest(BaseModel):
+    statement: str = Field(max_length=2000)
+    linked_entity_ids: List[str] = Field(default_factory=list, max_length=100)
+    fir_id: Optional[str] = Field(None, max_length=128)
 
 
 class CreateCaseRequest(BaseModel):
@@ -126,6 +163,8 @@ async def delete_case(case_id: str, request: Request):
         delete_tasks.extend([
             nosql_delete(f"case_sessions:{case_id}"),
             nosql_delete(f"case_board:{case_id}"),
+            nosql_delete(f"case_board_layout:{case_id}"),
+            nosql_delete(f"hypotheses_by_case:{case_id}"),
             nosql_delete(f"case:{case_id}")
         ])
         
@@ -226,3 +265,62 @@ async def get_case_board(case_id: str, request: Request):
     await _require_collaborator(case_id, username)
     board_doc = await nosql_get(f"case_board:{case_id}")
     return {"board": json.loads(board_doc["value"]) if board_doc else []}
+
+
+@router.get("/api/cases/{case_id}/board/layout")
+async def get_case_board_layout(case_id: str, request: Request):
+    username = request.state.username
+    await _require_collaborator(case_id, username)
+    layout_doc = await nosql_get(f"case_board_layout:{case_id}")
+    if not layout_doc:
+        return {"cards": []}
+    return {"cards": json.loads(layout_doc["value"]).get("cards", [])}
+
+
+@router.put("/api/cases/{case_id}/board/layout")
+async def put_case_board_layout(case_id: str, body: BoardLayoutPutRequest, request: Request):
+    username = request.state.username
+    async with get_case_lock(case_id):
+        await _require_collaborator(case_id, username)
+        doc = {
+            "cards": [c.model_dump() for c in body.cards],
+            "updated_at": time.time(),
+            "updated_by": username,
+        }
+        await nosql_set(f"case_board_layout:{case_id}", json.dumps(doc))
+    return {"cards": doc["cards"]}
+
+
+@router.get("/api/cases/{case_id}/hypotheses")
+async def get_case_hypotheses(case_id: str, request: Request):
+    username = request.state.username
+    await _require_collaborator(case_id, username)
+    records = await list_hypotheses_by_case(case_id)
+    return {"hypotheses": records}
+
+
+@router.post("/api/cases/{case_id}/hypotheses")
+async def create_case_hypothesis(case_id: str, body: CaseHypothesisCreateRequest, request: Request):
+    username = request.state.username
+    await _require_collaborator(case_id, username)
+
+    if not body.statement.strip():
+        raise HTTPException(400, "Statement cannot be empty")
+
+    # The hypothesis engine's Cypher check traverses linked_entity_ids, not
+    # fir_id, but fir_id is still required by the model -- with no specific FIR,
+    # fall back to the case_id (generalises the old 'DEMO_CASE_001' fallback).
+    fir_id = (body.fir_id or "").strip() or case_id
+
+    record = HypothesisRecord(
+        hypothesis_id=str(uuid.uuid4()),
+        fir_id=fir_id,
+        case_id=case_id,
+        officer_id=username,
+        statement=body.statement,
+        linked_entity_ids=body.linked_entity_ids,
+        status="open",
+        created_date=datetime.now(timezone.utc).isoformat(),
+    )
+    await create_hypothesis(record)
+    return {"status": "created", "hypothesis": record}

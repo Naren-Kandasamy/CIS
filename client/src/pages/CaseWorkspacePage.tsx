@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MessagesSquare } from 'lucide-react';
+import { MessagesSquare, LayoutGrid } from 'lucide-react';
 import { useCasesStore } from '../stores/casesStore';
-import DashboardPanel from '../components/dashboard/DashboardPanel';
+import { useBoardStore } from '../stores/boardStore';
 import EmptyState from '../components/common/EmptyState';
+import { CitationsTable } from '../components/workspace/CitationsTable';
+import { KeySuspectsList } from '../components/workspace/KeySuspectsList';
+import { HypothesisStrip } from '../components/workspace/HypothesisStrip';
+import { WorkspaceGraphs } from '../components/workspace/WorkspaceGraphs';
 
-// Per-case workspace. Phase 1: shows the existing analytics panel (still fed by
-// nothing until Phase 4 wires persistent board data) plus a first-session CTA.
+// Phase 4: per-case workspace backed by PERSISTENT server state — the pin log
+// (case_board:{id}), the card layout (case_board_layout:{id}, used in Phase 5)
+// and case-scoped hypotheses. Previously this rendered DashboardPanel fed by
+// nothing but the last query's in-memory visualization.
 
 export default function CaseWorkspacePage() {
   const { caseId } = useParams();
@@ -17,6 +23,10 @@ export default function CaseWorkspacePage() {
   const fetchSessions = useCasesStore((s) => s.fetchSessions);
   const createSession = useCasesStore((s) => s.createSession);
 
+  const pins = useBoardStore((s) => (caseId ? s.pinsByCase[caseId] : undefined));
+  const hypotheses = useBoardStore((s) => (caseId ? s.hypothesesByCase[caseId] : undefined));
+  const loadCase = useBoardStore((s) => s.loadCase);
+
   const [busy, setBusy] = useState(false);
   const current = cases.find((c) => c.case_id === caseId);
   const sessions = caseId ? sessionsByCase[caseId] : undefined;
@@ -25,7 +35,8 @@ export default function CaseWorkspacePage() {
     if (!caseId) return;
     if (cases.length === 0) fetchCases().catch(() => {});
     if (!sessionsByCase[caseId]) fetchSessions(caseId).catch(() => {});
-  }, [caseId, cases.length, sessionsByCase, fetchCases, fetchSessions]);
+    loadCase(caseId).catch(() => {});
+  }, [caseId, cases.length, sessionsByCase, fetchCases, fetchSessions, loadCase]);
 
   if (!caseId) return null;
 
@@ -39,14 +50,28 @@ export default function CaseWorkspacePage() {
     }
   };
 
+  const citations = (pins ?? []).filter((p) => p.content_type === 'citation');
+  const suspects = (pins ?? []).filter((p) => p.content_type === 'suspect');
+  const hyps = hypotheses ?? [];
+  const nothingYet = citations.length === 0 && suspects.length === 0 && hyps.length === 0;
+
   return (
     <div className="workspace-page">
-      <header className="workspace-head">
-        <h1 className="stamp-font">{current?.title ?? 'Case workspace'}</h1>
-        <p>
-          {current?.crime_no ? `Crime ${current.crime_no}` : 'Case file'}
-          {current?.district ? ` · ${current.district}` : ''}
-        </p>
+      <header className="workspace-head flex items-start justify-between gap-4">
+        <div>
+          <h1 className="stamp-font">{current?.title ?? 'Case workspace'}</h1>
+          <p>
+            {current?.crime_no ? `Crime ${current.crime_no}` : 'Case file'}
+            {current?.district ? ` · ${current.district}` : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn-ghost flex items-center gap-1.5 flex-shrink-0"
+          onClick={() => navigate(`/cases/${caseId}/board`)}
+        >
+          <LayoutGrid size={14} /> Evidence board
+        </button>
       </header>
 
       {sessions && sessions.length === 0 ? (
@@ -60,8 +85,23 @@ export default function CaseWorkspacePage() {
             </button>
           }
         />
+      ) : nothingYet ? (
+        <EmptyState
+          icon={<LayoutGrid size={26} />}
+          title="Nothing pinned to this case yet"
+          message="Open a session, run a query, and pin the FIRs and suspects that matter. They'll persist here and on the evidence board."
+        />
       ) : (
-        <DashboardPanel />
+        <>
+          <HypothesisStrip caseId={caseId} hypotheses={hyps} />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <CitationsTable citations={citations} />
+            </div>
+            <KeySuspectsList suspects={suspects} />
+          </div>
+          <WorkspaceGraphs citations={citations} suspects={suspects} />
+        </>
       )}
     </div>
   );
