@@ -1,0 +1,75 @@
+/*
+  PS-1 CIS — "Case File" design tokens (single source of truth).
+
+  Custom primitives (--bg-*, --accent-*, --text-*) are authoritative.
+  The shadcn token set (--background, --primary, …) *references* them so
+  there is exactly one place to tune the palette. Kept in :root only —
+  the app has no dark mode (the board owns its own cork surface tokens
+  in board.css).
+*/
+
+:root {
+  /* ── Paper & surfaces ─────────────────────────────────────────────── */
+  --bg-primary: #e9e1cd;
+  --bg-secondary: #f4eeda;
+  --bg-tertiary: #ddd3b6;
+  --bg-glass: rgba(244, 238, 218, 0.82);
+  --glass-border: rgba(43, 33, 20, 0.16);
+  --paper-line: rgba(59, 44, 24, 0.09);
+
+  /* ── Ink / stamp accents ─────────────────────────────────────────── */
+  --accent-primary: #8a2a24;
+  --accent-primary-hover: #6f211c;
+  --accent-glow: rgba(138, 42, 36, 0.28);
+  --accent-secondary: #2f4a3c;
+  --accent-gold: #a9791f;
+  --accent-blue: #4a5a7a;
+  --accent-brown: #6b4226;
+
+  /* semantic aliases */
+  --confirm: var(--accent-secondary);
+  --danger-bg: #f7e6e5;
+
+  /* ── Text ────────────────────────────────────────────────────────── */
+  --text-primary: #241d14;
+  --text-secondary: #5c5140;
+  /* darkened from #8a7d67 (~3.0:1) to clear 4.5:1 on --bg-primary */
+  --text-tertiary: #6a5c43;
+
+  /* ── shadcn compatibility layer — all reference the primitives ────── */
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --card: var(--bg-secondary);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-secondary);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-primary);
+  --primary-foreground: var(--bg-secondary);
+  --secondary: var(--bg-tertiary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-tertiary);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--bg-tertiary);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--accent-primary);
+  --border: var(--glass-border);
+  --input: var(--glass-border);
+  --ring: var(--accent-primary);
+
+  --chart-1: var(--accent-primary);
+  --chart-2: var(--accent-secondary);
+  --chart-3: var(--accent-gold);
+  --chart-4: var(--accent-blue);
+  --chart-5: var(--accent-brown);
+
+  --radius: 0.3rem;
+
+  --sidebar: #ddd0aa;
+  --sidebar-foreground: #3a2f1c;
+  --sidebar-primary: var(--accent-primary);
+  --sidebar-primary-foreground: var(--bg-secondary);
+  --sidebar-accent: #cfc196;
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: rgba(43, 33, 20, 0.2);
+  --sidebar-ring: var(--accent-primary);
+}

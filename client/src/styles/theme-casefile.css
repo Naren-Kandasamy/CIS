@@ -1,0 +1,296 @@
+/*
+  "Case File" chrome — the investigator's desk surfaces: folder-spine
+  sidebar, typed brand stamp, carbon-copy chat report bubbles, the
+  hand-pressed progress stamp, and paper-clipped evidence cards.
+*/
+
+/* ── Sidebar — the spine of a case folder, tabbed along its edge ──────── */
+.sidebar {
+  width: 280px;
+  background: var(--sidebar);
+  border-right: 3px solid var(--accent-primary);
+  box-shadow: inset -6px 0 12px -8px rgba(43, 33, 20, 0.35);
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  font-size: 0.95rem;
+  position: relative;
+}
+
+.sidebar::before {
+  /* punched folder holes down the spine */
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 24px;
+  bottom: 24px;
+  width: 6px;
+  background-image: radial-gradient(circle, rgba(43, 33, 20, 0.28) 2.5px, transparent 2.6px);
+  background-size: 6px 34px;
+  background-repeat: repeat-y;
+  opacity: 0.6;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 40px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--glass-border);
+}
+
+.brand-icon {
+  width: 38px;
+  height: 38px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--accent-primary);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-2deg);
+  box-shadow: 2px 2px 0 rgba(43, 33, 20, 0.18);
+}
+
+.brand h1 {
+  font-family: 'Special Elite', monospace;
+  font-size: 1.15rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.brand span {
+  color: var(--accent-primary);
+}
+
+/* ── Main chat area ──────────────────────────────────────────────────── */
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  scroll-behavior: smooth;
+}
+
+/* ── Message bubbles ─────────────────────────────────────────────────── */
+.message {
+  display: flex;
+  gap: 16px;
+  max-width: 80%;
+}
+
+.message.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.message.user .message-avatar {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.message-content {
+  background-color: var(--sidebar);
+  background-image:
+    /* Slight darkening overlay for color distinction */
+    linear-gradient(rgba(43,33,20,0.03), rgba(43,33,20,0.05)),
+    /* Grid/Grain - more pronounced */
+    repeating-linear-gradient(0deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(90deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    /* Folds - stronger highlights and shadows */
+    linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.4) 32%, rgba(0,0,0,0.06) 34%, transparent 40%),
+    linear-gradient(-75deg, transparent 60%, rgba(255,255,255,0.35) 65%, rgba(0,0,0,0.08) 68%, transparent 75%),
+    /* Edge vignette */
+    radial-gradient(circle at 50% 50%, transparent 60%, rgba(0,0,0,0.09) 100%);
+  border: 1px solid var(--glass-border);
+  padding: 16px 20px;
+  border-radius: 3px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  box-shadow:
+    inset 0 0 10px rgba(0,0,0,0.04),
+    inset 1px 1px 2px rgba(255,255,255,0.6),
+    2px 3px 6px rgba(43, 33, 20, 0.12);
+  position: relative;
+}
+
+.message.user .message-content {
+  color: var(--text-primary);
+}
+
+.message.user .message-content::before {
+  content: 'QUERY';
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  background: var(--bg-primary);
+  padding: 0 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--accent-primary);
+}
+
+.message:not(.user) .message-content::before {
+  content: 'FIELD REPORT';
+  position: absolute;
+  top: -9px;
+  left: 12px;
+  background: var(--bg-primary);
+  padding: 0 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--accent-secondary);
+}
+
+/* ── Input area ──────────────────────────────────────────────────────── */
+.input-area {
+  padding: 24px 40px;
+  background: linear-gradient(to top, var(--bg-primary) 60%, transparent);
+}
+
+.input-box {
+  display: flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 8px 16px;
+  box-shadow: 0 3px 0 rgba(43, 33, 20, 0.1);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-box:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary), 0 3px 0 rgba(43, 33, 20, 0.1);
+}
+
+.input-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.95rem;
+  padding: 12px;
+  outline: none;
+}
+
+.input-box input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: rgba(43, 33, 20, 0.06);
+  color: var(--text-primary);
+}
+
+.action-btn.primary {
+  background: var(--accent-primary);
+  color: var(--bg-secondary);
+}
+
+.action-btn.primary:hover {
+  background: var(--accent-primary-hover);
+  transform: translateY(-1px);
+}
+
+/* ── Progress indicator — an ink stamp, tilted like a hand press ──────── */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 2px solid var(--accent-primary);
+  border-radius: 3px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--accent-primary);
+  margin-bottom: 12px;
+  transform: rotate(-1deg);
+}
+
+.pulse {
+  width: 6px;
+  height: 6px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+/* ── Evidence / exhibit card — a paper-clipped attachment ────────────── */
+.evidence-card {
+  margin-top: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 2px;
+  padding: 16px;
+  font-size: 0.85rem;
+  position: relative;
+}
+
+.evidence-card::before {
+  content: '📎';
+  position: absolute;
+  top: -14px;
+  left: 18px;
+  font-size: 1.1rem;
+  filter: grayscale(1) contrast(1.4);
+  transform: rotate(-8deg);
+}
+
+.evidence-header {
+  color: var(--accent-secondary);
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+}

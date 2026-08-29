@@ -220,7 +220,7 @@
   font-size: 10px;
   line-height: 1.4;
   background: var(--bg-tertiary);
-  border-left: 3px solid var(--accent-primary);
+  border-left: 2px solid var(--accent-gold);
   padding: 6px 8px;
   color: var(--text-secondary);
 }

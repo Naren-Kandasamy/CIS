@@ -43,9 +43,9 @@ export function MessageBubble({ message, openEntity, feedback }: MessageBubblePr
           ) : message.isStreaming ? (
             <div className="flex flex-col gap-2 py-1">
               <div className="flex items-center gap-1.5 mb-1">
-                <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0ms' }} />
-                <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-secondary)', animationDelay: '150ms' }} />
-                <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--accent-gold)', animationDelay: '300ms' }} />
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '0ms' }} />
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent-secondary)', animationDelay: '200ms' }} />
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent-gold)', animationDelay: '400ms' }} />
               </div>
               <div className="w-48 h-3 rounded animate-pulse" style={{ background: 'var(--glass-border)' }} />
               <div className="w-36 h-2.5 rounded animate-pulse" style={{ background: 'var(--glass-border)' }} />

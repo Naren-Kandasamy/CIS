@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { X, User, FolderOpen, MapPin, AlertTriangle, Link2, FileText, Calendar, Shield } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { X, User, FolderOpen, MapPin, AlertTriangle, Link2, FileText } from 'lucide-react';
 import type { SelectedEntity, LinkedNode } from '../../hooks/useEntityDrawer';
 
 interface EntityDrawerProps {

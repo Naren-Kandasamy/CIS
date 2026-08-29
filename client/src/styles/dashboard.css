@@ -1,0 +1,152 @@
+/*
+  Dashboard — "case board" utilities.
+  Panels read as clipped index cards pinned to the desk: paper surface,
+  thin ink border, a small folded corner, dashed section rules.
+*/
+.dossier-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 3px;
+  box-shadow: 1px 2px 0 rgba(43, 33, 20, 0.08);
+  position: relative;
+}
+
+.dossier-paperclip::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 24px;
+  width: 24px;
+  height: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233a2f1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  transform: rotate(-10deg);
+  z-index: 20;
+  filter: drop-shadow(2px 3px 2px rgba(43,33,20,0.3));
+  pointer-events: none;
+}
+
+.dossier-tape::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-1deg);
+  width: 100px;
+  height: 24px;
+  background-color: rgba(222, 213, 185, 0.9);
+  background-image:
+    linear-gradient(rgba(255,255,255,0.1), rgba(0,0,0,0.05)),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 2px, rgba(0,0,0,0.03) 3px, transparent 4px);
+  box-shadow: 0 1px 3px rgba(43,33,20,0.15);
+  border-left: 2px dashed rgba(43,33,20,0.15);
+  border-right: 2px dashed rgba(43,33,20,0.15);
+  z-index: 20;
+  pointer-events: none;
+}
+
+.dossier-panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 16px 16px 0;
+  border-color: transparent var(--bg-tertiary) transparent transparent;
+}
+
+.dossier-panel-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.dossier-panel-subtitle {
+  color: var(--text-secondary);
+}
+
+.dossier-stat-card {
+  background-color: var(--sidebar);
+  background-image:
+    linear-gradient(rgba(43,33,20,0.03), rgba(43,33,20,0.05)),
+    repeating-linear-gradient(0deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(90deg, rgba(43,33,20,0.04) 0px, rgba(43,33,20,0.04) 1px, transparent 1px, transparent 4px),
+    linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.4) 42%, rgba(0,0,0,0.06) 44%, transparent 50%),
+    linear-gradient(-60deg, transparent 70%, rgba(255,255,255,0.3) 73%, rgba(0,0,0,0.08) 75%, transparent 80%),
+    radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(0,0,0,0.1) 100%);
+  border: 1px solid var(--glass-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 10px rgba(0,0,0,0.04),
+    inset 1px 1px 2px rgba(255,255,255,0.6),
+    2px 3px 6px rgba(43, 33, 20, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dossier-stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.dossier-stat-label {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.dossier-stat-value {
+  font-family: 'Special Elite', monospace;
+  color: var(--text-primary);
+}
+
+.dossier-divider {
+  border-color: var(--paper-line) !important;
+}
+
+.dossier-table-head {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-tertiary);
+}
+
+.dossier-row {
+  border-color: var(--paper-line) !important;
+}
+
+.dossier-row:hover {
+  background: var(--bg-tertiary) !important;
+}
+
+.dossier-id {
+  color: var(--accent-primary);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.dossier-mono {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-secondary);
+}
+
+.dossier-avatar {
+  background: var(--accent-glow);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.dossier-tooltip {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--glass-border) !important;
+  color: var(--text-primary) !important;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Entity clickable — generic hover on any entity surface (rows, cards, chips) */
+.entity-clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.entity-clickable:hover {
+  background: var(--bg-tertiary) !important;
+}
