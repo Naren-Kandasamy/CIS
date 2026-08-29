@@ -47,6 +47,7 @@ Design decisions locked with the user:
 | 5 — Corkboard | ✅ done (`801db58`) | hand-rolled pan/zoom board, draggable pinned cards, red-yarn links, hypothesis check/resolve inline, retired HypothesisWorkspace + DashboardPanel |
 | 6 — Theme refinement | ✅ done (`af844fe`) | tokens single-sourced in `styles/tokens.css`, `index.css` split into 10 ordered partials, `Login.tsx` tokenized onto `styles/auth.css`, `--text-tertiary` contrast fix, deleted 4 charts + `delta.tsx` + whole `components/ui/` (9 files), `.dark` removed, motion audit |
 | 7 — Verification | ✅ done (`277be4c`) | `test_cases_board_layout.py` + hypothesis `case_id` — 18/18 green; `test_ui_redesign_playwright.py` authored; middleware bug found+fixed (board/layout was capped at 2KB); impeccable + Chrome pass |
+| 8 — Global dashboard restore | ✅ done (`c4e7686`) | brought back the cross-case analytics dashboard at its own `/dashboard` route + sidebar link; restored stats/trend/donut/citations charts + `ui/` deps; ER network keeps its Person/FIR/Location icons; Key Suspects stays per-case only |
 
 ---
 
@@ -841,3 +842,43 @@ net-new responsive work, out of scope here.
 
 Phases 0–7 complete on `feature/ui-redesign-v2`. **Not merged to `main`** —
 awaiting the go-ahead. No further planned phases.
+
+---
+
+## Post-Phase-7 — Global analytics dashboard restored (`c4e7686`)
+
+The user asked for the cross-case summary dashboard back, as a place of its
+own — **separate from the cases**, not inside a case.
+
+- **`pages/GlobalDashboardPage.tsx`** at route `/dashboard` (sibling of
+  `/cases`, under `AppShell` / `RequireAuth`). New sidebar nav link
+  **"Dashboard"** (`BarChart3`) between "All cases" and "New case".
+  Post-login still lands on `/cases`.
+- Restored from `646e31d`: `components/stats.tsx`,
+  `conversation-volume-chart.tsx` (Crime Trends),
+  `channel-breakdown-chart.tsx` (Crime Distribution donut),
+  `recent-conversations.tsx` (Recent Citations), `delta.tsx`, and
+  `components/ui/{card,chart,badge,table}.tsx` (needed by the recharts
+  components). Each restored file had its pre-existing unused imports
+  trimmed so `tsc` (4 pre-existing) and `oxlint` (0) stay clean. `recharts`
+  was still in `package.json`. JS bundle is back up to ~1.5 MB (recharts).
+- **Dropped from the old `DashboardPanel`**: the **Key Suspects** panel and
+  the **hypothesis workspace** — both now live per-case
+  (`workspace/KeySuspectsList`, the corkboard). The global board keeps: 4
+  stat cards, Crime Trends + Distribution, Recent Citations (full-width
+  now), the Cytoscape **Entity Relation Network** (Person = dark-red
+  circle, FIR = green round-rect, Location = blue pin — icons already in
+  `dashboard/NetworkGraph.tsx`), and the Leaflet **Geospatial
+  Distribution** map. All panels render from their built-in synthetic
+  fallback data (no `visualization` prop), matching the reference
+  screenshots.
+- **Verified live**: `/dashboard` renders every panel, zero console
+  errors; the per-case workspace is unchanged; a session query runs the
+  full 7-step pipeline and returns synthetic Belagavi theft FIRs; `/api/query`
+  accepts both `language:"en"` and `language:"hi"` (Devanagari) input.
+  No backend changes.
+- **Known**: the CARTO Voyager basemap tiles show an "API KEY REQUIRED /
+  carto.com/basemaps/apikey" watermark — CARTO now gates that basemap
+  behind a key. Same as the reference screenshot; markers + zoom/pan work.
+  Switching to plain OSM tiles would drop the watermark but also the
+  sepia-dossier tint.
