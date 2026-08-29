@@ -3,32 +3,14 @@ import { Search, Mic, Pause, Paperclip, Send, Shield, Database, LayoutDashboard,
 import DashboardPanel from './components/dashboard/DashboardPanel';
 import Login from './components/Login';
 import EntityDrawer from './components/dashboard/EntityDrawer';
-import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
+import { useEntityDrawer } from './hooks/useEntityDrawer';
 import ReactMarkdown from 'react-markdown';
 import { fetchWithRetry } from './lib/utils';
+import { streamQuery } from './lib/sse';
+import { pollForCompletedJob } from './lib/pollJob';
 import { startWavRecording, type WavRecorder } from './lib/wavRecorder';
 import { VoiceVisualizer } from './components/chat/VoiceVisualizer';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  evidence?: any[];
-  visualization?: any;
-  status?: string;
-  isStreaming?: boolean;
-}
-
-
-const PIPELINE_STEPS = [
-  { key: 'understanding query', label: 'NER & Intent' },
-  { key: 'resolving entities', label: 'Entity Match' },
-  { key: 'planning execution', label: 'DAG Planner' },
-  { key: 'retrieving evidence', label: 'Retrieval' },
-  { key: 'confidence scoring', label: 'Confidence' },
-  { key: 'building visualization', label: 'Visualizer' },
-  { key: 'synthesizing response', label: 'Synthesis' }
-];
+import { PIPELINE_STEPS, type Message } from './types/chat';
 
 export default function App() {
   const [authToken, setAuthToken] = useState<string | null>(() => sessionStorage.getItem("ps1_auth_token"));
@@ -366,33 +348,6 @@ export default function App() {
     return () => clearInterval(id);
   }, [authToken]);
 
-  // Recovers a job whose SSE stream was cut before it finished. The pipeline
-  // keeps running server-side and writes its result to NoSQL regardless, so
-  // this polls until the job reports done/failed.
-  const pollForCompletedJob = async (
-    jobId: string,
-    token: string | null,
-    attempts = 300,
-    intervalMs = 3000,
-  ): Promise<{ status: string; answer?: string; evidence?: any[]; visualization?: any; error?: string } | null> => {
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const res = await fetchWithRetry(
-          `${import.meta.env.VITE_API_BASE_URL || ''}/api/query/status/${jobId}`,
-          { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === 'done' || data.status === 'failed') return data;
-        }
-      } catch (err) {
-        console.error('Job status poll failed:', err);
-      }
-      await new Promise(r => setTimeout(r, intervalMs));
-    }
-    return null;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading || isTranscribing) return;
@@ -421,101 +376,24 @@ export default function App() {
       isStreaming: true
     }]);
 
+    // Patch just this assistant message. Reducer bodies are unchanged from the
+    // old inline SSE handler — only the frame parsing/streaming moved to lib/sse.ts.
+    const patch = (fn: (msg: Message) => Message) =>
+      updateSessionMessages(targetSessionId, prev => prev.map(msg => (msg.id === assistantMsgId ? fn(msg) : msg)));
+
     try {
-      const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/query`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
+      const { jobId, sawTerminalEvent } = await streamQuery(
+        { sessionId: activeSessionId, query: userMessage.content, language: voiceLanguage, token: authToken },
+        {
+          onUnauthorized: handleLogout,
+          onProgress: status => patch(msg => ({ ...msg, status })),
+          onEvidence: evidence => patch(msg => ({ ...msg, evidence })),
+          onVisualization: visualization => patch(msg => ({ ...msg, visualization })),
+          onToken: token => patch(msg => ({ ...msg, content: token, isStreaming: false, status: undefined })),
+          onDone: () => patch(msg => ({ ...msg, isStreaming: false, status: undefined })),
+          onError: message => patch(msg => ({ ...msg, content: `Error: ${message}`, isStreaming: false, status: undefined })),
         },
-        body: JSON.stringify({
-          session_id: activeSessionId,
-          query: userMessage.content,
-          language: voiceLanguage
-        })
-      });
-
-      if (response.status === 401) {
-        handleLogout();
-        throw new Error('Session expired -- please sign in again.');
-      }
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) throw new Error("No reader");
-
-      // Tracked so a prematurely-closed stream can be recovered after the loop.
-      let jobId: string | null = null;
-      let sawTerminalEvent = false;
-
-      // SSE frames are separated by double-newline (\r\n\r\n).
-      // Each frame has one or more lines: "event: <type>\r\ndata: <json>\r\n"
-      // We accumulate a buffer across read() calls because a single chunk may
-      // contain partial frames or multiple frames.
-      let buffer = '';
-
-      const parseSSEBuffer = (buf: string) => {
-        // Split on double newline to get complete frames, keep the remainder
-        const parts = buf.split(/\r?\n\r?\n/);
-        const remainder = parts.pop() ?? ''; // last element may be incomplete
-        for (const frame of parts) {
-          if (!frame.trim()) continue;
-          let eventType = 'message';
-          let eventData = '';
-          for (const line of frame.split(/\r?\n/)) {
-            if (line.startsWith('event: '))     eventType = line.slice(7).trim();
-            else if (line.startsWith('data: ')) eventData = line.slice(6).trim();
-          }
-          if (!eventData) continue;
-
-          try {
-            const data = JSON.parse(eventData);
-            // Emitted first by the server. Retained so a stream cut short by
-            // the AppSail response timeout can still be recovered below.
-            if (eventType === 'job' && data.job_id) {
-              jobId = data.job_id;
-              continue;
-            }
-            if (eventType === 'done' || eventType === 'error') sawTerminalEvent = true;
-            updateSessionMessages(targetSessionId, prev => prev.map(msg => {
-              if (msg.id !== assistantMsgId) return msg;
-              if (eventType === 'ping') return msg; // keepalive, ignore
-              if (eventType === 'progress' && data.status) {
-                return { ...msg, status: data.status.replace(/_/g, ' ') };
-              }
-              if (eventType === 'evidence' && Array.isArray(data)) {
-                return { ...msg, evidence: data };
-              }
-              if (eventType === 'visualization' && data) {
-                return { ...msg, visualization: data };
-              }
-              if (eventType === 'token' && data.token !== undefined) {
-                return { ...msg, content: data.token, isStreaming: false, status: undefined };
-              }
-              if (eventType === 'done') {
-                return { ...msg, isStreaming: false, status: undefined };
-              }
-              if (eventType === 'error' && data.error) {
-                return { ...msg, content: `Error: ${data.error}`, isStreaming: false, status: undefined };
-              }
-              return msg;
-            }));
-          } catch (e) {
-            console.error('Failed to parse SSE frame data:', eventData, e);
-          }
-        }
-        return remainder;
-      };
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = parseSSEBuffer(buffer);
-      }
-      // Flush any remaining buffer content on stream close
-      if (buffer.trim()) parseSSEBuffer(buffer + '\n\n');
+      );
 
       // BUG FIX: AppSail closes the SSE response after ~45s. A pipeline that
       // needs longer (cold Function start plus a slow synthesis) therefore had
@@ -525,26 +403,25 @@ export default function App() {
       // terminal event, poll for the finished job instead of giving up.
       if (!sawTerminalEvent && jobId) {
         const recovered = await pollForCompletedJob(jobId, authToken);
-        updateSessionMessages(targetSessionId, prev => prev.map(msg => {
-          if (msg.id !== assistantMsgId) return msg;
-          if (recovered?.status === 'done') {
-            return {
-              ...msg,
-              content: recovered.answer,
-              evidence: recovered.evidence ?? msg.evidence,
-              visualization: recovered.visualization ?? msg.visualization,
-              isStreaming: false,
-              status: undefined,
-            };
-          }
-          return {
-            ...msg,
-            content: recovered?.error
-              ?? "This query took longer than expected and the connection closed. Please try again.",
-            isStreaming: false,
-            status: undefined,
-          };
-        }));
+        patch(msg =>
+          recovered?.status === 'done'
+            ? {
+                ...msg,
+                content: recovered.answer ?? msg.content,
+                evidence: recovered.evidence ?? msg.evidence,
+                visualization: recovered.visualization ?? msg.visualization,
+                isStreaming: false,
+                status: undefined,
+              }
+            : {
+                ...msg,
+                content:
+                  recovered?.error ??
+                  'This query took longer than expected and the connection closed. Please try again.',
+                isStreaming: false,
+                status: undefined,
+              },
+        );
       }
 
     } catch (error) {
@@ -851,9 +728,10 @@ export default function App() {
                             </summary>
                             <div className="evidence-content grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                               {msg.evidence.map((item, idx) => {
-                                const confidenceColor = 
-                                  item.confidence?.toLowerCase() === 'high' ? 'text-emerald-800 bg-emerald-100 border-emerald-300' :
-                                  item.confidence?.toLowerCase() === 'medium' ? 'text-amber-800 bg-amber-100 border-amber-300' :
+                                const confidenceTier = String(item.confidence ?? '').toLowerCase();
+                                const confidenceColor =
+                                  confidenceTier === 'high' ? 'text-emerald-800 bg-emerald-100 border-emerald-300' :
+                                  confidenceTier === 'medium' ? 'text-amber-800 bg-amber-100 border-amber-300' :
                                   'text-rose-800 bg-rose-100 border-rose-300';
                                 return (
                                   <div

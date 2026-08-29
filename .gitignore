@@ -94,3 +94,7 @@ backend/.packages/
 
 # Screenshots
 screenshots/
+
+# External skill packages (reference material, not project code)
+/impeccable-skill-v4.1.2/
+/ui-ux-pro-max-skill-2.15.0/
