@@ -9,6 +9,7 @@ import {
   LogOut,
   Trash2,
   Plus,
+  BarChart3,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useCasesStore } from '../../stores/casesStore';
@@ -75,6 +76,9 @@ export default function CaseDrawerSidebar() {
       <nav className="drawer-nav" aria-label="Primary">
         <NavLink to="/cases" className="drawer-link" end>
           <FolderOpen size={17} /> All cases
+        </NavLink>
+        <NavLink to="/dashboard" className="drawer-link">
+          <BarChart3 size={17} /> Dashboard
         </NavLink>
         <button type="button" className="drawer-link drawer-link--action" onClick={() => setShowNewCase(true)}>
           <Plus size={17} /> New case

@@ -3,6 +3,7 @@ import RequireAuth from './components/auth/RequireAuth';
 import AppShell from './layouts/AppShell';
 import LoginPage from './pages/LoginPage';
 import CasesIndexPage from './pages/CasesIndexPage';
+import GlobalDashboardPage from './pages/GlobalDashboardPage';
 import CaseWorkspacePage from './pages/CaseWorkspacePage';
 import CorkboardPage from './pages/CorkboardPage';
 import SessionChatPage from './pages/SessionChatPage';
@@ -19,6 +20,7 @@ export const router = createBrowserRouter(
           children: [
             { index: true, element: <Navigate to="/cases" replace /> },
             { path: 'cases', element: <CasesIndexPage /> },
+            { path: 'dashboard', element: <GlobalDashboardPage /> },
             { path: 'cases/:caseId', element: <CaseWorkspacePage /> },
             { path: 'cases/:caseId/board', element: <CorkboardPage /> },
             { path: 'cases/:caseId/sessions/:sessionId', element: <SessionChatPage /> },
