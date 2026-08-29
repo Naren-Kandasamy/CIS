@@ -41,9 +41,9 @@ Design decisions locked with the user:
 |---|---|---|
 | 0 — Foundation | ✅ done (`8819a56`) | types module, SSE extraction, dead-code purge |
 | 1 — Router + shell + folder grid | ✅ done (`7992d08`) | routes, stores, AppShell, folder room, chat page |
-| 2 — State migration | ✅ done | chat `messagesBySession` → `chatStore`; session-id + title contract |
-| 3 — Chat extraction | ⏳ next | split SessionChatPage into chat/* components; delete App.tsx |
-| 4 — Case Workspace + backend persistence | pending | `case_board_layout` API, `hypotheses_by_case`, per-case workspace |
+| 2 — State migration | ✅ done (`db6247e`) | chat `messagesBySession` → `chatStore`; session-id + title contract |
+| 3 — Chat extraction | ✅ done | split SessionChatPage into `components/chat/*`; `useVoiceRecorder`; deleted App.tsx |
+| 4 — Case Workspace + backend persistence | ⏳ next | `case_board_layout` API, `hypotheses_by_case`, per-case workspace |
 | 5 — Corkboard | pending | React Flow spike → freeform board, yarn edges, retire HypothesisWorkspace |
 | 6 — Theme refinement | pending | token reconciliation, Login tokenize, index.css split, board tokens |
 | 7 — Verification | continuous | Playwright + backend tests + impeccable audit |
@@ -269,7 +269,68 @@ Then update this file's Phase 2 section, mark Phase 3 as next, and stop for /com
 
 ---
 
-## Phase 3 — NEXT. Goal
+## Phase 3 — DONE
+
+Pure structural refactor. `pages/SessionChatPage.tsx` went from ~460 lines of
+inline JSX to a ~40-line container; the chat UI now lives in `components/chat/*`
+and the mic flow in a hook. **No store or API changes.** Class names unchanged
+(`styles/*` / Case File CSS still match). `client/src/App.tsx` deleted (`App.css`
+was already gone). Nothing imported `App.tsx` since Phase 1.
+
+**New files:**
+- `hooks/useVoiceRecorder.ts` — `{ isRecording, isPaused, isTranscribing,
+  toggleRecording, togglePause, getAnalyser }`; takes `{ language, onTranscript }`.
+  Body lifted verbatim from the old page's mic/transcribe/pause handlers.
+- `components/chat/ChatView.tsx` — `.chat-container` layout: `<MessageList>` +
+  `<InputBar>`. Props: `messages`, `sessionId`, `isLoading`, `onSend`.
+- `components/chat/MessageList.tsx` — `.chat-messages`, maps `<MessageBubble>`,
+  owns `messagesEndRef` autoscroll **and** the lifted `activeCorrectionId` /
+  `correctionExplanation` state (one correction box open at a time, preserved).
+  Selects `feedbackStatus` / `submitFeedback` from `chatStore`, `displayName`
+  from `authStore`, `open` from `entityStore`. Builds the `EvidenceFeedback`
+  bundle passed down through MessageBubble → EvidencePanel → EvidenceCard.
+- `components/chat/MessageBubble.tsx` — one `.message` row: avatar +
+  `<PipelineProgress>` + `.message-content` (markdown / streaming skeleton) +
+  `<EvidencePanel>` when `message.evidence?.length`.
+- `components/chat/PipelineProgress.tsx` — the status pill + `PIPELINE_STEPS`
+  stepper; renders `null` when no `status`.
+- `components/chat/EvidencePanel.tsx` — the `<details className="evidence-card">`
+  block + grid; exports the `EvidenceFeedback` type. Keys feedback state by
+  `item.edge_id || item.fir_id` exactly as before.
+- `components/chat/EvidenceCard.tsx` — one `.evidence-item` citation card;
+  `openEntity({ type: 'fir', ... })` on click / Enter / Space; hosts
+  `<FeedbackControls>`.
+- `components/chat/FeedbackControls.tsx` — `.feedback-controls`: "recorded" pill,
+  Confirm / Correct buttons, correction textarea. Controlled — all state + the
+  submit handler come from props (owned by MessageList).
+- `components/chat/InputBar.tsx` — `.input-area` + recording strip + `.input-box`
+  form. Owns its own `inputValue` + `voiceLanguage` (default `'kn'`) and uses
+  `useVoiceRecorder`. Guards `!text.trim() || disabled || isTranscribing`, then
+  `onSend(text, language)`.
+
+**`pages/SessionChatPage.tsx` (rewritten):** reads `:caseId` / `:sessionId`,
+selects `messages` / `isLoading` / `loadHistory` / `sendQuery` from `chatStore`
+and `token` / `logout` from `authStore`. `loadHistory(sessionId)` in a
+`useEffect` on id change. `handleSend(text, language)` → `sendQuery({ sessionId,
+caseId, text, language, token, onUnauthorized: logout })`. Renders `<ChatView>`.
+
+**Gates:** `npx vite build` clean · `npx vitest run` 13/13 · touched files +
+new files tsc-clean (`tsconfig.app.json` error count unchanged at 37 — all
+pre-existing; `components/chat/VoiceVisualizer.tsx:10` TS2554 predates this phase
+and that file was not touched) · `oxlint src/` — no new findings.
+
+**Live-verified in Chrome** (existing session in Test Case Beta): history
+restored on open → fresh query streamed through the extracted `PipelineProgress`
+stepper (7 steps) and streaming skeleton → answer rendered → `EvidencePanel`
+(10 citations) → `FeedbackControls` "Confirm" → "✓ Feedback recorded
+(confirmed)" → page reload restores the transcript **including the new turn**.
+Zero console errors.
+
+**Commit:** `feat(client): Phase 3 — chat component extraction + drop App.tsx`.
+
+---
+
+## Phase 3 — original goal (for reference)
 
 Split `pages/SessionChatPage.tsx` (~330 lines of inline JSX) into
 `components/chat/*`, preserving every behavior, and **delete the orphaned
@@ -310,3 +371,61 @@ Case File CSS target them.
 **Exit criteria:** chat identical; `App.tsx` gone; `vite build` + `vitest`
 green; committed `feat(client): Phase 3 — chat component extraction + drop App.tsx`.
 Update this file, mark Phase 4 next, stop for /compact.
+
+---
+
+## Phase 4 — NEXT. Goal
+
+Per-case **Case Workspace** page backed by **persistent** server state (today the
+dashboard only reflects the last query's in-memory result). Backend work lands
+first. Full detail in the plan file §"Phase 4"; summary:
+
+### 4.1 Backend — extend `backend/api/routes/cases.py` (keep NoSQL key conventions)
+
+- **Board card layout** — new mutable doc `case_board_layout:{case_id}` →
+  `{ cards: BoardCard[], updated_at, updated_by }`, separate from the append-only
+  pin log `case_board:{case_id}`.
+  - `GET /api/cases/{case_id}/board/layout` → `{ cards: [] }` (empty if absent).
+  - `PUT /api/cases/{case_id}/board/layout` `{ cards }` — full replace under
+    `get_case_lock` + `_require_collaborator`. Caps: `len(cards) <= 200`,
+    `text max_length=2000`, `len(connections) <= 50`, `color` regex, `kind` enum,
+    float coords. 422 on violation.
+- **Hypotheses re-keyed to case** — `case_id: Optional[str] = None` on
+  `HypothesisRecord` (`shared/hypothesis_models.py`); `create_hypothesis` also
+  writes a `hypotheses_by_case:{case_id}` index (same locked RMW as
+  `hypotheses_by_fir`); add `list_hypotheses_by_case`
+  (`shared/hypothesis_engine.py`). `backend/api/routes/hypothesis.py`:
+  `HypothesisCreateRequest` gains optional `case_id`, existing 4 routes stay
+  byte-compatible. New in `cases.py`: `GET /api/cases/{case_id}/hypotheses`,
+  `POST /api/cases/{case_id}/hypotheses` (thin wrapper injecting `case_id`).
+  With no specific FIR, pass `case_id` as the `fir_id` value.
+- **`delete_case` cleanup** — add `nosql_delete` for `case_board_layout:{id}` and
+  `hypotheses_by_case:{id}` to the existing `delete_tasks`.
+- No new router file. **Mirror `shared/` changes into `functions/ps_1_cis_function/`
+  per the README rule** (check: does the hypothesis engine/model live in the
+  mirror? — `job_dispatch` did not need mirroring in Phase 2, verify per-file here).
+- Restart the backend after edits (uvicorn runs WITHOUT `--reload`):
+  `source .venv/bin/activate && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001`.
+  `pytest` is NOT in the venv — backend suites can't run here; verify by import +
+  live curl / browser.
+
+### 4.2 Frontend — `pages/CaseWorkspacePage.tsx`
+
+Currently `pages/CaseWorkspacePage.tsx` renders `DashboardPanel`. Rework so data
+is persistent + per-case:
+- Citations table + Key Suspects ← `GET /api/cases/:id/board` filtered by
+  `content_type` (`'citation'`, `'suspect'`).
+- `NetworkGraph` + `CrimeMap` ← v1 derived client-side from pinned citation
+  `content`.
+- Hypotheses summary strip ← `GET /api/cases/:id/hypotheses`.
+- Move `stats.tsx`, `recent-conversations.tsx` (→ `CitationsTable`),
+  `conversation-volume-chart.tsx`, `channel-breakdown-chart.tsx` under
+  `components/workspace/`.
+- "Pin to board" control on citation rows / suspects / graph nodes →
+  `POST /api/cases/:id/board`.
+- Introduce `stores/boardStore.ts` (pins + layout) — consumed fully in Phase 5.
+
+**Exit criteria:** workspace shows real persisted case data; pinning round-trips
+(pin a citation → reload → still there); `vite build` + `vitest` green; backend
+imports clean + live-verified. Commit `feat: Phase 4 — case workspace + board
+persistence`. Update this file, mark Phase 5 next, stop for /compact.
