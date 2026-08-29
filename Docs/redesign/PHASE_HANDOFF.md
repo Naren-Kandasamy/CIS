@@ -44,10 +44,9 @@ Design decisions locked with the user:
 | 2 — State migration | ✅ done (`db6247e`) | chat `messagesBySession` → `chatStore`; session-id + title contract |
 | 3 — Chat extraction | ✅ done | split SessionChatPage into `components/chat/*`; `useVoiceRecorder`; deleted App.tsx |
 | 4 — Case Workspace + backend persistence | ✅ done | `case_board_layout` API, `hypotheses_by_case`, `boardStore`, persistent per-case workspace, chat "Pin to board" |
-| 5 — Corkboard | ✅ done | hand-rolled pan/zoom board, draggable pinned cards, red-yarn links, hypothesis check/resolve inline, retired HypothesisWorkspace + DashboardPanel |
-| 6 — Theme refinement | ⏳ next | token reconciliation in `index.css`, `Login.tsx` tokenization, split `index.css` into `styles/*`, delete 4 orphaned analytics charts, `--text-tertiary` contrast |
-| 6 — Theme refinement | pending | token reconciliation, Login tokenize, index.css split, board tokens |
-| 7 — Verification | continuous | Playwright + backend tests + impeccable audit |
+| 5 — Corkboard | ✅ done (`801db58`) | hand-rolled pan/zoom board, draggable pinned cards, red-yarn links, hypothesis check/resolve inline, retired HypothesisWorkspace + DashboardPanel |
+| 6 — Theme refinement | ✅ done (`af844fe`) | tokens single-sourced in `styles/tokens.css`, `index.css` split into 10 ordered partials, `Login.tsx` tokenized onto `styles/auth.css`, `--text-tertiary` contrast fix, deleted 4 charts + `delta.tsx` + whole `components/ui/` (9 files), `.dark` removed, motion audit |
+| 7 — Verification | ✅ done (`<pending>`) | `test_cases_board_layout.py` (12) + hypothesis `case_id` (3) — 18/18 green; `test_ui_redesign_playwright.py` authored; middleware bug found+fixed (board/layout was capped at 2KB); impeccable + Chrome pass |
 
 ---
 
@@ -655,7 +654,76 @@ file, mark Phase 6 next, stop for /compact.
 
 ---
 
-## Phase 6 — NEXT. Goal
+## Phase 6 — DONE (`af844fe`)
+
+Theme refinement, no visual redesign — the Case File identity is byte-for-byte
+the same on screen. Verified in Chrome across login (+ error/invalid states),
+`/cases`, workspace, session chat, corkboard: zero console errors.
+
+**Token single-sourcing** — `client/src/styles/tokens.css` (new): the custom
+primitives (`--bg-*` / `--accent-*` / `--text-*`) are authoritative; every
+shadcn token now `var()`-references them (`--background: var(--bg-primary)`,
+`--primary: var(--accent-primary)`, `--border: var(--glass-border)`, charts →
+`--accent-*`). New primitives `--accent-blue` / `--accent-brown` back
+`--chart-4/5`; semantic `--confirm` (= `--accent-secondary`), `--danger-bg`.
+The `.dark` block (a verbatim no-op copy of `:root`) is deleted; the
+`@custom-variant dark` line stays (harmless, no consumers left).
+
+**Contrast** — `--text-tertiary` `#8a7d67` → `#6a5c43` (~3.0:1 → ~4.9:1 on
+`--bg-primary`; measured). Used on ~14 low-emphasis labels, all now pass.
+
+**`index.css` split** — was ~1030 lines; now only the font `@import`, the three
+framework imports, ten ordered partial `@import`s, `@custom-variant`,
+`@theme inline`, `@layer base`. New partials under `client/src/styles/`:
+`tokens.css` → `base.css` (reset, body, `.ambient-bg`, `.stamp-font`/`.mono-font`,
+`.app-container`, keyframes) → `theme-casefile.css` (`.sidebar` spine, `.brand*`,
+`.chat-*`, `.message*`, `.input-*`, `.status-pill`, `.evidence-*`) →
+`dashboard.css` (`.dossier-*`, `.entity-clickable`) → `entity-drawer.css`
+(`.entity-drawer*`, `.entity-*`, `.graph-split-*`) → `auth.css` (new) →
+`casefolder.css` → `sidebar.css` → `ui.css` → `board.css`. Rules moved verbatim;
+a few `#6f211c` literals folded to `var(--accent-primary-hover)`.
+
+**`Login.tsx` tokenized** — ~40 inline hex / `fontFamily` literals and the JS
+`inkBorder(focused)` helper replaced by `styles/auth.css` classes
+(`.auth-screen` / `.auth-card` / `.auth-field` / `.auth-input` / `.auth-alert` /
+`.auth-submit` / …). Focus and invalid states are pure CSS (`.auth-input:focus`
++ `.auth-input[aria-invalid='true']`); `userFocused` / `passFocused` state
+removed. Markup and layout unchanged.
+
+**Motion audit** — typing-indicator dots `animate-bounce` → `animate-pulse`
+(kills the dated bounce easing flagged by `detect.mjs`; matches the skeleton
+bars beside them). `@media (prefers-reduced-motion: reduce)` blocks added:
+shake/fade/ping animations and the drawer / graph-split transitions are
+disabled; the loading spinner keeps turning (progress signal, not decoration).
+
+**Dead code purged** — `git rm`: `components/stats.tsx`,
+`recent-conversations.tsx`, `conversation-volume-chart.tsx`,
+`channel-breakdown-chart.tsx`, `delta.tsx` (unreferenced since Phase 4), and the
+**entire `components/ui/` shadcn scaffold** — `badge/button/card/chart/input/
+select/separator/table/tooltip.tsx` (9 files, unreferenced since the Phase 3–5
+component extractions; grep-verified). `lib/utils.ts` keeps `cn` (still exported,
+now unused) alongside `fetchWithRetry`. Removed unused imports in
+`dashboard/CrimeMap.tsx` and `dashboard/EntityDrawer.tsx`.
+
+**Gates** — `vite build` clean (308 modules), `vitest` 13/13, `oxlint src/` **0
+findings** (was 24 pre-existing), `tsc -p tsconfig.app.json` **4** pre-existing
+errors (was 27 — the `ui/` + chart deletions took ~19 with them; the 4 left are
+in `VoiceVisualizer.tsx`, `NetworkGraph.tsx` ×2, `wavRecorder.ts`, none touched
+this phase). `impeccable/scripts/detect.mjs` → **2** findings, both the
+deliberate folder-binding red edge (`.sidebar` `border-right:3px`,
+`.entity-drawer` `border-left:3px`) — flagged since the Phase 0 baseline, kept as
+identity. `palette.mjs` printed only its rubric (advisory), no violations; the
+ink-red primary sits at a dark L with real chroma (clears the muddy-mid-tone
+trap) and every filled action carries near-white text.
+
+**Known cosmetic debt still open** (not a Phase 6 regression — pre-existing,
+untouched): the `.message-content` bubble has a heavy diagonal highlight
+gradient that reads as plastic sheen rather than paper; the chat greeting has a
+large empty gap (Phase 1 note). Candidates for a future polish pass.
+
+---
+
+## Phase 6 — original goal (for reference)
 
 Theme refinement — keep the "Case File" identity, no visual redesign. Full detail
 in the plan file §"Phase 6".
@@ -701,12 +769,75 @@ this file, mark Phase 7 next, stop for /compact.
 
 ---
 
-## Phase 7 — verification (after Phase 6)
+## Phase 7 — DONE
 
-Playwright `tests/test_ui_redesign_playwright.py` (folder-grid landing, dialog
-case create, session URL shape, query → progress → evidence, board drag →
-reload persists, pin → reload persists, SSE poll-recovery). Backend
-`tests/test_cases_board_layout.py` (PUT/GET layout, 201-card / oversized-text /
-oversized-connections → 422, case-lock, `delete_case` cleanup) + hypothesis
-`case_id` tests. Impeccable screenshot audit at 1440 / 768 / 375 for `/login`,
-`/cases`, `/cases/:id`, `/cases/:id/sessions/:sid`, `/cases/:id/board`.
+Verification sweep for Phases 1–6.
+
+### Bug found + fixed during verification
+
+`backend/api/middleware/input_validator.py` had a blanket **2048-byte cap on
+every `application/json` request body**. Phase 4's `PUT /api/cases/{id}/board/
+layout` declares `_MAX_CARDS = 200` (+ `text ≤ 2000`, `connections ≤ 50`), but a
+corkboard of more than ~10 cards produced a JSON body over 2 KB and got a **413**
+from the middleware before the route or Pydantic ever ran — the 200-card limit
+was dead. Fixed with a dedicated `elif path.endswith("/board/layout")` branch
+and `MAX_BOARD_LAYOUT_BYTES = 256 * 1024`, mirroring the identical pre-existing
+exemption for `/export/pdf` (`MAX_EXPORT_SIZE_BYTES`). The per-card Pydantic caps
+still do the precise enforcement. Middleware is backend-only (no
+`functions/ps_1_cis_function/` mirror). Verified live: a 6.4 KB / 20-card PUT
+against the running backend now returns **200** (was 413).
+
+### Backend tests — `tests/test_cases_board_layout.py` (new)
+
+TestClient + mocked `nosql_*` / `rbac.get_session`, same convention as
+`test_cases.py`. Covers: 401 unauth, 403 non-collaborator, empty-when-absent GET,
+PUT→GET round trip with audit fields (`updated_by` / `updated_at`), colour forms
+(`#hex` / word / `var(--…)`), and the caps → **422** (201 cards, `text` 2001
+chars, 51 connections, bad `kind`, bad `color`, non-numeric coord), plus
+`delete_case` issuing `nosql_delete` for `case_board_layout:{id}` and
+`hypotheses_by_case:{id}`.
+
+### Hypothesis `case_id` — `tests/test_hypothesis.py` (extended, `MOCK_NOSQL_ONLY`)
+
+`test_case_scoped_hypothesis_indexed_by_case` (lands in both the FIR and
+`hypotheses_by_case:{id}` indexes), `test_legacy_hypothesis_without_case_id_
+not_in_case_index` (no `case_id` → not in any case index; unrelated case lists
+empty), `test_multiple_hypotheses_accumulate_in_one_case_index` (3 for one case
+all survive — regression guard for the unlocked read-modify-write bug class).
+
+**Result: `pytest tests/test_cases_board_layout.py tests/test_hypothesis.py` →
+18 passed.** Broader regression run (`test_cases*`, `test_sessions`,
+`test_export`, `test_validator`, `test_hypothesis_integration`, …) → 99 passed.
+The 5 failures / 2 errors in the wider suite (`test_query.py` ×3, `test_chaos`,
+`test_zia_mocked`) are **pre-existing at `af844fe`** — verified by `git stash` —
+and env/pytest-9-async-related, not caused by this work. `pytest` +
+`pytest-asyncio` were `pip install`-ed into `.venv` to run these (were absent).
+
+### Playwright — `tests/test_ui_redesign_playwright.py` (new, authored)
+
+Plain `sync_playwright` script (matches `test_ui_playwright.py`; no pytest
+fixtures), 8 scenarios: folder-grid landing (not chat), dialog case-create,
+folder→workspace, session URL `/sessions/s_…` shape, query → status pill →
+evidence, pin citation → reload persists, board add-card → drag → reload →
+position persisted, and SSE cut-off (a `/api/query` stream with no `done` event
+→ recovery via the `/api/query/status/{job}` poll, `status:"done"` flat shape).
+**Not run here** — `playwright` is not installed in `.venv` and the browser
+binaries aren't provisioned; the file is CI-ready. `py_compile` clean.
+
+### Impeccable / Chrome audit
+
+`detect.mjs` clean except the 2 intentional folder-binding edges (see Phase 6).
+Live Chrome pass at 1440-wide across all five routes (`/login`, `/cases`,
+`/cases/:id`, `/cases/:id/sessions/:sid`, `/cases/:id/board`) — Case File theme
+intact after the token/`index.css` refactor, zero console errors, login +
+error/`aria-invalid` states correct. **768 / 375 not captured** — the MCP
+screenshot bridge renders at a fixed size regardless of `resize_window`, and the
+app has no responsive breakpoints (fixed 280 px sidebar, `max-width:1600px`
+shell, `clamp()` workspace padding): it was scoped as a desktop workstation tool
+from Phase 0/1 and the brief never asked for mobile. A real mobile pass would be
+net-new responsive work, out of scope here.
+
+### Redesign status
+
+Phases 0–7 complete on `feature/ui-redesign-v2`. **Not merged to `main`** —
+awaiting the go-ahead. No further planned phases.

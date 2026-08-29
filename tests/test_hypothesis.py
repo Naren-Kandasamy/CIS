@@ -11,6 +11,7 @@ from shared.hypothesis_engine import (
     create_hypothesis,
     get_hypothesis,
     list_hypotheses,
+    list_hypotheses_by_case,
     check_hypothesis,
     resolve_hypothesis,
 )
@@ -100,6 +101,79 @@ async def test_resolve_hypothesis():
     print("  ✅ Hypothesis resolution passed!")
 
 
+@pytest.mark.asyncio
+async def test_case_scoped_hypothesis_indexed_by_case():
+    """Phase 4: a hypothesis carrying case_id lands in both the FIR index and
+    the hypotheses_by_case:{case_id} index; list_hypotheses_by_case reads it."""
+    print("\n[*] Testing case-scoped hypothesis indexing...")
+    case_id = "c_hyp_case_001"
+    record = HypothesisRecord(
+        hypothesis_id="hyp-case-001",
+        fir_id=case_id,  # no specific FIR -> route falls back to case_id
+        case_id=case_id,
+        officer_id="dysp1",
+        statement="The 2024 Belagavi thefts share a common accused network",
+        linked_entity_ids=["ACC_101", "ACC_102"],
+        status="open",
+        created_date="2026-08-01T10:00:00Z",
+    )
+    await create_hypothesis(record)
+
+    by_case = await list_hypotheses_by_case(case_id)
+    assert any(h.hypothesis_id == "hyp-case-001" for h in by_case)
+    assert all(h.case_id == case_id for h in by_case)
+
+    # still reachable through the FIR index too (fir_id == case_id here)
+    by_fir = await list_hypotheses(case_id)
+    assert any(h.hypothesis_id == "hyp-case-001" for h in by_fir)
+    print("  ✅ case-scoped indexing passed!")
+
+
+@pytest.mark.asyncio
+async def test_legacy_hypothesis_without_case_id_not_in_case_index():
+    """A hypothesis with no case_id must not create a hypotheses_by_case:None
+    index entry, and an unrelated case must list empty."""
+    print("\n[*] Testing legacy (FIR-only) hypothesis stays out of case index...")
+    record = HypothesisRecord(
+        hypothesis_id="hyp-legacy-001",
+        fir_id="FIR-LEGACY-777",
+        officer_id="inspector1",
+        statement="Legacy hypothesis with no case scope",
+        linked_entity_ids=["ACC_900"],
+        status="open",
+        created_date="2026-08-01T11:00:00Z",
+    )
+    await create_hypothesis(record)
+
+    assert record.case_id is None
+    empty = await list_hypotheses_by_case("c_never_used_999")
+    assert empty == []
+    print("  ✅ legacy hypothesis isolation passed!")
+
+
+@pytest.mark.asyncio
+async def test_multiple_hypotheses_accumulate_in_one_case_index():
+    """Two hypotheses created for the same case_id both survive in the index
+    (regression guard for the unlocked read-modify-write bug class)."""
+    print("\n[*] Testing case index accumulation...")
+    case_id = "c_hyp_case_multi"
+    for i in (1, 2, 3):
+        await create_hypothesis(HypothesisRecord(
+            hypothesis_id=f"hyp-multi-{i}",
+            fir_id=case_id,
+            case_id=case_id,
+            officer_id="dysp1",
+            statement=f"Working hypothesis number {i}",
+            linked_entity_ids=[f"ACC_{i}0"],
+            status="open",
+            created_date=f"2026-08-02T0{i}:00:00Z",
+        ))
+
+    ids = {h.hypothesis_id for h in await list_hypotheses_by_case(case_id)}
+    assert {"hyp-multi-1", "hyp-multi-2", "hyp-multi-3"} <= ids
+    print("  ✅ case index accumulation passed!")
+
+
 async def main():
     print("==========================================")
     print("Running Hypothesis Workspace Unit Tests...")
@@ -107,6 +181,9 @@ async def main():
     await test_create_and_list_hypothesis()
     await test_check_hypothesis()
     await test_resolve_hypothesis()
+    await test_case_scoped_hypothesis_indexed_by_case()
+    await test_legacy_hypothesis_without_case_id_not_in_case_index()
+    await test_multiple_hypotheses_accumulate_in_one_case_index()
     print("\n🎉 ALL HYPOTHESIS TESTS PASSED SUCCESSFULLY!")
 
 
