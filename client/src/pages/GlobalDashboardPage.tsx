@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DashboardStats } from '../components/stats';
 import { ConversationVolumeChart } from '../components/conversation-volume-chart';
 import { ChannelBreakdownChart } from '../components/channel-breakdown-chart';
@@ -6,6 +6,7 @@ import { RecentConversations } from '../components/recent-conversations';
 import NetworkGraph from '../components/dashboard/NetworkGraph';
 import CrimeMap from '../components/dashboard/CrimeMap';
 import EntityDrawer, { EntityInlinePanel } from '../components/dashboard/EntityDrawer';
+import { getGlobalGraph } from '../lib/api';
 import { useEntityDrawer } from '../hooks/useEntityDrawer';
 import type { SelectedEntity } from '../types/entities';
 
@@ -25,6 +26,30 @@ export default function GlobalDashboardPage() {
   const [graphEntity, setGraphEntity] = useState<SelectedEntity | null>(null);
   const openGraphPanel = useCallback((entity: SelectedEntity) => setGraphEntity(entity), []);
   const closeGraphPanel = useCallback(() => setGraphEntity(null), []);
+
+  // Officer-wide entity relation network — union across all the caller's cases
+  const [graphElements, setGraphElements] = useState<any[]>([]);
+  const [graphLoaded, setGraphLoaded] = useState(false);
+  const [sharedAccused, setSharedAccused] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    getGlobalGraph()
+      .then((r) => {
+        if (!live) return;
+        setGraphElements(r.elements ?? []);
+        setSharedAccused(r.shared_accused_count ?? 0);
+      })
+      .catch(() => {
+        if (live) setGraphElements([]);
+      })
+      .finally(() => {
+        if (live) setGraphLoaded(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return (
     <div className="workspace-page animate-fade-in">
@@ -47,21 +72,40 @@ export default function GlobalDashboardPage() {
       {/* Recent citations — full width now that Key Suspects is per-case */}
       <RecentConversations onRowClick={openDrawer} />
 
-      {/* Entity relation network */}
+      {/* Entity relation network — union across every case the officer works */}
       <div className="dossier-panel dossier-paperclip" style={{ padding: '28px' }}>
         <h3 className="dossier-panel-title text-base mb-1">Entity Relation Network</h3>
         <p className="dossier-panel-subtitle text-xs mb-3">
-          Click any node to inspect — Cytoscape network model mapping cases, co-accused, and modus operandi.
+          Every case you work, unioned — Accused, victims and districts linked to their FIRs.
+          {sharedAccused > 0 && (
+            <>
+              {' '}
+              <strong style={{ color: 'var(--accent-gold)' }}>
+                {sharedAccused} accused span more than one case
+              </strong>{' '}
+              (gold ring).
+            </>
+          )}
         </p>
-        <div className="flex items-center gap-4 mb-4 dossier-mono" style={{ fontSize: '10px' }}>
-          <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', display: 'inline-block' }} />Person</span>
+        <div className="flex items-center gap-4 mb-4 dossier-mono flex-wrap" style={{ fontSize: '10px' }}>
+          <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', display: 'inline-block' }} />Accused</span>
           <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, background: 'var(--accent-secondary)', display: 'inline-block' }} />FIR</span>
           <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)', display: 'inline-block' }} />Location</span>
+          <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-gold)', display: 'inline-block' }} />Victim</span>
         </div>
 
         <div className="graph-split-container">
           <div className={`graph-split-graph ${graphEntity ? 'graph-split-graph--narrow' : ''}`}>
-            <NetworkGraph onNodeClick={openGraphPanel} />
+            <NetworkGraph
+              elements={graphElements}
+              onNodeClick={openGraphPanel}
+              fallbackToDemo={false}
+              emptyLabel={
+                graphLoaded
+                  ? 'Nothing linked yet — pin FIRs to your cases and the network fills in.'
+                  : 'Loading the network…'
+              }
+            />
           </div>
           <div className={`graph-split-detail ${graphEntity ? 'graph-split-detail--open' : ''}`}>
             <EntityInlinePanel entity={graphEntity} onClose={closeGraphPanel} />

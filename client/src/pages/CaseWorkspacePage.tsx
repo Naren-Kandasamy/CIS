@@ -100,7 +100,7 @@ export default function CaseWorkspacePage() {
             </div>
             <KeySuspectsList suspects={suspects} />
           </div>
-          <WorkspaceGraphs citations={citations} suspects={suspects} />
+          <WorkspaceGraphs caseId={caseId} citations={citations} suspects={suspects} />
         </>
       )}
     </div>

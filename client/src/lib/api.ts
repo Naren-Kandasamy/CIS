@@ -118,6 +118,21 @@ export const putBoardLayout = (caseId: string, cards: BoardCard[]) =>
     body: { cards },
   });
 
+// ─── entity relation network ────────────────────────────────────────────────
+export interface GraphResponse {
+  elements: { data: Record<string, unknown>; classes?: string }[];
+  degraded?: boolean;
+  reason?: string;
+  case_count?: number;
+  seed_fir_count?: number;
+  shared_accused_count?: number;
+}
+/** Officer-wide graph — union across every case the caller collaborates on. */
+export const getGlobalGraph = () => apiFetch<GraphResponse>('/api/graph');
+/** One case's graph — nodes/edges reachable from its pinned FIRs + hypotheses. */
+export const getCaseGraph = (caseId: string) =>
+  apiFetch<GraphResponse>(`/api/cases/${caseId}/graph`);
+
 // ─── hypotheses ─────────────────────────────────────────────────────────────
 export const listCaseHypotheses = (caseId: string) =>
   apiFetch<HypothesesResponse>(`/api/cases/${caseId}/hypotheses`);
