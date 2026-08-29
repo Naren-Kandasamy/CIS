@@ -46,7 +46,7 @@ Design decisions locked with the user:
 | 4 — Case Workspace + backend persistence | ✅ done | `case_board_layout` API, `hypotheses_by_case`, `boardStore`, persistent per-case workspace, chat "Pin to board" |
 | 5 — Corkboard | ✅ done (`801db58`) | hand-rolled pan/zoom board, draggable pinned cards, red-yarn links, hypothesis check/resolve inline, retired HypothesisWorkspace + DashboardPanel |
 | 6 — Theme refinement | ✅ done (`af844fe`) | tokens single-sourced in `styles/tokens.css`, `index.css` split into 10 ordered partials, `Login.tsx` tokenized onto `styles/auth.css`, `--text-tertiary` contrast fix, deleted 4 charts + `delta.tsx` + whole `components/ui/` (9 files), `.dark` removed, motion audit |
-| 7 — Verification | ✅ done (`<pending>`) | `test_cases_board_layout.py` (12) + hypothesis `case_id` (3) — 18/18 green; `test_ui_redesign_playwright.py` authored; middleware bug found+fixed (board/layout was capped at 2KB); impeccable + Chrome pass |
+| 7 — Verification | ✅ done (`277be4c`) | `test_cases_board_layout.py` + hypothesis `case_id` — 18/18 green; `test_ui_redesign_playwright.py` authored; middleware bug found+fixed (board/layout was capped at 2KB); impeccable + Chrome pass |
 
 ---
 
