@@ -4,7 +4,7 @@ Read this first. `PHASE_HANDOFF.md` (same folder) has the phase-by-phase
 detail; the approved plan is at
 `/Users/vijayaraaghavanks/.claude/plans/https-www-bullet-in-board-online-ok-so-jaunty-neumann.md`.
 
-Last updated: 2026-08-30 (through commit `9845585`).
+Last updated: 2026-08-30 (through `main` commit `7828fd4`).
 
 ---
 
@@ -14,10 +14,12 @@ A multi-phase UI redesign of the CIS (Conversational Crime Intelligence
 System) frontend for Karnataka State Police on Zoho Catalyst. **Phases 0–7 of
 the plan are complete**, plus post-plan additions: global dashboard restore,
 graph-DB-backed entity relation network (per-case + officer-wide, with a
-thin-graph overview fallback), the `:Person`→`:Accused` pipeline fix, and a
-one-click "log this analysis as a hypothesis" bridge in chat. Everything lives
-on branch **`feature/ui-redesign-v2`** and is **NOT merged to `main`** — the
-user will say when. The app is runnable and demoable right now.
+thin-graph overview fallback), the `:Person`→`:Accused` pipeline fix, a
+one-click "log this analysis as a hypothesis" bridge in chat, and the Indic /
+code-mixed **voice input** integration. **All of it is merged to `main`** now
+(PRs #24, #26, #27) — the `feature/ui-redesign-v2` branch and the integration
+branches are merged and deleted. Continue on `main` or new branches off it.
+The app is runnable and demoable right now.
 
 The redesign: log in → land in a room of manila **case folders** → open one →
 a per-case **workspace** (persistent pinned citations, key suspects, a
@@ -30,8 +32,9 @@ theme (kept and refined, never a full visual redesign).
 
 ## Standing rules (do not break these)
 
-1. **Never merge to `main`.** Commit phase-wise / feature-wise on
-   `feature/ui-redesign-v2` only. The user gives the merge go-ahead.
+1. **The redesign is now on `main`** (was: never merge). Work on short-lived
+   branches off `main`; the user gives the merge go-ahead per PR. Don't
+   force-push `main`.
 2. **The 3 env files stay separate** — `backend/.env`,
    `pipeline_function/.env`, `client/.env.production`. They hold live Catalyst
    credentials, are gitignored, and must NOT be merged into one. (User's
@@ -127,7 +130,7 @@ hand-written `types/react-cytoscapejs.d.ts` plus small fixes to
 `VoiceVisualizer.tsx` / `wavRecorder.ts` cleared the 4 old errors.
 
 Backend: `source .venv/bin/activate && python -m pytest tests/ -q
--p no:cacheprovider` → **124 passed**. The old collection errors are gone
+-p no:cacheprovider` → **126 passed**. The old collection errors are gone
 (`tests/conftest.py` `collect_ignore` for probe/e2e scripts) and
 `test_query.py` / `test_zia_mocked.py` were updated to the current route
 contracts. `ruff check .` is also clean (`ruff.toml`, narrow F/E9/B
@@ -211,9 +214,68 @@ from the 2 KB JSON body cap (`MAX_BOARD_LAYOUT_BYTES = 256 KB`).
 
 ---
 
-## Commit history (this branch, newest first)
+## Voice input — Indic / code-mixed ASR (PRs #26, #27)
+
+Hemnath's `feat/indic-asr` work, ported onto the redesigned chat components
+(his PR #25 couldn't merge — it edited the deleted `App.tsx`). Detail doc:
+`Docs/redesign/INDIC_ASR_INTEGRATION.md`.
+
+**What's live on `main`:**
+- **Primary path** — `client/src/lib/indicSpeech.ts` (`IndicSpeechRecognizer`,
+  browser Web Speech API): live in-browser transcription, Chrome/Edge. Fills
+  the input box as you speak.
+- **Fallback path** — `client/src/lib/audioRecorder.ts` (`AudioRecorderVAD`,
+  16 kHz WAV + silence auto-stop) → `POST /api/transcribe` → server cascade
+  **HuggingFace → Groq/Whisper → Zia** (`shared/catalyst_client.py
+  transcribe_audio`). Used when SpeechRecognition is unavailable. Also drives
+  the `VoiceVisualizer` in both paths.
+- **Normalizer** — `INDIC_PHONETIC_PATTERNS` gazetteer (Bengaluru stations,
+  IPC/BNS section forms, code-mixed verbs ×7 languages) + `preprocess_indic_
+  phonetics()` + `normalize_transcript_text()` (Karnataka-Police LLM prompt),
+  in `shared/catalyst_client.py`. Exposed as `POST /api/transcribe/normalize`
+  (`{text, language}` → `{normalized_text, original_text}`; best-effort,
+  returns input unchanged on failure). Verified: `"koramangala station nalli
+  Ramesh yaaru andu heli, section 379 cases torisi"` →
+  `"Show details of Section 379 IPC cases for Ramesh at Koramangala station"`.
+- **`InputBar.tsx`** — 7-language voice selector (EN/KN/HI/TA/TE/MR/MIX),
+  folded down to the pipeline's `en|hi|kn` for `/api/query`; pause control
+  shown only in the fallback path. `hooks/useVoiceRecorder.ts` orchestrates
+  both paths; `lib/api.ts` `normalizeTranscript()`.
+- **`sessions.py` `DELETE /api/sessions/{id}`** — made idempotent (no 404 when
+  meta absent) + tolerates a missing `case_id`. His duplicate route in
+  `cases.py` was NOT taken.
+
+**Removed in #27:** the bundled `models/indic_asr_tiny.onnx` + `onnx_indic_asr.py`
++ `numpy`/`onnxruntime` deps. Forensics showed the `.onnx` is Whisper-tiny's
+**encoder only** (output `last_hidden_state [B,1500,384]`, no decoder / lm_head)
+— its "transcription" was `argmax` over hidden states through a 26-word toy
+`vocab.json`, returning `"HSR Layout"` for silence, noise, and real speech
+alike. It also *shadowed* the working cascade (early return on first non-empty
+hop). Cloud cascade verified on real TTS speech: Groq and Zia both returned
+`"Show recent robbery cases in Belagave."`; full route + normalize →
+`"Show recent robbery cases at Belagavi station"`.
+
+**Env:** `HF_API_KEY` and `GROQ_API_KEY` are set in `backend/.env` (and
+`pipeline_function/.env` for HF). Without them the cascade still falls through
+to Zia. **The pasted HF key should be rotated** (shared in chat).
+
+**Local `.venv` note:** `onnxruntime`/`numpy` got `pip install`-ed during the
+ONNX investigation but are no longer in any `requirements.txt` — harmless
+leftovers, ignore.
+
+---
+
+## Commit history (redesign + voice, on `main`, newest first)
 
 ```
+7828fd4 Merge #27: drop non-functional in-repo ONNX ASR path (cloud cascade verified)
+cf0090e chore(voice): drop the ONNX ASR path; cloud cascade only  [co-author: Hemnath]
+712aec6 Merge #26: integrate Indic ASR + code-mixed normalization
+2ce95ba feat(voice): integrate Indic ASR onto the redesigned chat  [co-author: Hemnath]
+6001c82 Merge #24: UI redesign — case-folder workspace, corkboard, real ER network
+33dd1df security: disable public FastAPI swagger docs  (cherry-picked from main)
+1203739 fix(catalyst): serialise token refresh + retry transient NoSQL 5xx
+aeda30c docs: SESSION_HANDOFF — A/B/C follow-ups worked through
 9845585 polish: drop plastic-sheen gradients, centre chat greeting, OSM basemap
 f614c71 fix: board scatter overlap, persist hypothesis checks, restored-msg prefill
 a3baf41 fix(board): always render corkboard canvas + toolbar; load once per case
@@ -245,10 +307,11 @@ db6247e feat(client): Phase 2 — chat state store + session-id/title contract
 
 ## Open follow-ups
 
-The A / B / C list below is **almost entirely done** as of `9845585`. The
-working tree is clean. What's left is genuinely optional.
+The redesign A/B/C follow-ups are **all done** and, with the voice
+integration, **merged to `main`** (PRs #24 / #26 / #27). Working tree clean.
+What's left (below "Still open") is genuinely optional.
 
-### Done this round (`3c389e3` → `9845585`)
+### Done — redesign follow-ups (`3c389e3` → `9845585`)
 
 - ✅ **A1** — repo-wide lint sweep committed (`3c389e3`): `ruff.toml` (narrow
   F/E9/B ruleset, `ruff check .` clean), dead imports + dead duplicate
@@ -297,20 +360,29 @@ working tree is clean. What's left is genuinely optional.
   hasn't been run this round.
 - **C4** — no mobile/responsive layout. Deliberately out of scope (desktop
   workstation tool); net-new work if ever wanted.
+- **Voice** — the fallback ASR cascade's HuggingFace hop was DNS-blocked in
+  this sandbox (Groq + Zia verified instead). Confirm HF works from the real
+  network / deploy. Rotate the `HF_API_KEY` that was pasted in chat. The
+  browser SpeechRecognition path is the primary and is solid.
+- **`shared/` vs `functions/` `catalyst_client.py`** still drift on
+  `translate_text` (LLM vs old Zia REST) — pre-existing, unrelated to any of
+  this. The ASR + token-lock + `transcribe_audio` regions ARE mirrored.
+- **Deploy check** — Catalyst hasn't been redeployed with any of this yet
+  (`main` = `7828fd4`). The AppSail backend uploads the whole repo (see
+  `backend/start.py`); `data/**` and `Docs/**` are `.catalystignore`d.
 
 ---
 
 ## If you're picking this up
 
-- Confirm branch (`git branch --show-current` → `feature/ui-redesign-v2`),
-  `git status` clean, servers up (`curl -s localhost:8001/health`), log in
-  `dysp1`/`demo1234`.
-- Frontend work: gates from `client/` — `npx vite build`, `npx vitest run`
-  (20/20), `npx oxlint src/` (0), `npx tsc --noEmit -p tsconfig.app.json` (0,
-  now fully clean).
-- Backend work: edit → restart uvicorn (no `--reload`) → `pytest` the touched
-  suites (`python -m pytest tests/ -q` → 124) → live curl / browser.
-  `ruff check .` should stay clean.
-- Anything framed as "phase N" → follow the plan file; commit phase-wise;
-  update `PHASE_HANDOFF.md`; ask for `/compact`.
-- **Never merge to `main`** until the user says so.
+- You're on **`main`** now (`git log --oneline -1` → `7828fd4`). `git status`
+  clean, servers up (`curl -s localhost:8001/health`), log in
+  `dysp1`/`demo1234`. Make a short-lived branch off `main` for new work.
+- Frontend gates from `client/` — `npx vite build`, `npx vitest run` (20/20),
+  `npx oxlint src/` (0), `npx tsc --noEmit -p tsconfig.app.json` (0).
+- Backend — edit → restart uvicorn (no `--reload`) → `python -m pytest
+  tests/ -q` (**126**; clear `rate:` keys from `.nosql_mock_db.json` first if
+  `test_feedback_integration` flakes) → live curl / browser. `ruff check .`
+  stays clean.
+- `shared/` edits still mirror to `functions/ps_1_cis_function/`.
+- Open a PR per feature; the user gives the merge nod. Don't force-push `main`.
