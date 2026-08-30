@@ -202,6 +202,32 @@ async def list_case_sessions(case_id: str, request: Request):
     return {"sessions": sessions}
 
 
+@router.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str, request: Request):
+    username = request.state.username
+    meta_doc = await nosql_get(f"session_meta:{session_id}")
+    if not meta_doc:
+        return {"status": "deleted"}
+    meta = json.loads(meta_doc["value"])
+    case_id = meta.get("case_id")
+
+    if case_id:
+        async with get_case_lock(case_id):
+            await _require_collaborator(case_id, username)
+            sessions_doc = await nosql_get(f"case_sessions:{case_id}")
+            if sessions_doc:
+                session_ids = json.loads(sessions_doc["value"])
+                if session_id in session_ids:
+                    session_ids.remove(session_id)
+                    await nosql_set(f"case_sessions:{case_id}", json.dumps(session_ids))
+
+    await asyncio.gather(
+        nosql_delete(f"session_meta:{session_id}"),
+        nosql_delete(f"history:{session_id}")
+    )
+    return {"status": "deleted"}
+
+
 @router.post("/api/cases/{case_id}/board")
 async def pin_to_case_board(case_id: str, body: PinItemRequest, request: Request):
     username = request.state.username

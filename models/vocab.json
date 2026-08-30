@@ -1,0 +1,13 @@
+{
+  "model_type": "onnx_whisper_indic_tiny",
+  "sample_rate": 16000,
+  "languages": [
+    "kn",
+    "hi",
+    "en",
+    "ta",
+    "te",
+    "mr",
+    "mix"
+  ]
+}

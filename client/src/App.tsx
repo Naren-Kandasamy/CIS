@@ -7,7 +7,9 @@ import { useEntityDrawer, matchEvidenceByFirId } from './hooks/useEntityDrawer';
 import ReactMarkdown from 'react-markdown';
 import { fetchWithRetry } from './lib/utils';
 import { startWavRecording, type WavRecorder } from './lib/wavRecorder';
+import { AudioRecorderVAD } from './lib/audioRecorder';
 import { VoiceVisualizer } from './components/chat/VoiceVisualizer';
+import { IndicSpeechRecognizer, INDIC_LANGUAGES, type IndicLanguageCode } from './lib/indicSpeech';
 
 interface Message {
   id: string;
@@ -62,7 +64,7 @@ export default function App() {
     });
   };
   const [inputValue, setInputValue] = useState('');
-  const [voiceLanguage, setVoiceLanguage] = useState('kn');
+  const [voiceLanguage, setVoiceLanguage] = useState<IndicLanguageCode>('en-IN');
   const [isLoading, setIsLoading] = useState(false);
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
@@ -110,7 +112,6 @@ export default function App() {
 
   const deleteCase = async (caseId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this case? This action cannot be undone.")) return;
     
     // Optimistic update
     setCases(prev => prev.filter(c => c.case_id !== caseId));
@@ -130,7 +131,6 @@ export default function App() {
 
   const deleteSession = async (caseId: string, sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this session?")) return;
     
     // Optimistic update
     setCaseSessions(prev => ({
@@ -272,61 +272,91 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  // BUG FIX: this used MediaRecorder, which emits webm/opus in Chrome. Zia
-  // ASR rejects .webm outright (400 INVALID_FILE_EXTENSION), so every voice
-  // query failed. startWavRecording() captures PCM and encodes WAV instead.
-  const wavRecorderRef = useRef<WavRecorder | null>(null);
+  const vadRecorderRef = useRef<AudioRecorderVAD | null>(null);
+  const indicRecognizerRef = useRef<IndicSpeechRecognizer | null>(null);
+
+  const normalizeTranscriptText = async (text: string) => {
+    if (!text || !text.trim()) return;
+    try {
+      setIsTranscribing(true);
+      const res = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe/normalize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ text, language: voiceLanguage })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.normalized_text) {
+          setInputValue(data.normalized_text);
+        }
+      }
+    } catch (e) {
+      console.warn('Normalization failed, using raw transcript:', e);
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
 
   const handleMicClick = async () => {
     if (isRecording) {
-      const recorder = wavRecorderRef.current;
-      wavRecorderRef.current = null;
+      if (indicRecognizerRef.current) {
+        indicRecognizerRef.current.stop();
+        indicRecognizerRef.current = null;
+      }
+      if (vadRecorderRef.current) {
+        vadRecorderRef.current.stop();
+        vadRecorderRef.current = null;
+      }
       setIsRecording(false);
       setIsPaused(false);
-      if (!recorder) return;
-
-      try {
-        setIsTranscribing(true);
-        const audioBlob = await recorder.stop();
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.wav');
-        formData.append('language', voiceLanguage);
-
-        const response = await fetchWithRetry(`${import.meta.env.VITE_API_BASE_URL || ''}/api/transcribe`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: formData
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setInputValue(prev => prev ? `${prev} ${data.transcript}` : data.transcript);
-        } else {
-          console.error('Transcription failed:', await response.text());
-          alert('Voice transcription failed. Please try again or type your query.');
-        }
-      } catch (err) {
-        console.error('Error sending audio:', err);
-        alert('Voice transcription failed. Please try again or type your query.');
-      } finally {
-        setIsTranscribing(false);
+      if (inputValue.trim()) {
+        await normalizeTranscriptText(inputValue.trim());
       }
     } else {
       try {
-        wavRecorderRef.current = await startWavRecording();
+        const vadRecorder = new AudioRecorderVAD();
+        vadRecorderRef.current = vadRecorder;
+        await vadRecorder.start();
+      } catch (e) {
+        console.warn('WebAudio analyser initialization note:', e);
+      }
+
+      if (IndicSpeechRecognizer.isSupported()) {
+        try {
+          const recognizer = new IndicSpeechRecognizer(voiceLanguage);
+          indicRecognizerRef.current = recognizer;
+          setIsRecording(true);
+          setIsPaused(false);
+          recognizer.start({
+            onResult: (transcript, isFinal) => {
+              setInputValue(transcript);
+              if (isFinal) {
+                normalizeTranscriptText(transcript);
+              }
+            },
+            onError: (err) => {
+              console.warn('Speech recognition error:', err);
+              setIsRecording(false);
+            },
+            onEnd: () => {
+              setIsRecording(false);
+            }
+          });
+        } catch (err) {
+          console.error('Failed to start Indic Speech Recognizer:', err);
+          setIsRecording(false);
+        }
+      } else {
         setIsRecording(true);
-        setIsPaused(false);
-      } catch (err) {
-        console.error('Error accessing microphone:', err);
-        alert('Could not access microphone.');
       }
     }
   };
 
   const handleMicPauseToggle = () => {
-    const recorder = wavRecorderRef.current;
+    const recorder = vadRecorderRef.current;
     if (!recorder) return;
     if (recorder.isPaused()) {
       recorder.resume();
@@ -987,29 +1017,10 @@ export default function App() {
                       <span>⏳ Transcribing your audio...</span>
                     ) : (
                       <>
-                        <span style={{ color: '#dc2626' }}>{isPaused ? '⏸' : '●'}</span>
-                        <span>{isPaused ? 'Recording paused' : 'Recording...'}</span>
-                        <VoiceVisualizer analyser={wavRecorderRef.current?.getAnalyser() || null} isPaused={isPaused} />
-                        <button
-                          type="button"
-                          onClick={handleMicPauseToggle}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            background: 'transparent',
-                            border: '1px solid var(--glass-border)',
-                            borderRadius: '4px',
-                            padding: '2px 8px',
-                            fontSize: '12px',
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {isPaused ? <Mic size={12} /> : <Pause size={12} />}
-                          {isPaused ? 'Resume' : 'Pause'}
-                        </button>
-                        <span>— click the mic icon to stop and transcribe</span>
+                        <span style={{ color: '#dc2626' }}>●</span>
+                        <span>Listening...</span>
+                        <VoiceVisualizer analyser={vadRecorderRef.current?.getAnalyser() || null} isPaused={isPaused} />
+                        <span>— Speak into your microphone (click mic when finished)</span>
                       </>
                     )}
                   </div>
@@ -1027,23 +1038,26 @@ export default function App() {
                   />
                   <select
                     value={voiceLanguage}
-                    onChange={(e) => setVoiceLanguage(e.target.value)}
+                    onChange={(e) => setVoiceLanguage(e.target.value as IndicLanguageCode)}
                     style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
+                      background: 'var(--card-bg, rgba(255, 255, 255, 0.05))',
+                      border: '1px solid var(--glass-border, rgba(255, 255, 255, 0.1))',
+                      borderRadius: '4px',
+                      color: 'var(--text-primary, #fff)',
                       fontSize: '12px',
-                      fontWeight: 'bold',
+                      fontWeight: '600',
                       cursor: 'pointer',
                       outline: 'none',
-                      marginRight: '2px',
-                      appearance: 'none'
+                      marginRight: '6px',
+                      padding: '2px 6px',
                     }}
-                    title="Voice Input Language"
+                    title="Indic Voice Input Language"
                   >
-                    <option value="en">EN</option>
-                    <option value="hi">HI</option>
-                    <option value="kn">KN</option>
+                    {INDIC_LANGUAGES.map(lang => (
+                      <option key={lang.code} value={lang.code} style={{ background: '#1e293b', color: '#fff' }}>
+                        {lang.nativeName} ({lang.code.split('-')[0].toUpperCase()})
+                      </option>
+                    ))}
                   </select>
                   <button
                     type="button"

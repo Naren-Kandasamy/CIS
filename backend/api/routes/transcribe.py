@@ -54,3 +54,25 @@ async def transcribe_route(audio: UploadFile = File(...), language: str = Form("
         # the real cause server-side, return a clean message.
         print(f"[TRANSCRIBE ERROR] Zia ASR returned {e.response.status_code}: {e.response.text[:300]}")
         raise HTTPException(status_code=502, detail="Transcription service failed, please retry")
+
+
+from pydantic import BaseModel, Field
+from shared.catalyst_client import normalize_transcript_text
+
+class NormalizeRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    language: str = Field("kn-IN", max_length=10)
+
+@router.post("/api/transcribe/normalize")
+async def normalize_text_route(request: NormalizeRequest):
+    """
+    Post-processes live browser SpeechRecognition text into exact Karnataka Police station names,
+    legal IPC/BNS sections, and clean investigative query text.
+    """
+    try:
+        normalized = await normalize_transcript_text(request.text, source_lang=request.language)
+        return {"normalized_text": normalized, "original_text": request.text}
+    except Exception as e:
+        print(f"[NORMALIZE ROUTE ERROR] {e}")
+        return {"normalized_text": request.text, "original_text": request.text}
+

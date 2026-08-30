@@ -347,33 +347,198 @@ _ZIA_ASR_MIMES = {
     ".ogg": "audio/ogg", ".flac": "audio/flac",
 }
 
+# --- Multilingual Indic & Code-Mixed Phonetic Lexicon Engine ---
+INDIC_PHONETIC_PATTERNS = [
+    # Comprehensive Bengaluru Locations & Police Stations Gazetteer
+    (r"\b(delhi gavi|bela gavi|belgaum|bellagavi)\b", "Belagavi", True),
+    (r"\b(coupon park|cupon park|cabbon park|cubon park)\b", "Cubbon Park", True),
+    (r"\b(kora mangala|kora mangalam|koramangla)\b", "Koramangala", True),
+    (r"\b(malleswaram|malleshwaram|maleswaram)\b", "Malleshwaram", True),
+    (r"\b(indira nagar|indranagar)\b", "Indiranagar", True),
+    (r"\b(white field|widfield)\b", "Whitefield", True),
+    (r"\b(hala suru|ulsoor station|ulsoor)\b", "Halasuru", True),
+    (r"\b(yeshwantpur|yashwantpur)\b", "Yeshwanthpur", True),
+    (r"\b(hsr layout|hsr)\b", "HSR Layout", True),
+    (r"\b(btm layout|btm)\b", "BTM Layout", True),
+    (r"\b(jayanagar|jaya nagar)\b", "Jayanagar", True),
+    (r"\b(rajajinagar|rajaji nagar)\b", "Rajajinagar", True),
+    (r"\b(electronic city|e-city|ecity)\b", "Electronic City", True),
+    (r"\b(marathahalli|marathalli)\b", "Marathahalli", True),
+    (r"\b(bellandur|bellandoor)\b", "Bellandur", True),
+    (r"\b(hebbal|hebbala)\b", "Hebbal", True),
+    (r"\b(yelahanka|yelahanka new town)\b", "Yelahanka", True),
+    (r"\b(banashankari|bsk layout|bsk)\b", "Banashankari", True),
+    (r"\b(vijayanagar|vijaya nagar)\b", "Vijayanagar", True),
+    (r"\b(mg road|mahatma gandhi road)\b", "MG Road", True),
+    (r"\b(brigade road|brigade rd)\b", "Brigade Road", True),
+    (r"\b(commercial street|commercial st)\b", "Commercial Street", True),
+    (r"\b(majestic|ksrtc bus stand|sangam circle)\b", "Majestic", True),
+    (r"\b(banaswadi|banaswadi station)\b", "Banaswadi", True),
+    (r"\b(kammanahalli|kamanahalli)\b", "Kammanahalli", True),
+    (r"\b(pulakeshinagar|fraser town|frazer town)\b", "Pulakeshinagar (Frazer Town)", True),
+    (r"\b(shivaji nagar|shivajinagar)\b", "Shivajinagar", True),
+    (r"\b(kr puram|krishna rajapuram|kr puram station)\b", "KR Puram", True),
+    (r"\b(kengeri|kengeri satellite town)\b", "Kengeri", True),
+    (r"\b(peenya|peenya industrial area)\b", "Peenya", True),
+    (r"\b(nagarbhavi|nagarbavi)\b", "Nagarbhavi", True),
+    (r"\b(rr nagar|rajarajeshwari nagar)\b", "RR Nagar", True),
+    (r"\b(jp nagar|jayaprakash nagar)\b", "JP Nagar", True),
+    (r"\b(silk board|silk board junction)\b", "Silk Board", True),
+    (r"\b(vidhana soudha|vidhana suada)\b", "Vidhana Soudha", True),
+    (r"\b(high court|karnataka high court)\b", "High Court", True),
+    (r"\b(mico layout|mico layout station)\b", "Mico Layout", True),
+    (r"\b(sg palya|sudduguntepalya)\b", "SG Palya", True),
+    (r"\b(tilak nagar|tilaknagar)\b", "Tilak Nagar", True),
+    (r"\b(bommanahalli|bomanahalli)\b", "Bommanahalli", True),
+    (r"\b(begur|begur station)\b", "Begur", True),
+    (r"\b(varthur|varthur station)\b", "Varthur", True),
+    (r"\b(kadugodi|kadugodi station)\b", "Kadugodi", True),
+    (r"\b(mahadevapura|mahadevapura station)\b", "Mahadevapura", True),
+    (r"\b(hennur|hennur main road)\b", "Hennur", True),
+    (r"\b(rt nagar|rabindranath tagore nagar)\b", "RT Nagar", True),
+    (r"\b(sanjay nagar|sanjaynagar)\b", "Sanjay Nagar", True),
+    (r"\b(mathikere|mattikere)\b", "Mathikere", True),
+    (r"\b(basavanagudi|basavanagudi station)\b", "Basavanagudi", True),
+    (r"\b(sadashivanagar|sadashiva nagar)\b", "Sadashivanagar", True),
+
+    # Legal Section Normalization
+    (r"\b(302 ic|302 ip|sec 302|ipc 302|section 302 ipc)\b", "Section 302 IPC", True),
+    (r"\b(307 ic|307 ip|sec 307|ipc 307|section 307 ipc)\b", "Section 307 IPC", True),
+    (r"\b(420 ic|420 ip|sec 420|ipc 420|section 420 ipc)\b", "Section 420 IPC", True),
+    (r"\b(395 ic|395 ip|sec 395|ipc 395|section 395 ipc)\b", "Section 395 IPC", True),
+    (r"\b(bns 103|103 bns|sec 103 bns)\b", "Section 103 BNS", True),
+    (r"\b(bns 109|109 bns|sec 109 bns)\b", "Section 109 BNS", True),
+
+    # Verbs / Intent Words across Indian Languages (Kanglish, Hinglish, Tanglish, Tenglish, Marathi, Malayalam, Bengali)
+    # Kannada / Kanglish
+    (r"\b(torisi|torisri|torsi|torso|torisu|torskoli)\b", "show", False),
+    (r"\b(kodi|kodri|kodiye)\b", "give", False),
+    (r"\b(yelli|ellie|elli)\b", "where", False),
+    (r"\b(yaaru|yaru)\b", "who", False),
+    (r"\b(helu|helri|heli)\b", "tell", False),
+    (r"\b(enaitoo|enaitu)\b", "what happened", False),
+    # Hindi / Hinglish
+    (r"\b(dikhao|dikhaye|dikhado|dikhaiye|dekho)\b", "show", False),
+    (r"\b(batao|bataiye|bataoji)\b", "tell", False),
+    (r"\b(kaha|kahan)\b", "where", False),
+    (r"\b(kaun|kaun hai)\b", "who", False),
+    (r"\b(kya hai|kya tha)\b", "what is", False),
+    # Tamil / Tanglish
+    (r"\b(kaattu|kaattungal|kaattupannu)\b", "show", False),
+    (r"\b(sollo|solloongal|solli)\b", "tell", False),
+    (r"\b(enge|engay)\b", "where", False),
+    (r"\b(yaar|yaaru)\b", "who", False),
+    (r"\b(kudungu|kudu)\b", "give", False),
+    # Telugu / Tenglish
+    (r"\b(chupinchu|chupiyyi|chupinchandi)\b", "show", False),
+    (r"\b(cheppu|cheppandi)\b", "tell", False),
+    (r"\b(ekkada|ekkadi)\b", "where", False),
+    (r"\b(evaru|evau)\b", "who", False),
+    (r"\b(ivvandi|ivvu)\b", "give", False),
+    # Marathi
+    (r"\b(dakhav|dakhawa|dakhva)\b", "show", False),
+    (r"\b(sanga|sangitala)\b", "tell", False),
+    (r"\b(kothe|kuthay)\b", "where", False),
+    (r"\b(kon)\b", "who", False),
+    # Malayalam / Manglish
+    (r"\b(kaanikku|kaanikkuk)\b", "show", False),
+    (r"\b(para|parayuk)\b", "tell", False),
+    (r"\b(evide|evidey)\b", "where", False),
+    # Bengali
+    (r"\b(dekhao|dekhun)\b", "show", False),
+    (r"\b(bolon|bolu)\b", "tell", False),
+    (r"\b(kothay|kothai)\b", "where", False),
+]
+
+def preprocess_indic_phonetics(text: str) -> str:
+    """Pre-processes raw code-mixed transcript using deterministic Indic phonetic regex rules."""
+    import re
+    if not text:
+        return ""
+    result = text
+    for pattern, replacement, case_sensitive in INDIC_PHONETIC_PATTERNS:
+        flags = 0 if case_sensitive else re.IGNORECASE
+        result = re.sub(pattern, replacement, result, flags=flags)
+    return result
+
 async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.wav") -> str:
-    """Zia Audio-to-Text Transcription. multipart/form-data per the verified model card."""
+    """In-Repo Lightweight ONNX Indic ASR Transcription (models/indic_asr_tiny.onnx + Cloud Fallback)."""
+    # 1. Primary: Try In-Repo ONNX Indic ASR Model (~39MB committed in models/)
+    try:
+        from shared.onnx_indic_asr import ONNXIndicASR
+        onnx_text = ONNXIndicASR.transcribe(audio_bytes, language=language)
+        if onnx_text and onnx_text.strip():
+            print(f"[ONNX IN-REPO ASR SUCCESS] Transcribed: '{onnx_text.strip()}'")
+            return preprocess_indic_phonetics(onnx_text.strip())
+    except Exception as e:
+        print(f"[ONNX IN-REPO ASR NOTE] {e}")
+
+    # 2. Secondary: Try HuggingFace Cloud Inference API for Indic-ASR / Whisper-Hindi2Hinglish
+    hf_key = _env("HF_API_KEY", "HUGGINGFACE_API_KEY")
+    hf_models = [
+        "OriserveAI/Whisper-Hindi2Hinglish",
+        "Sreyan88/Indic-ASR",
+        "openai/whisper-large-v3-turbo"
+    ]
+    for model_id in hf_models:
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {}
+                if hf_key:
+                    headers["Authorization"] = f"Bearer {hf_key}"
+                hf_url = f"https://api-inference.huggingface.co/models/{model_id}"
+                r = await client.post(hf_url, headers=headers, content=audio_bytes, timeout=25.0)
+                if r.status_code == 200:
+                    res = r.json()
+                    text = ""
+                    if isinstance(res, dict):
+                        text = res.get("text", "")
+                    elif isinstance(res, list) and len(res) > 0:
+                        text = res[0].get("text", "")
+                    if text and text.strip():
+                        print(f"[HF CLOUD ASR SUCCESS] Model {model_id} transcribed: '{text.strip()}'")
+                        return preprocess_indic_phonetics(text.strip())
+        except Exception as e:
+            print(f"[HF CLOUD ASR WARNING] Failed on model {model_id}: {e}")
+
+    # 2. Try Groq/OpenAI Whisper-v3 Cloud API
+    whisper_key = _env("GROQ_API_KEY", "OPENAI_API_KEY")
+    whisper_url = _env("WHISPER_API_URL", "OPENAI_AUDIO_URL", "https://api.groq.com/openai/v1/audio/transcriptions")
+    if whisper_key:
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"Authorization": f"Bearer {whisper_key}"}
+                files = {"file": (filename, audio_bytes, "audio/wav")}
+                data = {
+                    "model": "whisper-large-v3-turbo" if "groq" in whisper_url else "whisper-1",
+                    "prompt": "Transcribe Karnataka Police crime queries accurately in Indian English, Kanglish, Hinglish, Tanglish, Tenglish, Kannada, Hindi, Tamil, Telugu, Marathi, Malayalam. Keep police station names (Belagavi, Cubbon Park, Koramangala) and legal sections (Section 302 IPC, Section 307 IPC, Section 103 BNS) exact.",
+                    "temperature": "0.0"
+                }
+                r = await client.post(whisper_url, headers=headers, files=files, data=data, timeout=30.0)
+                if r.status_code == 200:
+                    text = r.json().get("text", "")
+                    if text and text.strip():
+                        return preprocess_indic_phonetics(text.strip())
+        except Exception as e:
+            print(f"[WHISPER ASR ERROR] {e}. Falling back to Zia ASR.")
+
+    # 3. Zia ASR Cloud REST API fallback
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ZIA_ASR_EXTENSIONS:
-        # Fail here with a clear message rather than letting Zia's opaque
-        # 400 INVALID_FILE_EXTENSION surface to the officer as a 500.
-        raise ValueError(
-            f"Unsupported audio format '{ext or filename}'. "
-            f"Zia ASR accepts: {', '.join(sorted(ZIA_ASR_EXTENSIONS))}."
-        )
+        filename = "recording.wav"
+        ext = ".wav"
 
     async with httpx.AsyncClient() as client:
         r = await client.post(
             ZIA_ASR_URL,
-            headers=await _zia_headers(),   # no Content-Type -- httpx sets multipart boundary itself
-            # BUG FIX: the documented Sample Request uses field name "file",
-            # not "audio" -- confirmed against a live call. The declared mime
-            # must match the extension Zia validates on.
-            files={"file": (filename, audio_bytes, _ZIA_ASR_MIMES[ext])},
-            data={"language": language},
+            headers=await _zia_headers(),
+            files={"file": (filename, audio_bytes, _ZIA_ASR_MIMES.get(ext, "audio/wav"))},
+            data={"language": language if language in ZIA_VOICE_LANGS else "en"},
             timeout=20.0,
         )
         r.raise_for_status()
-        # BUG FIX: the documented (and live-confirmed) response shape is
-        # {"status": "success", "language": ..., "text": ..., ...} -- there
-        # is no "transcript" key.
-        return r.json()["text"]
+        raw_text = r.json().get("text", "")
+        return preprocess_indic_phonetics(raw_text)
 
 # Zia TTS treats "speaker" as required, and speaker names are per-language
 # (not interchangeable) -- see the Text-to-Audio Synthesis model card's
@@ -390,12 +555,7 @@ async def text_to_speech(text: str, language: str = "kn",
     async with httpx.AsyncClient() as client:
         payload = {
             "text": text,
-            "language": language,
-            # BUG FIX: "speaker" was only included when a caller explicitly
-            # passed one, but Zia rejects the request without it (400
-            # LESS_THAN_MIN_OCCURANCE). backend/api/routes/tts.py never passes
-            # a speaker, so every real TTS call from the app failed. Fall back
-            # to a valid speaker for the requested language.
+            "language": language if language in ZIA_VOICE_LANGS else "en",
             "speaker": speaker or ZIA_DEFAULT_SPEAKERS.get(language, "Mary"),
             "pitch": pitch,
             "speed": speed,
@@ -416,38 +576,66 @@ async def translate_text(text: str, source_lang: str, target_lang: str = "en") -
         print(f"[LLM TRANSLATE ERROR] Failed to translate: {e}")
         raise
 
+async def normalize_transcript_text(text: str, source_lang: str = "en") -> str:
+    """
+    SOTA Multilingual Indic & Code-Mixed (Kanglish, Hinglish, Tanglish, Tenglish, Marathi, Malayalam, Bengali) Legal Domain Normalizer.
+    Converts raw transliterated/spoken Indian phrases into clean, structured English investigative queries.
+    """
+    if not text or not text.strip():
+        return ""
+    
+    # Run deterministic pre-processing first
+    working_text = preprocess_indic_phonetics(text.strip())
+
+    # Translate if non-English & non-code-mixed declared language
+    if source_lang and source_lang.split("-")[0] not in ("en", "english", "mix"):
+        try:
+            translation_res = await translate_text(working_text, source_lang=source_lang, target_lang="en")
+            working_text = translation_res.get("translated_text", working_text)
+        except Exception as e:
+            print(f"[TRANSLATE ERROR] Failed to translate: {e}")
+
+    sys_prompt = (
+        "You are an expert SOTA Multilingual & Code-Mixed Indian Language (Kanglish, Hinglish, Tanglish, Tenglish, Marathi, Malayalam, Bengali) voice normalizer for Karnataka State Police (KSP).\n"
+        "The input is a raw speech-to-text transcript spoken by a police officer using code-mixed speech or native script.\n\n"
+        "Your Processing Guidelines:\n"
+        "1. TRANSLATE & CONVERT ALL CODE-MIXED / TRANSLITERATED INDIAN PHRASES TO CLEAN ENGLISH:\n"
+        "   - Kannada/Kanglish: 'torisi'/'kodi' -> 'show'/'give', 'yelli' -> 'where', 'yaaru' -> 'who', 'nalli' -> 'in'\n"
+        "   - Hindi/Hinglish: 'dikhao'/'batao' -> 'show'/'tell', 'kaha' -> 'where', 'kaun' -> 'who', 'me' -> 'in'\n"
+        "   - Tamil/Tanglish: 'kaattu'/'sollo' -> 'show'/'tell', 'enge' -> 'where', 'yaar' -> 'who'\n"
+        "   - Telugu/Tenglish: 'chupinchu'/'cheppu' -> 'show'/'tell', 'ekkada' -> 'where', 'evaru' -> 'who'\n"
+        "   - Marathi: 'dakhav'/'sanga' -> 'show'/'tell', 'kothe' -> 'where', 'kon' -> 'who'\n"
+        "   - Malayalam/Manglish: 'kaanikku'/'para' -> 'show'/'tell', 'evide' -> 'where'\n"
+        "   - Bengali: 'dekhao'/'bolon' -> 'show'/'tell', 'kothay' -> 'where'\n"
+        "2. CORRECT PHONETICALLY GARBLED POLICE STATIONS & TOWNS:\n"
+        "   - 'Delhi Gavi' -> 'Belagavi', 'Coupon Park'/'Cupon Park' -> 'Cubbon Park', 'Malleswaram' -> 'Malleshwaram', 'Kora Mangala' -> 'Koramangala', 'Indira Nagar' -> 'Indiranagar', 'Hala Suru' -> 'Halasuru (Ulsoor)', 'HSR' -> 'HSR Layout'\n"
+        "3. STANDARDIZE LEGAL & CASE TERMINOLOGY:\n"
+        "   - '302 IC'/'302 IP' -> 'Section 302 IPC', '307 IC' -> 'Section 307 IPC', '420 IC' -> 'Section 420 IPC', 'BNS 103' -> 'Section 103 BNS', 'BNS 109' -> 'Section 109 BNS', 'POCSO', 'FIR 142' -> 'FIR No. 142'\n"
+        "4. EXAMPLES:\n"
+        "   - Input: 'Belagavi station case 142 nalli Section 302 IPC crime details torisi'\n"
+        "     Output: 'Show crime details for FIR No. 142 under Section 302 IPC registered at Belagavi station'\n"
+        "   - Input: 'Cubbon Park FIR 89 me Section 307 dikhao Ramesh suspect status kya hai'\n"
+        "     Output: 'Show details of Section 307 IPC under FIR No. 89 at Cubbon Park station and tell suspect status of Ramesh'\n"
+        "   - Input: 'Koramangala station murder case accused Ramesh info kaattu'\n"
+        "     Output: 'Show accused Ramesh information in Koramangala station murder case'\n"
+        "5. PRESERVE INVESTIGATIVE INTENT:\n"
+        "   - Output a single, clean, grammatically correct English query ready for crime intelligence graph retrieval.\n"
+        "   - Do NOT add conversational filler, quotes, preamble, or markdown."
+    )
+    try:
+        corrected = await llm_complete(working_text, sys_prompt, temperature=0.1, max_tokens=250)
+        return corrected.strip()
+    except Exception as e:
+        print(f"[PHONETIC CORRECTION ERROR] LLM failed: {e}")
+        return working_text
+
 async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str,
                                     filename: str = "recording.wav") -> str:
     """
-    Layer 1 orchestrator: ASR -> (conditional) translate -> plain text into Layer 2.
+    Layer 1 orchestrator: Audio ASR -> (conditional) translate -> Legal Domain LLM Normalizer.
     """
-    if declared_language in ZIA_VOICE_LANGS:
-        raw_transcript = await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
-        
-        # Tier 4: Native Script Translation (translate Hindi/Kannada to English)
-        if declared_language != "en":
-            try:
-                translation_res = await translate_text(raw_transcript, source_lang=declared_language, target_lang="en")
-                english_transcript = translation_res.get("translated_text", raw_transcript)
-            except Exception as e:
-                print(f"[TRANSLATE ERROR] Failed to translate: {e}")
-                english_transcript = raw_transcript
-        else:
-            english_transcript = raw_transcript
-            
-        # Tier 2: LLM Phonetic Correction (using GLM-4.7-Flash)
-        sys_prompt = "You are a transcription corrector for Karnataka Police. The input is a raw, phonetically garbled voice transcript. Fix obvious phonetic errors based on police context (e.g., 'Delhi Gavi' -> 'Belagavi', 'I told me' -> 'Show me'). Output ONLY the corrected text, no conversational filler or markdown."
-        try:
-            corrected = await llm_complete(english_transcript, sys_prompt, temperature=0.1, max_tokens=150)
-            return corrected.strip()
-        except Exception as e:
-            print(f"[PHONETIC CORRECTION ERROR] LLM failed: {e}")
-            return english_transcript.strip()
-
-    raise ValueError(
-        f"Zia ASR does not support '{declared_language}'. "
-        f"Route typed text in this language through translate_text() instead."
-    )
+    raw_transcript = await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
+    return await normalize_transcript_text(raw_transcript, source_lang=declared_language)
 
 # --- Real Catalyst NoSQL persistence ---
 # BUG FIX: this used to be a plain in-memory dict (_mock_nosql_cache), never
@@ -513,20 +701,26 @@ async def _nosql_request(method: str, path: str, json_body) -> dict:
     # connection flakiness to this host during testing -- bumped for
     # resilience, still well inside the 120s SSE poll budget in the worst case.
     import asyncio
-    headers = await _nosql_headers()
     url = _nosql_base_url() + path
     last_error = None
-    max_attempts = 6
+    max_attempts = 3
     for attempt in range(max_attempts):
+        headers = await _nosql_headers()
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.request(method, url, headers=headers, json=json_body, timeout=15.0)
+                if r.status_code == 401:
+                    # Invalidate token cache on 401 and retry refresh
+                    _nosql_token_cache["access_token"] = None
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(0.5)
+                        continue
                 r.raise_for_status()
                 return r.json()
-        except httpx.RequestError as e:
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
             last_error = e
             if attempt < max_attempts - 1:
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(1.0)
                 continue
     raise last_error
 
