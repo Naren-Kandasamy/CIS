@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import type { Message } from '../../types/chat';
 import { PipelineProgress } from './PipelineProgress';
 import { EvidencePanel, type EvidenceFeedback } from './EvidencePanel';
+import { HypothesisSuggestion } from './HypothesisSuggestion';
 
 // Phase 3: one chat row (avatar + streaming stepper + markdown body + evidence),
 // extracted verbatim from SessionChatPage's message map (originally App.tsx).
@@ -57,6 +58,10 @@ export function MessageBubble({ message, openEntity, feedback }: MessageBubblePr
 
         {message.evidence && message.evidence.length > 0 && (
           <EvidencePanel evidence={message.evidence} openEntity={openEntity} feedback={feedback} />
+        )}
+
+        {message.role === 'assistant' && !message.isStreaming && message.content && (
+          <HypothesisSuggestion message={message} />
         )}
       </div>
     </div>

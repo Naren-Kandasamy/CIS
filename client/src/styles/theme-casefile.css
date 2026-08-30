@@ -294,3 +294,143 @@
   gap: 6px;
   font-family: 'IBM Plex Mono', monospace;
 }
+
+/* ── "Log this analysis as a hypothesis" — chat → HypothesisRecord bridge ── */
+.hyp-suggest-trigger {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px dashed var(--accent-gold);
+  border-radius: 3px;
+  color: var(--accent-gold);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.hyp-suggest-trigger:hover {
+  background: rgba(169, 121, 31, 0.1);
+  color: #8a6215;
+}
+
+.hyp-suggest {
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hyp-suggest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+.hyp-suggest-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-gold);
+}
+.hyp-suggest-head button {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+}
+.hyp-suggest-head button:hover {
+  color: var(--accent-primary);
+}
+
+.hyp-suggest-text {
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: 3px;
+  outline: none;
+  resize: vertical;
+}
+.hyp-suggest-text:focus-visible {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.hyp-suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.hyp-suggest-chips-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-right: 2px;
+}
+.hyp-suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 7px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--glass-border);
+  border-radius: 2px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
+.hyp-suggest-chip button {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+.hyp-suggest-chip button:hover {
+  color: var(--accent-primary);
+}
+
+.hyp-suggest-err {
+  font-size: 0.72rem;
+  color: var(--accent-primary);
+}
+.hyp-suggest-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.hyp-suggest-done {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--accent-secondary);
+}
