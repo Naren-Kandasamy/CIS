@@ -427,6 +427,31 @@
   color: var(--text-secondary);
 }
 
+.board-empty-note {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  max-width: 30rem;
+  padding: 20px 24px;
+  text-align: center;
+  background: var(--bg-glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  pointer-events: none;
+}
+.board-empty-note p:first-child {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.board-empty-note p:last-child {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 /* ── page wrapper ──────────────────────────────────────────────────────── */
 .board-page {
   display: flex;
@@ -456,8 +481,4 @@
   flex: 1;
   min-height: 0;
   margin: 16px clamp(20px, 4vw, 40px) 24px;
-}
-.board-stage--empty {
-  display: grid;
-  place-items: center;
 }

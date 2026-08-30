@@ -76,8 +76,10 @@ def test_create_case_via_dialog(page):
     dialog.locator(".dialog-field input").first.fill(title)
     dialog.locator(".modal-actions .btn-primary").click()
 
-    # the new folder tile shows up in the grid
-    page.wait_for_selector(f"text={title}", timeout=10000)
+    # the new folder tile shows up in the grid. The visible <h3> title sits
+    # inside the folder lid (clipped until hover); the always-present
+    # aria-label ("Open case <n> — <title>") is the reliable anchor.
+    page.wait_for_selector(f'.case-folder[aria-label*="{title}"]', timeout=10000)
     print("    ok:", title)
     return title
 
@@ -138,9 +140,11 @@ def test_pin_citation_persists_across_reload(page):
     page.locator("button[type='submit'], button.action-btn.primary").first.click()
     page.wait_for_selector(".status-pill", state="hidden", timeout=60000)
 
-    # expand evidence if collapsed, then pin the first citation
-    details = page.locator("details.evidence-card").first
-    if details.count() and not details.evaluate("d => d.open"):
+    # the evidence cards live inside a <details> that starts collapsed --
+    # expand it so the per-row "Pin to case board" button is visible.
+    details = page.locator(".evidence-card details").first
+    details.wait_for(state="attached", timeout=10000)
+    if not details.evaluate("d => d.open"):
         details.locator("summary").click()
     pin = page.locator("button[aria-label='Pin to case board']").first
     pin.wait_for(state="visible", timeout=10000)
@@ -149,10 +153,10 @@ def test_pin_citation_persists_across_reload(page):
 
     # workspace shows the pinned citation, and it survives a reload
     page.goto(case_url)
-    page.wait_for_selector("text=Pinned Citations, text=Pinned citation", timeout=10000)
+    page.get_by_text("Pinned Citations").wait_for(state="visible", timeout=10000)
     rows_before = page.locator(".dossier-row, .citations-row, tbody tr").count()
     page.reload()
-    page.wait_for_selector("text=Pinned Citations, text=Pinned citation", timeout=10000)
+    page.get_by_text("Pinned Citations").wait_for(state="visible", timeout=10000)
     assert page.locator(".dossier-row, .citations-row, tbody tr").count() == rows_before
     print("    ok")
 
@@ -164,10 +168,14 @@ def test_board_card_position_persists(page):
     case_id = re.search(r"/cases/(c_[0-9a-f]+)", page.url).group(1)
 
     page.goto(f"{BASE}/cases/{case_id}/board")
-    page.wait_for_selector(".corkboard, .board-stage", timeout=10000)
+    page.wait_for_selector(".board-toolbar", timeout=15000)
 
-    # add a blank note
-    page.locator(".board-toolbar >> text=Note").click()
+    # add a blank note (the toolbar renders even on an empty board)
+    cards_before = page.locator(".board-card").count()
+    page.get_by_role("button", name=re.compile(r"^\s*Note\s*$")).click()
+    page.wait_for_function(
+        "n => document.querySelectorAll('.board-card').length > n", arg=cards_before, timeout=10000
+    )
     card = page.locator(".board-card").last
     card.wait_for(state="visible", timeout=5000)
 
@@ -202,10 +210,12 @@ def test_sse_cutoff_recovers_via_poll(page):
     def handle_query(route):
         # a job id, a couple of progress frames, then the connection ends
         # WITHOUT a `done` event -- the client must fall back to polling.
+        # Frame shape must match backend/sse_poller.py: an `event:` line plus
+        # a `data:` line per frame (sse_starlette's EventSourceResponse).
         body = (
-            f'data: {{"type":"job","job_id":"{job_id}"}}\n\n'
-            'data: {"type":"progress","step":"retrieval","status":"running"}\n\n'
-            'data: {"type":"progress","step":"synthesis","status":"running"}\n\n'
+            f'event: job\ndata: {{"job_id":"{job_id}"}}\n\n'
+            'event: progress\ndata: {"status":"retrieval"}\n\n'
+            'event: progress\ndata: {"status":"synthesis"}\n\n'
         )
         route.fulfill(status=200, headers={"Content-Type": "text/event-stream"}, body=body)
 

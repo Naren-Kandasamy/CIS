@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { LayoutDashboard, Layers } from 'lucide-react';
+import { LayoutDashboard } from 'lucide-react';
 import { useCasesStore } from '../stores/casesStore';
 import { deriveBoardCards, useBoardStore } from '../stores/boardStore';
-import EmptyState from '../components/common/EmptyState';
 import { CorkboardCanvas } from '../components/board/CorkboardCanvas';
 import type { HypothesisRecord } from '../types/hypothesis';
 
@@ -24,13 +23,19 @@ export default function CorkboardPage() {
   const layout = useBoardStore((s) => (caseId ? s.layoutByCase[caseId] : undefined));
   const hypotheses = useBoardStore((s) => (caseId ? s.hypothesesByCase[caseId] : undefined));
   const pins = useBoardStore((s) => (caseId ? s.pinsByCase[caseId] : undefined));
-  const loading = useBoardStore((s) => (caseId ? s.loadingByCase[caseId] : false));
 
+  // Load the board's server state exactly once per case. Keeping cases.length
+  // out of the deps matters: fetchCases() resolving mid-session would otherwise
+  // re-fire loadCase and clobber freshly-added, not-yet-persisted cards with
+  // the stale server layout (an add/drag within ~1s of mount would vanish).
   useEffect(() => {
     if (!caseId) return;
-    if (cases.length === 0) fetchCases().catch(() => {});
     loadCase(caseId).catch(() => {});
-  }, [caseId, cases.length, fetchCases, loadCase]);
+  }, [caseId, loadCase]);
+
+  useEffect(() => {
+    if (cases.length === 0) fetchCases().catch(() => {});
+  }, [cases.length, fetchCases]);
 
   const cards = useMemo(
     () => deriveBoardCards(layout, hypotheses, pins),
@@ -40,8 +45,6 @@ export default function CorkboardPage() {
   const current = cases.find((c) => c.case_id === caseId);
 
   if (!caseId) return null;
-
-  const empty = cards.length === 0;
 
   return (
     <div className="board-page">
@@ -59,16 +62,8 @@ export default function CorkboardPage() {
         </button>
       </header>
 
-      <div className={`board-stage ${empty ? 'board-stage--empty' : ''}`}>
-        {empty ? (
-          <EmptyState
-            icon={<Layers size={26} />}
-            title={loading ? 'Loading the board…' : 'Nothing on the board yet'}
-            message="Log a hypothesis from the workspace, or pin FIRs and suspects from a session. They land here as index cards you can arrange and cord together."
-          />
-        ) : (
-          <CorkboardCanvas caseId={caseId} cards={cards} hypotheses={hypotheses ?? NO_HYPS} />
-        )}
+      <div className="board-stage">
+        <CorkboardCanvas caseId={caseId} cards={cards} hypotheses={hypotheses ?? NO_HYPS} />
       </div>
     </div>
   );

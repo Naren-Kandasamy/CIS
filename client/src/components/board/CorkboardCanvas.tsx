@@ -426,6 +426,17 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
         </div>
       </div>
 
+      {cards.length === 0 && !loading && (
+        <div className="board-empty-note">
+          <p className="stamp-font">Nothing on the board yet</p>
+          <p>
+            Hit <strong>Note</strong> above for a blank card, log a hypothesis from
+            the workspace, or pin FIRs and suspects from a session — they all land
+            here as cards you can arrange and cord together.
+          </p>
+        </div>
+      )}
+
       <div className="board-hint">
         {linking
           ? linkSource
