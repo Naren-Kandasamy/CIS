@@ -457,8 +457,8 @@ def preprocess_indic_phonetics(text: str) -> str:
     return result
 
 async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.wav") -> str:
-    """In-Repo Lightweight ONNX Indic ASR Transcription (models/indic_asr_tiny.onnx + Cloud Fallback)."""
-    # 1. Primary: Try In-Repo ONNX Indic ASR Model (~39MB committed in models/)
+    """In-Repo ONNX Indic ASR Transcription (models/indic_asr_tiny.onnx + Cloud Fallback)."""
+    # 1. Primary: Try In-Repo ONNX Indic ASR Model (~9.66 MB in models/)
     try:
         from shared.onnx_indic_asr import ONNXIndicASR
         onnx_text = ONNXIndicASR.transcribe(audio_bytes, language=language)

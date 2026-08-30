@@ -1,13 +1,33 @@
 {
   "model_type": "onnx_whisper_indic_tiny",
   "sample_rate": 16000,
-  "languages": [
-    "kn",
-    "hi",
-    "en",
-    "ta",
-    "te",
-    "mr",
-    "mix"
-  ]
+  "languages": ["en", "kn", "hi", "ta", "te", "mr", "mix"],
+  "tokens": {
+    "0": "show",
+    "1": "details",
+    "2": "of",
+    "3": "cases",
+    "4": "under",
+    "5": "Section 302 IPC",
+    "6": "Section 307 IPC",
+    "7": "Section 420 IPC",
+    "8": "Section 103 BNS",
+    "9": "at",
+    "10": "Belagavi",
+    "11": "Cubbon Park",
+    "12": "Koramangala",
+    "13": "Indiranagar",
+    "14": "Whitefield",
+    "15": "Halasuru",
+    "16": "Yeshwanthpur",
+    "17": "HSR Layout",
+    "18": "BTM Layout",
+    "19": "Jayanagar",
+    "20": "Malleshwaram",
+    "21": "FIR",
+    "22": "accused",
+    "23": "victim",
+    "24": "charge sheet",
+    "25": "investigation"
+  }
 }
