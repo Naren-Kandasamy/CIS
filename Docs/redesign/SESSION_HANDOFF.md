@@ -156,17 +156,24 @@ dark mode. Tailwind v4 CSS-first, **no `tailwind.config.js`**.
 
 **Entity relation network** (both fed by real Memgraph data via
 `backend/api/routes/graph.py`):
-- `GET /api/cases/:id/graph` — per-case: seed FIRs from that case's pinned
-  citations + hypotheses, one hop to `:Accused`/`:Victim`, district as a
+- `GET /api/cases/:id/graph` — per-case. Seed FIRs = that case's pinned
+  citations + hypotheses + **FIR uuids scraped from the case's own session
+  answers** (`history:{sid}`). One hop to `:Accused`/`:Victim`, district as a
   Location node. Collaborator-gated. Consumed by `WorkspaceGraphs.tsx`.
-- `GET /api/graph` — officer-wide: union of seed FIRs across every case in
+- `GET /api/graph` — officer-wide: union of those seeds across every case in
   `user_cases:{username}`. Accused linked to FIRs from ≥2 distinct cases get
-  `data.shared` + `data.caseCount` (gold ring in the UI). Consumed by
+  `data.shared` + `data.caseCount` (gold ring in the UI). **Thin-graph
+  fallback**: <3 accused nodes → `_overview_layer` appends the top-6
+  most-connected accused across the whole graph (faded, `data.overview`);
+  response carries `overview` + `overview_note`. Consumed by
   `GlobalDashboardPage.tsx`.
-- Graph DB unreachable → `{elements: [], degraded: true}` at HTTP 200.
+- Graph DB unreachable → `{elements: [], degraded: true}` at HTTP 200;
+  overview is best-effort and never fatal.
 - `components/dashboard/NetworkGraph.tsx` `fallbackToDemo` prop: `true`
   (default, legacy callers) shows the built-in demo graph on empty data;
-  `false` shows an empty-state.
+  `false` shows an empty-state. Its `cose` layout is deferred one frame with
+  `cy.resize()` + fit-on-`layoutstop` — before that, an 80-node graph on a
+  just-mounted panel piled every node at (0,0).
 
 **Backend endpoints added across the redesign** (all in `backend/api/routes/`,
 not mirrored): `PUT/GET /api/cases/:id/board/layout`,
@@ -181,6 +188,8 @@ from the 2 KB JSON body cap (`MAX_BOARD_LAYOUT_BYTES = 256 KB`).
 ## Commit history (this branch, newest first)
 
 ```
+8454ad6 feat(graph): broaden ER-network seed + thin-graph overview fallback
+2b560d7 docs: mark :Person->:Accused pipeline fix done in SESSION_HANDOFF
 d62deed fix(pipeline): entity graph queries use :Accused, not :Person
 5fd3c2a docs: fresh-session handoff (SESSION_HANDOFF.md)
 5477e2a docs: handoff note for graph-DB-backed ER network
@@ -220,6 +229,14 @@ db6247e feat(client): Phase 2 — chat state store + session-id/title contract
 6. **No true mobile/responsive** layout — out of scope by design; would be
    net-new work.
 7. **CARTO map watermark** (see gotchas).
+8. **Uncommitted parallel cleanup in the working tree** (not from the redesign
+   sessions): a repo-wide `ruff --fix` sweep (~30 files, mostly unused-import
+   removal + minor reformat), a new `ruff.toml`, a new
+   `client/src/types/react-cytoscapejs.d.ts` (would clear 2 of the 4
+   pre-existing `tsc` errors), and edits to `tests/conftest.py` (adds
+   `collect_ignore` so `pytest tests/` stops aborting on probe scripts),
+   `tests/test_query.py`, `tests/test_zia_mocked.py`. The redesign commits
+   deliberately did **not** stage these — review and commit them separately.
 
 ---
 
