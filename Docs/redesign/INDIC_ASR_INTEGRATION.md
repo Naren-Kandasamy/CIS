@@ -49,18 +49,43 @@ from his client.
 
 ---
 
-## Two pieces that are dead on arrival — do not spend time on them
+## One piece is unfinished scaffolding — hold it until it's complete
 
-| Piece | Why it's inert |
-|---|---|
-| `shared/onnx_indic_asr.py` `ONNXIndicASR.transcribe()` | Parses the WAV, then runs the model on `np.zeros((1,80,3000))` (hardcoded) and **`return ""`** unconditionally. It never transcribes anything. |
-| `models/indic_asr_tiny.onnx` (10 MB binary) + `models/vocab.json` | Loaded by the stub above; output discarded. `vocab.json` is never read by any code. `onnxruntime`/`numpy` are **not in any `requirements.txt`**, so the `import` throws and the whole ONNX branch is skipped at runtime anyway. |
+`shared/onnx_indic_asr.py` + `models/indic_asr_tiny.onnx` + `models/vocab.json`
+is the **plumbing for an in-repo ONNX ASR path, with the inference engine
+stubbed out**. It is committed deliberately fail-safe so it doesn't disturb the
+working Zia path while the model is still being chosen (see the
+`data/scripts/test_onnx_indic_asr.py` / `test_huggingface_indic_asr.py` /
+`eval_hinglish_compressed.py` experiments in the same commit).
 
-**Recommendation:** drop `models/indic_asr_tiny.onnx`, `models/vocab.json`,
-`shared/onnx_indic_asr.py`, and the ONNX branch in `transcribe_audio()` unless
-someone finishes a real ONNX implementation. If it's kept "for later", the
-10 MB binary should go through Git LFS, not a normal blob. The HF / Whisper
-cascade is the meaningful upgrade over Zia-only.
+What's built vs stubbed in `ONNXIndicASR.transcribe()`:
+
+- ✅ WAV bytes → float32 PCM decode (real).
+- ✅ ONNX session as a CPU singleton, thread-capped (correct for serverless).
+- ❌ Feeds the model `np.zeros((1, 80, 3000))` — a placeholder mel-spectrogram
+  — instead of the decoded audio. No feature-extraction (STFT/mel) step exists.
+- ❌ `session.run(...)` output is not captured; `return ""` unconditionally.
+- ❌ `vocab.json` has only `{model_type, sample_rate, languages}` — no token
+  vocabulary, so logits couldn't be decoded to text even if inference ran.
+- ❌ `onnxruntime` / `numpy` are not in any `requirements.txt`, so on a clean
+  deploy the `import` raises, is caught by `transcribe_audio()`'s outer
+  try/except, logged, and skipped.
+
+**Net effect at runtime today: contributes nothing** (returns `""` → the
+cascade moves to the HF / Whisper / Zia fallbacks).
+
+**Recommendation for the merge:** do **not** land `models/indic_asr_tiny.onnx`
+(10 MB blob), `models/vocab.json`, `shared/onnx_indic_asr.py`, or the ONNX
+branch in `transcribe_audio()` into `main` yet. Either:
+- Hemnath finishes it (mel feature extraction + token decode + real
+  `vocab.json` + `onnxruntime`/`numpy` in requirements + Git LFS for the blob),
+  and it comes in as its own follow-up, or
+- it stays on `feat/indic-asr` until then.
+
+Everything else in his commit — the gazetteer, `normalize_transcript_text`, the
+HuggingFace / Whisper cascade, the browser recognizer — is finished and comes
+in per the table below. The HF / Whisper cascade is the meaningful upgrade over
+Zia-only.
 
 ---
 
@@ -70,8 +95,8 @@ cascade is the meaningful upgrade over Zia-only.
 |---|---|---|
 | `shared/catalyst_client.py` | +302 | **Port, 3-way merge.** His ASR section (`INDIC_PHONETIC_PATTERNS`, `preprocess_indic_phonetics`, `transcribe_audio` cascade, `normalize_transcript_text`, `transcribe_and_normalize` refactor) is ~line 347+. Our token-lock + retry changes are ~lines 43 / 136 / 478 / 560. Orthogonal — **keep both**. |
 | `functions/ps_1_cis_function/shared/catalyst_client.py` | +296 | Same merge, mirror. Must stay byte-equal to `shared/` (minus the deploy import prefix). |
-| `shared/onnx_indic_asr.py` | new | **Drop** (dead stub) — or keep as an explicit TODO with `onnxruntime` added to requirements. |
-| `models/indic_asr_tiny.onnx`, `models/vocab.json` | new (10 MB) | **Drop** or move to Git LFS. |
+| `shared/onnx_indic_asr.py` | new | **Hold** — inference is stubbed (see above). Land only when finished; add `onnxruntime`+`numpy` to requirements then. |
+| `models/indic_asr_tiny.onnx`, `models/vocab.json` | new (10 MB) | **Hold** — belongs with a finished `onnx_indic_asr.py`, and via Git LFS, not a plain blob. |
 | `backend/api/routes/transcribe.py` | +22 | **Port.** He appends `POST /api/transcribe/normalize` + `NormalizeRequest`. Our version of this file has extra bug-fix comments and the WAV/size guards — keep ours, append his route. Move the `from pydantic import ...` / `from shared.catalyst_client import normalize_transcript_text` to the top with the other imports. |
 | `backend/api/routes/cases.py` | +26 | **Drop his hunk.** He adds `DELETE /api/sessions/{id}` in `cases.py`; we already have a functionally identical one in `backend/api/routes/sessions.py` (same `get_case_lock` + `_require_collaborator` + `case_sessions` index cleanup + `session_meta`/`history` delete). Two registrations for one path = route collision. **Do port his two small hardenings into `sessions.py`:** return `{"status":"deleted"}` instead of `404` when `session_meta` is absent (idempotent delete), and `meta.get("case_id")` instead of `meta["case_id"]`. |
 | `client/src/lib/indicSpeech.ts` | new (128) | **Adopt as-is.** Pure browser API, no deps. |
