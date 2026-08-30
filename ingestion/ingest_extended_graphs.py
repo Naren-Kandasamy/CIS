@@ -16,10 +16,12 @@ from ingestion.cdr_financial_ingest import (
 from ingestion.anpr_ingest import push_anpr_records_to_graph
 from shared.graph_client import close
 
-# Import to register patterns
-import shared.data_sources.synthetic_cdr
-import shared.data_sources.synthetic_financial
-import shared.data_sources.synthetic_anpr
+# Imported for side effects only: each module's import-time
+# `pattern_registry.register(...)` calls populate the registry that
+# `pattern_registry.run(...)` below depends on.
+import shared.data_sources.synthetic_cdr  # noqa: F401
+import shared.data_sources.synthetic_financial  # noqa: F401
+import shared.data_sources.synthetic_anpr  # noqa: F401
 
 async def main():
     file_path = os.path.join(os.path.dirname(__file__), "../data/story_firs.json")

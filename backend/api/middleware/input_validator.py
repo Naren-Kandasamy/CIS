@@ -1,8 +1,6 @@
 import re
 import json
-from fastapi import Request
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 
 MAX_TEXT_QUERY_LEN = 2000
 MAX_AUDIO_SIZE_BYTES = 5 * 1024 * 1024
@@ -17,6 +15,14 @@ MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024
 # still far below anything resource-exhausting, and still enforced fail-fast
 # here before any body bytes are read.
 MAX_EXPORT_SIZE_BYTES = 256 * 1024
+# BUG FIX (Phase 7 verification): PUT /api/cases/{id}/board/layout carries a
+# BoardCard[] whose own Pydantic caps (cards<=200, text<=2000, connections<=50
+# -- see backend/api/routes/cases.py) assume a body well over the generic
+# 2048-byte JSON cap below. Without an exemption, a corkboard of more than a
+# dozen cards 413s before the route or Pydantic runs, and the declared
+# 200-card limit is dead. Same reasoning and ceiling as the export exemption
+# above; the per-card limits still do the real enforcement.
+MAX_BOARD_LAYOUT_BYTES = 256 * 1024
 
 # Denylist for SQL, Cypher, and Prompt Injection
 # Highly specific to avoid false positives on natural language words like "match" or "update"
@@ -82,6 +88,9 @@ class InputValidationMiddleware:
                 elif path.endswith("/export/pdf"):
                     if length > MAX_EXPORT_SIZE_BYTES:
                         return await self._send_error(scope, receive, send, 413, "Export payload exceeds size limit")
+                elif path.endswith("/board/layout"):
+                    if length > MAX_BOARD_LAYOUT_BYTES:
+                        return await self._send_error(scope, receive, send, 413, "Board layout exceeds size limit")
                 elif b"application/json" in content_type and length > 2048:
                     return await self._send_error(scope, receive, send, 413, "Payload too large")
             except ValueError:

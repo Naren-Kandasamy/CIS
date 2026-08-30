@@ -8,12 +8,18 @@ const encodeSvg = (svgString: string) => `data:image/svg+xml;base64,${btoa(svgSt
 const svgPerson = encodeSvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`);
 const svgFir = encodeSvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`);
 const svgLocation = encodeSvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`);
+const svgVictim = encodeSvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`);
 
 interface NetworkGraphProps {
   elements?: any[];
   onNodeClick?: (entity: SelectedEntity) => void;
   /** Full evidence array so the drawer can show narrative detail */
   evidence?: any[];
+  /** When false, an empty `elements` renders an empty-state instead of the
+   *  built-in demo graph. Default true (preserves legacy callers). */
+  fallbackToDemo?: boolean;
+  /** Message shown when fallbackToDemo is false and there is no data. */
+  emptyLabel?: string;
 }
 
 const DEFAULT_ELEMENTS = [
@@ -35,8 +41,16 @@ const DEFAULT_ELEMENTS = [
   { data: { source: 'p1', target: 'p2', label: 'Associate' } }
 ];
 
-export default function NetworkGraph({ elements, onNodeClick, evidence }: NetworkGraphProps) {
-  const graphElements = elements && elements.length > 0 ? elements : DEFAULT_ELEMENTS;
+export default function NetworkGraph({
+  elements,
+  onNodeClick,
+  evidence,
+  fallbackToDemo = true,
+  emptyLabel = 'No linked entities yet.',
+}: NetworkGraphProps) {
+  const hasData = Array.isArray(elements) && elements.length > 0;
+  const showEmpty = !hasData && !fallbackToDemo;
+  const graphElements = hasData ? elements! : DEFAULT_ELEMENTS;
   const cyRef = useRef<any>(null);
   const isFirstLayout = useRef<boolean>(true);
 
@@ -53,24 +67,40 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
     const cy = cyRef.current;
     if (!cy || graphElements.length === 0) return;
 
-    const layout = cy.layout({
-      name: 'cose',
-      animate: !isFirstLayout.current, // Smooth transitions when dragging sliders
-      animationDuration: 300,
-      fit: true,
-      padding: 60,
-      randomize: isFirstLayout.current, // Only scatter on initial mount
-      nodeRepulsion: () => edgeLength * 9000, // Balanced multi-edge repulsion scaling
-      idealEdgeLength: () => edgeLength,
-      gravity: 0.15, // Extremely low gravity stops tightly linked clusters from collapsing
-      edgeElasticity: () => 45,
-      nodeOverlap: 60,
-      refresh: 20,
-      numIter: 1200
+    let layout: any;
+    // Defer one frame so the cytoscape container has real dimensions before
+    // `cose` reads them — otherwise a first run on a just-mounted panel piles
+    // every node at (0,0) and `fit` has nothing to fit to.
+    const raf = requestAnimationFrame(() => {
+      const c = cyRef.current;
+      if (!c) return;
+      c.resize();
+      layout = c.layout({
+        name: 'cose',
+        animate: !isFirstLayout.current, // Smooth transitions when dragging sliders
+        animationDuration: 300,
+        fit: true,
+        padding: 60,
+        randomize: isFirstLayout.current, // Only scatter on initial mount
+        nodeRepulsion: () => edgeLength * 9000, // Balanced multi-edge repulsion scaling
+        idealEdgeLength: () => edgeLength,
+        gravity: 0.15, // Extremely low gravity stops tightly linked clusters from collapsing
+        edgeElasticity: () => 45,
+        nodeOverlap: 60,
+        refresh: 20,
+        numIter: 1200,
+      });
+      layout.one('layoutstop', () => {
+        c.fit(undefined, 60);
+      });
+      layout.run();
+      isFirstLayout.current = false;
     });
 
-    layout.run();
-    isFirstLayout.current = false;
+    return () => {
+      cancelAnimationFrame(raf);
+      if (layout) layout.stop();
+    };
   }, [graphElements, edgeLength]);
 
   // Attach tap listener whenever elements or callback changes
@@ -118,6 +148,31 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
   const nodeSizePx = `${nodeSize}px`;
   const nodeSizeHoverPx = `${nodeSize + 2}px`;
   const nodeSizeSelectedPx = `${nodeSize + 6}px`;
+
+  if (showEmpty) {
+    return (
+      <div
+        style={{
+          height: '440px',
+          width: '100%',
+          boxSizing: 'border-box',
+          border: '1px solid var(--glass-border)',
+          borderRadius: '4px',
+          background: 'var(--bg-primary)',
+          display: 'grid',
+          placeItems: 'center',
+          textAlign: 'center',
+          padding: '24px',
+          color: 'var(--text-tertiary)',
+          fontFamily: 'IBM Plex Mono, monospace',
+          fontSize: '12px',
+          lineHeight: 1.6,
+        }}
+      >
+        {emptyLabel}
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: '440px', width: '100%', boxSizing: 'border-box', position: 'relative' }}>
@@ -213,6 +268,38 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
               } as any
             },
             {
+              selector: 'node.victim, node[type="victim"]',
+              style: {
+                'border-color': '#a9791f',
+                'background-color': '#a9791f',
+                'shape': 'ellipse',
+                'background-image': svgVictim,
+                'background-width': '46%',
+                'background-height': '46%'
+              } as any
+            },
+            {
+              // an accused appearing across >= 2 of the officer's cases
+              selector: 'node.shared',
+              style: {
+                'border-color': '#a9791f',
+                'border-width': 4,
+                'border-opacity': 1
+              } as any
+            },
+            {
+              // ambient "most-connected accused" context, not the officer's
+              // own evidence — rendered faded
+              selector: 'node.overview',
+              style: {
+                'background-opacity': 0.4,
+                'background-image-opacity': 0.55,
+                'border-opacity': 0.35,
+                'border-style': 'dashed',
+                'color': '#8a7d67'
+              } as any
+            },
+            {
               selector: 'edge',
               style: {
                 'width': 1.5,
@@ -230,6 +317,19 @@ export default function NetworkGraph({ elements, onNodeClick, evidence }: Networ
                 'edge-text-rotation': 'autorotate',
                 'text-margin-y': -8
               }
+            },
+            {
+              // faded ambient edges from the overview layer (must come after
+              // the generic `edge` rule so these props win)
+              selector: 'edge[?overview]',
+              style: {
+                'line-opacity': 0.4,
+                'line-style': 'dashed',
+                'line-color': '#b8ad97',
+                'target-arrow-color': '#b8ad97',
+                'color': '#8a7d67',
+                'text-background-opacity': 0.5
+              } as any
             }
           ]}
         />

@@ -1,14 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
 import type { SelectedEntity } from "../hooks/useEntityDrawer";
-import { Badge } from "@/components/ui/badge";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import type { Card } from "@/components/ui/card";
 import {
 	Table,
 	TableBody,
@@ -63,17 +56,6 @@ const DEFAULT_ROWS: CaseCitation[] = [
 	},
 ];
 
-function statusColor(confidence: string): string {
-	const c = confidence.toLowerCase();
-	if (c === "high") {
-		return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-	}
-	if (c === "medium") {
-		return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-	}
-	return "bg-rose-500/10 text-rose-400 border-rose-500/20";
-}
-
 function getConfidenceTextColor(confidence: string): string {
 	const c = confidence.toLowerCase();
 	if (c === "high") {
@@ -96,7 +78,6 @@ export function RecentConversations({
   visualization,
   evidence,
   onRowClick,
-	...props
 }: RecentConversationsProps) {
   
   let caseRows: CaseCitation[] = [];

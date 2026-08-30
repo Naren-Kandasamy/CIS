@@ -1,0 +1,339 @@
+"""End-to-end coverage for the Phase 1-6 UI redesign.
+
+Same shape as tests/test_ui_playwright.py: a plain Playwright sync script
+(no pytest fixtures) so it can run standalone against the live dev
+servers -- backend :8001, client :5173/app/, login dysp1 / demo1234.
+
+    python tests/test_ui_redesign_playwright.py
+
+For a DETERMINISTIC run (CI, or just repeatable), start the backend with
+MOCK_NOSQL_ONLY=true: .nosql_mock_db.json ships seeded users, cases and
+graph-backed FIRs, so every step -- including the query -> evidence -> pin
+flow -- has stable data and no dependence on live Catalyst latency or the
+per-officer /api/query rate limit (30/60s, easily tripped by back-to-back
+runs against the real backend).
+
+Covers:
+  * login lands on the /cases folder grid, NOT the chat
+  * create a case through the dialog -> its folder tile appears
+  * open a folder -> the per-case workspace renders
+  * start a session -> URL becomes /cases/<c_>/sessions/<s_>
+  * submit a query -> status pill shows then hides -> evidence renders
+  * pin a citation -> reload -> still pinned
+  * evidence board: add a card, drag it, reload -> position persisted
+  * SSE cut-off: a /api/query stream with no terminal event still
+    resolves via the /api/query/status/<job> poll
+"""
+import re
+import time
+
+from playwright.sync_api import sync_playwright, expect
+
+BASE = "http://localhost:5173/app"
+LOGIN_USER = "dysp1"
+LOGIN_PASS = "demo1234"
+
+
+def _login(page):
+    page.goto(f"{BASE}/login")
+    page.wait_for_selector("#login-username", timeout=10000)
+    page.locator("#login-username").fill(LOGIN_USER)
+    page.locator("#login-password").fill(LOGIN_PASS)
+    page.locator("button[type='submit']").click()
+    page.wait_for_url(re.compile(r"/app/cases$"), timeout=15000)
+
+
+# `.case-folder` also matches the "+ new case" tile, which is the ONLY such
+# element in the DOM while GET /api/cases is still in flight -- selecting it
+# with `.first` there opens the New-case dialog instead of navigating. Always
+# target a real folder and wait for the data load to have produced one.
+REAL_FOLDER = ".case-folder:not(.case-folder--new)"
+
+
+def _open_first_case(page):
+    folder = page.locator(REAL_FOLDER).first
+    folder.wait_for(state="visible", timeout=15000)
+    folder.click()
+    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+
+
+def test_login_lands_on_folder_grid(page):
+    print("\n[1] login -> /cases folder grid ...")
+    _login(page)
+    # the folder room, not the chat
+    page.wait_for_selector("text=Case files", timeout=10000)
+    assert page.locator(".chat-messages").count() == 0, "landed on chat, expected folder grid"
+    assert page.locator(".case-folder, .cases-grid").count() > 0
+    print("    ok")
+
+
+def test_create_case_via_dialog(page):
+    print("\n[2] create case via dialog ...")
+    _login(page)
+    title = f"PW Redesign Case {int(time.time())}"
+
+    # open the New case dialog (sidebar action or the dashed folder tile)
+    opener = page.locator("text=New case").first
+    if opener.count() == 0:
+        opener = page.locator("text=Open a case file").first
+    opener.click()
+
+    dialog = page.locator(".modal-card")
+    dialog.wait_for(state="visible", timeout=5000)
+    dialog.locator(".dialog-field input").first.fill(title)
+    dialog.locator(".modal-actions .btn-primary").click()
+
+    # Creating a case drops you straight into its workspace (CasesIndexPage's
+    # NewCaseDialog onSubmit navigates to /cases/<c_>), so the tile is not on
+    # the grid we just left -- assert the workspace landing, then go back to
+    # the folder room and confirm the new folder is now in the grid. The
+    # visible <h3> title sits inside the folder lid (clipped until hover); the
+    # always-present aria-label ("Open case <n> — <title>") is the anchor.
+    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+    page.goto(f"{BASE}/cases")
+    page.wait_for_selector(f'.case-folder[aria-label*="{title}"]', timeout=10000)
+    print("    ok:", title)
+
+
+def test_open_folder_into_workspace(page):
+    print("\n[3] open folder -> workspace ...")
+    _login(page)
+    _open_first_case(page)
+    # workspace chrome: either the dossier panels or the "start first session" empty state
+    page.wait_for_selector(".dossier-panel, .empty-state, .workspace-head", timeout=10000)
+    print("    ok:", page.url)
+
+
+def test_start_session_url_shape(page):
+    print("\n[4] start session -> /sessions/s_ ...")
+    _login(page)
+    _open_first_case(page)
+
+    starter = page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first
+    starter.wait_for(state="visible", timeout=10000)
+    starter.click()
+    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+/sessions/s_[0-9a-f]+"), timeout=15000)
+    print("    ok:", page.url)
+
+
+def test_query_progress_then_evidence(page):
+    print("\n[5] query -> status pill -> evidence ...")
+    _login(page)
+    _open_first_case(page)
+    page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first.click()
+    page.wait_for_url(re.compile(r"/sessions/s_[0-9a-f]+"), timeout=15000)
+
+    box = page.locator("textarea, .input-box input").first
+    box.wait_for(state="visible", timeout=10000)
+    box.fill("list recent theft cases in Belagavi")
+    page.locator("button[type='submit'], button.action-btn.primary").first.click()
+
+    page.wait_for_selector(".status-pill", timeout=8000)
+    page.wait_for_selector(".status-pill", state="hidden", timeout=60000)
+
+    last = page.locator(".message").last
+    expect(last).to_be_visible()
+    # evidence panel or at least a rendered field report
+    assert last.locator(".evidence-card, .message-content").count() > 0
+    print("    ok")
+
+
+def test_pin_citation_persists_across_reload(page):
+    print("\n[6] pin citation -> reload -> still pinned ...")
+    _login(page)
+    _open_first_case(page)
+    case_url = page.url
+
+    page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first.click()
+    page.wait_for_url(re.compile(r"/sessions/s_[0-9a-f]+"), timeout=15000)
+    box = page.locator("textarea, .input-box input").first
+    box.fill("list recent theft cases in Belagavi")
+    page.locator("button[type='submit'], button.action-btn.primary").first.click()
+    # Wait for the pill to actually appear before waiting for it to go --
+    # otherwise the "hidden" check passes instantly (element not yet in the
+    # DOM) and we race the still-running query.
+    try:
+        page.wait_for_selector(".status-pill", timeout=10000)
+    except Exception:
+        pass  # very fast (cached) queries may never show the pill
+    page.wait_for_selector(".status-pill", state="hidden", timeout=120000)
+
+    # the evidence cards live inside a <details> that starts collapsed --
+    # expand it so the per-row "Pin to case board" button is visible. On a
+    # real (cloud) backend the pipeline can keep streaming evidence for a
+    # while after the progress pill clears, so wait generously.
+    details = page.locator(".evidence-card details").first
+    details.wait_for(state="attached", timeout=90000)
+    if not details.evaluate("d => d.open"):
+        details.locator("summary").click()
+    pin = page.locator("button[aria-label='Pin to case board']").first
+    pin.wait_for(state="visible", timeout=10000)
+    pin.click()
+    expect(page.locator("button[aria-label='Pinned to case board']").first).to_be_visible(timeout=10000)
+
+    # workspace shows the pinned citation, and it survives a reload
+    page.goto(case_url)
+    page.get_by_text("Pinned Citations").wait_for(state="visible", timeout=10000)
+    rows_before = page.locator(".dossier-row, .citations-row, tbody tr").count()
+    page.reload()
+    page.get_by_text("Pinned Citations").wait_for(state="visible", timeout=10000)
+    assert page.locator(".dossier-row, .citations-row, tbody tr").count() == rows_before
+    print("    ok")
+
+
+def test_board_card_position_persists(page):
+    print("\n[7] board: add card -> drag -> reload -> position kept ...")
+    _login(page)
+    _open_first_case(page)
+    case_id = re.search(r"/cases/(c_[0-9a-f]+)", page.url).group(1)
+
+    page.goto(f"{BASE}/cases/{case_id}/board")
+    page.wait_for_selector(".board-toolbar", timeout=15000)
+    # Wait for the board load to settle before adding a card: the layout
+    # fetch resolves after mount and replaces the store's card array, so a
+    # note added while `loading` is still true gets clobbered by that
+    # response. `.board-empty-note` renders only when `!loading` (and no
+    # cards); an existing `.board-card` means the same "settled" state.
+    page.wait_for_selector(".board-empty-note, .board-card", timeout=15000)
+
+    # add a blank note (the toolbar renders even on an empty board)
+    cards_before = page.locator(".board-card").count()
+    page.get_by_role("button", name=re.compile(r"^\s*Note\s*$")).click()
+    page.wait_for_function(
+        "n => document.querySelectorAll('.board-card').length > n", arg=cards_before, timeout=10000
+    )
+    page.locator(".board-card").last.wait_for(state="visible", timeout=5000)
+    # Adding the first card flips cards.length 0 -> 1, which triggers the
+    # board's fit-to-cards effect (re-centre + re-zoom) and a layout PUT to
+    # the backend that, on a real (cloud) backend, resolves slowly and
+    # re-renders the card. Wait for that to settle before dragging, or the
+    # pointerdown lands on a node that's about to be replaced and does
+    # nothing.
+    try:
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception:
+        pass
+    time.sleep(1.5)
+
+    # The card's position lives in *board* coordinates on its inline style
+    # (left/top, pre pan-zoom transform). Screen bounding boxes can't be
+    # compared across a reload -- the board auto-fits to a different zoom
+    # each mount -- so assert on the board coordinates instead. Re-resolve
+    # the locator on every read: fit-to-cards may have swapped the node.
+    def board_xy():
+        return page.locator(".board-card").last.evaluate(
+            "el => [parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0]"
+        )
+
+    def drag_once():
+        box = page.locator(".board-card").last.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(box["x"] + box["width"] / 2 + 220, box["y"] + box["height"] / 2 + 160, steps=20)
+        page.mouse.up()
+        time.sleep(1.8)  # let the ~800ms debounced PUT flush
+
+    start_xy = board_xy()
+    drag_once()
+    moved_xy = board_xy()
+    if moved_xy == start_xy:  # pointer sequence didn't take -- one retry
+        drag_once()
+        moved_xy = board_xy()
+    dx, dy = moved_xy[0] - start_xy[0], moved_xy[1] - start_xy[1]
+    assert abs(dx) > 60 and abs(dy) > 40, f"card did not move: dx={dx}, dy={dy}"
+
+    page.reload()
+    page.wait_for_selector(".board-card", timeout=10000)
+    time.sleep(1.0)
+    after_xy = page.locator(".board-card").last.evaluate(
+        "el => [parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0]"
+    )
+    # board coordinates round-trip through the layout PUT/GET unchanged
+    assert abs(after_xy[0] - moved_xy[0]) < 4 and abs(after_xy[1] - moved_xy[1]) < 4, (
+        f"position not persisted: dropped at {moved_xy}, reloaded at {after_xy}"
+    )
+    print("    ok")
+
+
+def test_sse_cutoff_recovers_via_poll(page):
+    print("\n[8] SSE stream with no terminal event -> poll recovery ...")
+    _login(page)
+    _open_first_case(page)
+    page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first.click()
+    page.wait_for_url(re.compile(r"/sessions/s_[0-9a-f]+"), timeout=15000)
+
+    job_id = "job_pwtest_cutoff"
+
+    def handle_query(route):
+        # a job id, a couple of progress frames, then the connection ends
+        # WITHOUT a `done` event -- the client must fall back to polling.
+        # Frame shape must match backend/sse_poller.py: an `event:` line plus
+        # a `data:` line per frame (sse_starlette's EventSourceResponse).
+        body = (
+            f'event: job\ndata: {{"job_id":"{job_id}"}}\n\n'
+            'event: progress\ndata: {"status":"retrieval"}\n\n'
+            'event: progress\ndata: {"status":"synthesis"}\n\n'
+        )
+        route.fulfill(status=200, headers={"Content-Type": "text/event-stream"}, body=body)
+
+    def handle_status(route):
+        # pollForCompletedJob resolves on status "done"|"failed" and reads a
+        # flat {answer, evidence, visualization} shape.
+        route.fulfill(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body='{"status":"done","answer":"Recovered via poll.","evidence":[]}',
+        )
+
+    page.route("**/api/query", handle_query)
+    page.route(re.compile(r".*/api/query/status/.*"), handle_status)
+
+    box = page.locator("textarea, .input-box input").first
+    box.fill("trigger a cut-off stream")
+    page.locator("button[type='submit'], button.action-btn.primary").first.click()
+
+    expect(page.locator("text=Recovered via poll.")).to_be_visible(timeout=30000)
+    print("    ok")
+
+
+ALL = [
+    test_login_lands_on_folder_grid,
+    test_create_case_via_dialog,
+    test_open_folder_into_workspace,
+    test_start_session_url_shape,
+    test_query_progress_then_evidence,
+    test_pin_citation_persists_across_reload,
+    test_board_card_position_persists,
+    test_sse_cutoff_recovers_via_poll,
+]
+
+
+def main():
+    print("=" * 60)
+    print("UI redesign E2E (Phase 1-6)")
+    print("=" * 60)
+    failures = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        for fn in ALL:
+            ctx = browser.new_context()
+            page = ctx.new_page()
+            try:
+                fn(page)
+            except Exception as exc:  # noqa: BLE001 - report and continue
+                failures.append((fn.__name__, exc))
+                print(f"    FAIL: {exc}")
+            finally:
+                ctx.close()
+        browser.close()
+
+    if failures:
+        print(f"\n{len(failures)} failure(s):")
+        for name, exc in failures:
+            print(f"  - {name}: {exc}")
+        raise SystemExit(1)
+    print("\nAll UI redesign E2E checks passed.")
+
+
+if __name__ == "__main__":
+    main()

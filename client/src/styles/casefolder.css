@@ -1,0 +1,255 @@
+/* Cases index — the folder room. A manila case folder that lifts off the desk
+   and swings its cover open to reveal the session files inside. */
+
+.cases-room {
+  padding: 40px clamp(24px, 5vw, 64px);
+  color: var(--text-primary);
+}
+
+.cases-room-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px dashed var(--glass-border);
+  padding-bottom: 16px;
+  margin-bottom: 32px;
+}
+
+.cases-room-head h1 {
+  font-family: var(--font-heading), 'Special Elite', monospace;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: 0.01em;
+}
+
+.cases-room-head p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.cases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: clamp(28px, 4vw, 44px);
+  align-items: start;
+}
+
+/* ── folder ─────────────────────────────────────────────────────────────── */
+.case-folder {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  min-height: 210px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  perspective: 1400px;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.case-folder:hover {
+  transform: translateY(-4px);
+}
+
+.case-folder:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 6px;
+  border-radius: 6px;
+}
+
+.case-folder[data-open] {
+  transform: translateY(-10px) scale(1.015);
+  z-index: 2;
+}
+
+/* the tab that carries the case number */
+.folder-tab {
+  position: absolute;
+  top: 4px;
+  left: 22px;
+  z-index: 1;
+  padding: 5px 14px 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  background: #cdbd90;
+  border: 1px solid rgba(43, 33, 20, 0.28);
+  border-bottom: none;
+  border-radius: 5px 8px 0 0;
+  box-shadow: 0 -1px 2px rgba(43, 33, 20, 0.12) inset;
+  transform: rotate(-1.2deg);
+}
+
+/* the back of the folder + the sheets that peek out of it */
+.folder-sheets {
+  position: absolute;
+  inset: 18px 10px 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #efe7cf;
+  border: 1px solid rgba(43, 33, 20, 0.16);
+  border-radius: 3px 3px 6px 6px;
+  box-shadow: 0 6px 14px -8px rgba(43, 33, 20, 0.4);
+  overflow: hidden;
+}
+
+.folder-sheet {
+  font-family: var(--font-mono), 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  padding: 5px 8px;
+  background: #fdfaf0;
+  border: 1px solid rgba(43, 33, 20, 0.1);
+  border-radius: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateY(14px);
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  transition-delay: calc(var(--i, 0) * 55ms);
+}
+
+.case-folder[data-open] .folder-sheet {
+  transform: translateY(calc(var(--i, 0) * -6px));
+  opacity: 1;
+}
+
+/* the front cover, hinged at the top */
+.folder-cover {
+  position: absolute;
+  inset: 20px 6px 4px;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px 16px;
+  background: linear-gradient(158deg, #ddcfa6 0%, #d2c295 60%, #cbbb8d 100%);
+  border: 1px solid rgba(43, 33, 20, 0.3);
+  border-radius: 4px 4px 8px 8px;
+  box-shadow: 0 10px 22px -12px rgba(43, 33, 20, 0.5),
+    0 1px 0 rgba(255, 250, 235, 0.35) inset;
+  transform-origin: top center;
+  transform: rotateX(0deg);
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.42s ease;
+  backface-visibility: hidden;
+}
+
+.case-folder[data-open] .folder-cover {
+  transform: rotateX(-116deg);
+  box-shadow: 0 24px 30px -18px rgba(43, 33, 20, 0.55);
+}
+
+.folder-cover-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.folder-title {
+  font-family: var(--font-heading), 'Special Elite', monospace;
+  font-size: 1.02rem;
+  line-height: 1.3;
+  color: #2b2114;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.folder-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 14px;
+  font-size: 0.68rem;
+}
+
+.folder-meta div {
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-meta dt {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(43, 33, 20, 0.55);
+  font-size: 0.6rem;
+}
+
+.folder-meta dd {
+  color: #3a2f1c;
+  font-weight: 600;
+}
+
+.folder-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  color: rgba(43, 33, 20, 0.5);
+  background: rgba(253, 250, 240, 0.6);
+  border: 1px solid rgba(43, 33, 20, 0.18);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.case-folder:hover .folder-delete,
+.case-folder:focus-within .folder-delete {
+  opacity: 1;
+}
+
+.folder-delete:hover {
+  color: var(--accent-primary);
+  background: #f7e6e5;
+}
+
+/* the "add a case" folder */
+.case-folder--new .folder-cover {
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.case-folder--new .folder-add-label {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.case-folder--new .folder-add-plus {
+  font-size: 1.8rem;
+  line-height: 1;
+  color: var(--accent-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .case-folder,
+  .folder-cover,
+  .folder-sheet {
+    transition: opacity 0.09s linear !important;
+    transform: none !important;
+  }
+  .case-folder[data-open] {
+    opacity: 0.35;
+  }
+  .case-folder[data-open] .folder-sheet {
+    opacity: 1;
+  }
+}

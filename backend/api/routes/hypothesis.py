@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from shared.hypothesis_models import HypothesisRecord
 from shared.hypothesis_engine import (
     create_hypothesis,
-    get_hypothesis,
     list_hypotheses,
     check_hypothesis,
+    get_last_check,
     resolve_hypothesis,
 )
 
@@ -28,6 +28,7 @@ router = APIRouter()
 # finite.
 class HypothesisCreateRequest(BaseModel):
     fir_id: str = Field(max_length=128)
+    case_id: Optional[str] = Field(None, max_length=128)
     statement: str = Field(max_length=2000)
     linked_entity_ids: List[str] = Field(default_factory=list, max_length=100)
 
@@ -54,6 +55,7 @@ async def create_hypothesis_endpoint(payload: HypothesisCreateRequest, request: 
     record = HypothesisRecord(
         hypothesis_id=str(uuid.uuid4()),
         fir_id=payload.fir_id,
+        case_id=payload.case_id,
         officer_id=_officer_id(request),
         statement=payload.statement,
         linked_entity_ids=payload.linked_entity_ids,
@@ -79,6 +81,15 @@ async def check_hypothesis_endpoint(hypothesis_id: str, request: Request):
         return {"status": "checked", "log": log}
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@router.get("/api/investigation/hypothesis/{hypothesis_id}/check")
+async def get_last_check_endpoint(hypothesis_id: str, request: Request):
+    # The check engine already persists last_check:{id}; this just reads it
+    # back so the board can re-render a prior result after a page reload.
+    _officer_id(request)
+    log = await get_last_check(hypothesis_id)
+    return {"hypothesis_id": hypothesis_id, "log": log}
 
 
 @router.post("/api/investigation/hypothesis/{hypothesis_id}/resolve")

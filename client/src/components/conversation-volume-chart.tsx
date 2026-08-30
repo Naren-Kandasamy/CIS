@@ -1,13 +1,7 @@
 import { cn } from "@/lib/utils";
 import { type ComponentProps, useId } from "react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import type { Card } from "@/components/ui/card";
 import {
 	type ChartConfig,
 	ChartContainer,
@@ -48,7 +42,6 @@ interface ConversationVolumeChartProps extends ComponentProps<typeof Card> {
 export function ConversationVolumeChart({
 	className,
   visualization,
-	...props
 }: ConversationVolumeChartProps) {
 	const idAreaGradient = useId();
   

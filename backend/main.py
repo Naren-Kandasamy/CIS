@@ -63,9 +63,9 @@ async def lifespan(app: FastAPI):
     # may timeout long queries inside the AppSail event loop.
     signals_url = os.getenv("ZC_SIGNALS_PUBLISHER_URL") or os.getenv("CATALYST_SIGNALS_PUBLISHER_URL")
     if signals_url:
-        print(f"[STARTUP] ✅ Signals URL is configured.")
+        print("[STARTUP] ✅ Signals URL is configured.")
     else:
-        print(f"[STARTUP] ⚠️  ZC_SIGNALS_PUBLISHER_URL is NOT SET — pipeline will run inline (may timeout).")
+        print("[STARTUP] ⚠️  ZC_SIGNALS_PUBLISHER_URL is NOT SET — pipeline will run inline (may timeout).")
 
     await init_nosql_client()
     yield

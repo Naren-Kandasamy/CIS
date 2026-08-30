@@ -1,4 +1,3 @@
-import json
 from fastapi.responses import JSONResponse
 
 from shared.auth import get_session, role_meets_minimum

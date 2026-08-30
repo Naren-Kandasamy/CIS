@@ -1,5 +1,4 @@
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient as llm_complete
-from pipeline_function.pipeline.catalyst_resilient_client import RateLimitExhaustedError
 from pipeline_function.pipeline.synthesis.fallback import build_fallback_response
 from pipeline_function.pipeline.evidence import EvidenceObject
 from shared.claim_logger import log_claim

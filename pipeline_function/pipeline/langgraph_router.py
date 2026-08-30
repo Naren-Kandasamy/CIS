@@ -1,6 +1,5 @@
-import operator
 import secrets
-from typing import Annotated, Sequence, TypedDict
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
 import json
 
@@ -345,7 +344,8 @@ async def building_visualization_node(state: AgentState):
     
     if fir_ids:
         from shared.graph_client import run_query
-        # Create FIR nodes
+        # FIR nodes + a Location node per distinct district
+        locations_added = set()
         for item in evidence_obj.items:
             if not item.fir_id: continue
             cytoscape_elements.append({
@@ -357,14 +357,30 @@ async def building_visualization_node(state: AgentState):
                 },
                 "classes": "fir"
             })
-            
-        person_query = """
-        MATCH (p:Person)-[r]->(f:FIR)
+            district = (item.metadata.get("district") or "").strip()
+            if district:
+                loc_id = f"loc::{district}"
+                if loc_id not in locations_added:
+                    cytoscape_elements.append({
+                        "data": {"id": loc_id, "label": district, "type": "location", "details": "District"},
+                        "classes": "location"
+                    })
+                    locations_added.add(loc_id)
+                cytoscape_elements.append({
+                    "data": {"id": f"{item.fir_id}__loc", "source": item.fir_id,
+                             "target": loc_id, "label": "Occurred At"}
+                })
+
+        # Accused linked to these FIRs. NOTE: offender nodes in this graph are
+        # labelled :Accused (via [:ACCUSED_IN]), NOT :Person -- a stale
+        # MATCH (p:Person) here silently produced an empty network.
+        accused_query = """
+        MATCH (p:Accused)-[r:ACCUSED_IN]->(f:FIR)
         WHERE f.id IN $fir_ids
         RETURN p.id as person_id, type(r) as rel_type, f.id as fir_id
         """
         try:
-            results = await run_query(person_query, {"fir_ids": fir_ids})
+            results = await run_query(accused_query, {"fir_ids": fir_ids})
             persons_added = set()
             for r in results:
                 p_id = r["person_id"]
@@ -372,9 +388,9 @@ async def building_visualization_node(state: AgentState):
                     cytoscape_elements.append({
                         "data": {
                             "id": p_id,
-                            "label": p_id[:8],
+                            "label": p_id,
                             "type": "person",
-                            "details": "Person"
+                            "details": "Accused"
                         },
                         "classes": "person"
                     })
@@ -388,7 +404,30 @@ async def building_visualization_node(state: AgentState):
                     }
                 })
         except Exception as e:
-            print(f"Failed to build visualization graph: {e}")
+            print(f"Failed to build accused graph: {e}")
+
+        # Victims linked to these FIRs (best-effort — never fatal)
+        try:
+            victim_rows = await run_query(
+                "MATCH (v:Victim)-[:VICTIM_IN]->(f:FIR) WHERE f.id IN $fir_ids "
+                "RETURN v.id as victim_id, f.id as fir_id",
+                {"fir_ids": fir_ids},
+            )
+            victims_added = set()
+            for r in victim_rows:
+                v_id = r["victim_id"]
+                if v_id not in victims_added:
+                    cytoscape_elements.append({
+                        "data": {"id": v_id, "label": str(v_id)[:10], "type": "victim", "details": "Victim"},
+                        "classes": "victim"
+                    })
+                    victims_added.add(v_id)
+                cytoscape_elements.append({
+                    "data": {"id": f"{v_id}__{r['fir_id']}", "source": r["fir_id"],
+                             "target": v_id, "label": "Victim"}
+                })
+        except Exception as e:
+            print(f"Failed to build victim graph: {e}")
             
         # Recharts Donut Data (Crime Type Distribution)
         crime_counts = {}

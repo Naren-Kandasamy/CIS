@@ -1,7 +1,6 @@
 import random
 import math
 from datetime import datetime, timedelta
-from uuid import uuid4
 from shared.data_sources.base import FinancialProvider
 from shared.data_sources.inject_pattern_registry import pattern_registry
 

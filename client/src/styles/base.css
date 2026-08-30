@@ -1,0 +1,105 @@
+/*
+  Base layer — reset, document defaults, ambient desk texture, shared
+  font-family helpers, the routed app container, and the handful of
+  keyframes used app-wide.
+*/
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Source Serif 4', Georgia, serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Aged-paper texture: subtle fiber grain + faint vignette, no glows */
+.ambient-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  background-color: var(--bg-primary);
+  background-image:
+    radial-gradient(circle at 20% 25%, rgba(43, 33, 20, 0.05), transparent 45%),
+    radial-gradient(circle at 80% 70%, rgba(43, 33, 20, 0.05), transparent 45%),
+    repeating-linear-gradient(0deg, rgba(43, 33, 20, 0.025) 0px, rgba(43, 33, 20, 0.025) 1px, transparent 1px, transparent 3px);
+}
+
+.ambient-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 180px rgba(36, 29, 20, 0.18);
+}
+
+.stamp-font {
+  font-family: 'Special Elite', 'IBM Plex Mono', monospace;
+  letter-spacing: 0.02em;
+}
+
+.mono-font {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* App container — the routed shell centres on wide desks */
+.app-container {
+  display: flex;
+  height: 100vh;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* ── shared keyframes ─────────────────────────────────────────────────── */
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 var(--accent-glow); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(138, 42, 36, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(138, 42, 36, 0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+.animate-shake {
+  animation: shake 0.15s ease-in-out 0s 2;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Reduced motion: drop the decorative shake/fade. The loading spinner
+   keeps turning — it communicates progress, it isn't decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake {
+    animation: none;
+  }
+  .animate-fade-in {
+    animation: none;
+    opacity: 1;
+  }
+}

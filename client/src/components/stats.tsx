@@ -1,4 +1,3 @@
-import { cn } from "@/lib/utils";
 import { Delta, DeltaIcon, DeltaValue } from "@/components/delta";
 
 export function DashboardStats({ visualization }: { visualization?: any }) {

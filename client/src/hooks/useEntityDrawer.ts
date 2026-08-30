@@ -1,25 +1,9 @@
 import { useState, useCallback } from 'react';
 
-export type EntityType = 'person' | 'fir' | 'location';
-
-export interface SelectedEntity {
-  type: EntityType;
-  id: string;
-  label: string;
-  /** Raw node data from cytoscape element */
-  data?: Record<string, any>;
-  /** Matched evidence[] items (cross-referenced by FIR id) */
-  evidenceItems?: any[];
-  /** Connected cytoscape node data objects (edges resolved) */
-  linkedNodes?: LinkedNode[];
-}
-
-export interface LinkedNode {
-  id: string;
-  label: string;
-  type: EntityType | string;
-  edgeLabel?: string; // relationship label e.g. "Accused In", "Occurred At"
-}
+// Types live in ../types/entities.ts now; re-exported here so existing importers
+// (components/dashboard/*, App.tsx) keep working unchanged.
+export type { EntityType, SelectedEntity, LinkedNode } from '../types/entities';
+import type { SelectedEntity, LinkedNode } from '../types/entities';
 
 export function useEntityDrawer() {
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);

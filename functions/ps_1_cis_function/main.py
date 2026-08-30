@@ -1,7 +1,6 @@
 import logging
 import json
 import asyncio
-import sys
 import os
 import traceback
 
@@ -148,7 +147,7 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
     print(f"[DIAG][PIPELINE] _run_pipeline started for job {job_id}")
 
     # ── Idempotency check ──────────────────────────────────────────────────
-    print(f"[DIAG][PIPELINE] Reading existing job status from NoSQL...")
+    print("[DIAG][PIPELINE] Reading existing job status from NoSQL...")
     try:
         existing = await read_job_status(job_id)
         print(f"[DIAG][PIPELINE] Existing status: {existing.get('status') if existing else 'None'}")
@@ -163,7 +162,7 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
 
     try:
         # ── Read session history ───────────────────────────────────────────
-        print(f"[DIAG][PIPELINE] Acquiring session lock for history read...")
+        print("[DIAG][PIPELINE] Acquiring session lock for history read...")
         async with get_session_lock(session_id):
             history_doc = await nosql_get(f"history:{session_id}")
             history = json.loads(history_doc["value"]) if history_doc else []
@@ -173,12 +172,12 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
         print(f"[DIAG][PIPELINE] History loaded: {len(history)} entries")
 
         # ── Run LangGraph pipeline ─────────────────────────────────────────
-        print(f"[DIAG][PIPELINE] Invoking run_langgraph_pipeline...")
+        print("[DIAG][PIPELINE] Invoking run_langgraph_pipeline...")
         result_data = await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
-        print(f"[DIAG][PIPELINE] ✅ run_langgraph_pipeline returned")
+        print("[DIAG][PIPELINE] ✅ run_langgraph_pipeline returned")
 
         # ── Write updated history ──────────────────────────────────────────
-        print(f"[DIAG][PIPELINE] Writing updated history...")
+        print("[DIAG][PIPELINE] Writing updated history...")
         async with get_session_lock(session_id):
             if result_data:
                 history_doc = await nosql_get(f"history:{session_id}")

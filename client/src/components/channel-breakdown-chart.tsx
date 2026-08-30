@@ -1,13 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
 import { LabelList, Pie, PieChart } from "recharts";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import type { Card } from "@/components/ui/card";
 import {
 	type ChartConfig,
 	ChartContainer,
@@ -59,7 +53,6 @@ interface ChannelBreakdownChartProps extends ComponentProps<typeof Card> {
 export function ChannelBreakdownChart({
 	className,
   visualization,
-	...props
 }: ChannelBreakdownChartProps) {
   
   const donutData = visualization?.recharts?.donut && visualization.recharts.donut.length > 0 

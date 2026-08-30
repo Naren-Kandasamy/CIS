@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException
 from typing import Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel
-from shared.review_queue_engine import get_pending_review_items, get_review_item, push_review_item
+from shared.review_queue_engine import get_pending_review_items, get_review_item
 from shared.catalyst_client import nosql_set, get_lock
 
 router = APIRouter(tags=["Review Queue"])

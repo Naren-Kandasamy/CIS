@@ -1,0 +1,47 @@
+# Ruff config for the CIS backend/pipeline Python code.
+#
+# Scoped deliberately narrow: this codebase predates any linter and leans on
+# patterns ruff's default rdeset flags by design -- broad `except Exception`
+# resilience wrappers around every external Zoho/Zia/graph call, and
+# pre-PEP-604 `Optional[...]` annotations throughout. Enforcing the full
+# default set would be 500+ churn edits with no behavioural payoff.
+#
+# What stays on is the correctness core: pyflakes (undefined names, unused
+# imports/vars, redefinitions, bad f-strings) plus a couple of real-bug
+# bugbear checks. Run: `ruff check .`
+
+target-version = "py310"
+line-length = 120
+
+extend-exclude = [
+    ".venv",
+    "data",
+    "scratch",
+    "Docs",                        # vendored skill tooling, not project code
+    "tests",                       # standalone probe scripts, not linted
+    "impeccable-skill-v4.1.2",
+    "ui-ux-pro-max-skill-2.15.0",
+    "ui-redesign",
+    # root-level one-off probe/diagnostic scripts (test_*.py, *_token.py, etc.)
+    "test_*.py",
+    "diag*.py",
+    "check_*.py",
+    "dump_nosql.py",
+    "get_*_token.py",
+    "get_sdk_token.py",
+    "refresh_*.py",
+    "query_memgraph.py",
+    "search_pool.py",
+    "verify_table.py",
+    "create_cases.py",
+    "append_env.py",
+    "parse_html.py",
+]
+
+[lint]
+select = ["F", "E9", "B006", "B018", "PLE"]
+# F401 in __init__.py re-exports is intentional.
+ignore = ["F403", "F405"]
+
+[lint.per-file-ignores]
+"functions/ps_1_cis_function/pipeline_function/**" = ["F"]  # deploy-time copy of pipeline_function/
