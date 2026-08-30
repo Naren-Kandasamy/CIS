@@ -83,8 +83,9 @@ provisioned — `tests/test_ui*_playwright.py` are CI-ready but can't run here.
   `:CellTower`, `:ANPRCamera`. `FIR` props: `id, date, crime_no, district,
   crime_type, modus_operandi, narrative`. The query pipeline's
   `MATCH (p:Person)-[r]->(f:FIR)` in
-  `pipeline_function/pipeline/langgraph_router.py` matches nothing against this
-  data — that is why the ER network historically showed only demo elements.
+  `pipeline_function/pipeline/langgraph_router.py` matched nothing against this
+  data — that was why the ER network showed only demo elements. **Fixed in
+  `d62deed`** (uses `:Accused` now).
 - **CARTO basemap watermark**: the Leaflet map's Voyager tiles now show
   "API KEY REQUIRED / carto.com/basemaps/apikey" — CARTO gates that basemap
   behind a key. Cosmetic; markers/zoom/pan work. Same in the reference
@@ -180,6 +181,8 @@ from the 2 KB JSON body cap (`MAX_BOARD_LAYOUT_BYTES = 256 KB`).
 ## Commit history (this branch, newest first)
 
 ```
+d62deed fix(pipeline): entity graph queries use :Accused, not :Person
+5fd3c2a docs: fresh-session handoff (SESSION_HANDOFF.md)
 5477e2a docs: handoff note for graph-DB-backed ER network
 a712218 feat: real entity relation network — per-case + global cross-case
 827f36c docs: handoff note for the restored global dashboard
@@ -199,11 +202,12 @@ db6247e feat(client): Phase 2 — chat state store + session-id/title contract
 
 ## Known issues / open follow-ups (none blocking)
 
-1. **Pipeline graph builder uses `:Person`** — `langgraph_router.py`'s
-   cytoscape builder queries `MATCH (p:Person)-[r]->(f:FIR)` and gets nothing
-   from this dataset (nodes are `:Accused`). Chat-query visualizations
-   therefore have an empty `cytoscape.elements`. Fix it the same way
-   `graph.py` does. Touches `pipeline_function/` → mirror to `functions/`.
+1. ~~Pipeline graph builder uses `:Person`~~ — **FIXED (`d62deed`)**.
+   `langgraph_router.py`'s cytoscape builder and `executor.py`'s
+   pagerank branch now `MATCH (p:Accused)-[:ACCUSED_IN]->(f:FIR)`; the
+   viz also gets Location + Victim nodes. Mirrored to `functions/`.
+   Pre-existing 2-line drift in the `functions/` `langgraph_router.py`
+   mirror (~lines 758/770, two missing `return`s) was left untouched.
 2. **Corkboard `deriveBoardCards` scatter** can overlap on hash collisions for
    3+ unplaced cards; harmless once dragged.
 3. **Check logs are session-transient** on the corkboard (no server list
