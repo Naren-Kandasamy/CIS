@@ -1,7 +1,21 @@
-# Indic-ASR integration plan — folding `feat/indic-asr` into the redesigned frontend
+# Indic-ASR integration — folding `feat/indic-asr` into the redesigned frontend
 
-**Status:** not started. Execute **after** `feature/ui-redesign-v2` is merged to
-`main`. Owner: whoever rebases the voice work (Hemnath, or us on his behalf).
+**Status: DONE** on branch `feature/indic-asr-integration` (commit `2ce95ba`,
+co-authored by Hemnath D). Opened as its own PR; his PR #25 is superseded.
+The rest of this doc is the record of what moved where.
+
+## Still open (small, deliberate follow-ups)
+
+- **`models/indic_asr_tiny.onnx` (10 MB) not committed.** `models/*.onnx` is
+  gitignored; `models/vocab.json` and the code are in. The ONNX hop is a
+  no-op until the file is dropped in (`data/scripts/download_onnx_indic_model.py`).
+  Decide Git-LFS vs plain blob before adding it.
+- **`shared/` vs `functions/ps_1_cis_function/shared/` `catalyst_client.py`
+  still drift** on `translate_text` (LLM vs old Zia REST) — pre-existing on
+  `main`, not caused here. The ASR + token-lock changes were mirrored
+  consistently; `onnx_indic_asr.py` is byte-identical across both.
+- `onnxruntime`/`numpy` are in `requirements.txt` but not the local `.venv`,
+  so the ONNX path is skipped locally (caught ImportError). Fine for tests.
 
 This branch (the UI redesign) deleted `client/src/App.tsx`, which is where
 Hemnath wired his voice feature. His backend pieces are mostly independent of

@@ -61,27 +61,32 @@ async def patch_session(session_id: str, body: SessionPatchRequest, request: Req
 async def delete_session(session_id: str, request: Request):
     username = request.state.username
     meta_doc = await nosql_get(f"session_meta:{session_id}")
+    # Idempotent: a session with no meta record is already gone (or never
+    # existed) -- don't 404 the client for re-issuing the delete.
     if not meta_doc:
-        raise HTTPException(404, "Session not found")
+        return {"status": "deleted"}
     meta = json.loads(meta_doc["value"])
-    case_id = meta["case_id"]
+    case_id = meta.get("case_id")
 
-    async with get_case_lock(case_id):
-        await _require_collaborator(case_id, username)
-        
-        # Remove from case's session list
-        sessions_doc = await nosql_get(f"case_sessions:{case_id}")
-        if sessions_doc:
-            sessions = json.loads(sessions_doc["value"])
-            if session_id in sessions:
-                sessions.remove(session_id)
-                await nosql_set(f"case_sessions:{case_id}", json.dumps(sessions))
-                
-        # Delete session data in parallel
-        await asyncio.gather(
-            nosql_delete(f"session_meta:{session_id}"),
-            nosql_delete(f"history:{session_id}")
-        )
-        
+    # A well-formed session always has a case_id; guard anyway so an orphaned
+    # session_meta (no case_id) can still be cleaned up rather than 500.
+    if case_id:
+        async with get_case_lock(case_id):
+            await _require_collaborator(case_id, username)
+
+            # Remove from case's session list
+            sessions_doc = await nosql_get(f"case_sessions:{case_id}")
+            if sessions_doc:
+                sessions = json.loads(sessions_doc["value"])
+                if session_id in sessions:
+                    sessions.remove(session_id)
+                    await nosql_set(f"case_sessions:{case_id}", json.dumps(sessions))
+
+    # Delete session data in parallel
+    await asyncio.gather(
+        nosql_delete(f"session_meta:{session_id}"),
+        nosql_delete(f"history:{session_id}")
+    )
+
     return {"status": "deleted"}
 
