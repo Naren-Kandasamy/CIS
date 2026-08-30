@@ -58,8 +58,12 @@ export function MessageList({ messages, sessionId }: { messages: Message[]; sess
     onSubmit: handleFeedbackSubmit,
   };
 
+  // Before the first question, the transcript is just the one-line greeting —
+  // centre it instead of pinning it to the top over a wall of empty paper.
+  const intro = messages.length <= 1;
+
   return (
-    <div className="chat-messages">
+    <div className={`chat-messages${intro ? ' chat-messages--intro' : ''}`}>
       {messages.map((msg) => (
         <MessageBubble key={msg.id} message={msg} openEntity={openEntity} feedback={feedback} />
       ))}

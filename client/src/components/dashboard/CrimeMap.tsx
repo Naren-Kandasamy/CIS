@@ -35,9 +35,12 @@ export default function CrimeMap({ markers }: CrimeMapProps) {
     <div style={{ height: '360px', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ height: '100%', width: '100%', border: '1px solid var(--glass-border)', borderRadius: '2px', overflow: 'hidden', filter: 'sepia(0.55) saturate(1.1) contrast(0.95) brightness(1.02)' }}>
         <MapContainer key={`${centerPosition[0]}-${centerPosition[1]}`} center={centerPosition} zoom={zoomLevel} style={{ height: '100%', width: '100%' }}>
+          {/* Plain OSM tiles: CARTO's Voyager basemap now stamps an "API KEY
+              REQUIRED" watermark on every tile. The sepia/contrast filter on
+              the wrapper div still gives the map its aged-paper cast. */}
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
           {mapMarkers.map((marker, idx) => (
             <Marker key={idx} position={marker.position}>
