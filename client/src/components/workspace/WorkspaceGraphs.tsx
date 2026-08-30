@@ -76,7 +76,8 @@ export function WorkspaceGraphs({
         <div className="dossier-panel dossier-paperclip" style={{ padding: '28px' }}>
           <h3 className="dossier-panel-title text-base mb-1">Entity Relation Network</h3>
           <p className="dossier-panel-subtitle text-xs mb-3">
-            Accused, victims and locations linked to this case's FIRs. Click a node to inspect.
+            Accused, victims and locations linked to the FIRs this case has pinned,
+            hypothesised on, or queried. Click a node to inspect.
           </p>
           <div className="graph-split-container">
             <div className={`graph-split-graph ${graphEntity ? 'graph-split-graph--narrow' : ''}`}>

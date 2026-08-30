@@ -126,6 +126,9 @@ export interface GraphResponse {
   case_count?: number;
   seed_fir_count?: number;
   shared_accused_count?: number;
+  /** true when the thin-graph overview layer (top-connected accused) was appended */
+  overview?: boolean;
+  overview_note?: string | null;
 }
 /** Officer-wide graph — union across every case the caller collaborates on. */
 export const getGlobalGraph = () => apiFetch<GraphResponse>('/api/graph');

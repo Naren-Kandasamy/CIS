@@ -31,6 +31,7 @@ export default function GlobalDashboardPage() {
   const [graphElements, setGraphElements] = useState<any[]>([]);
   const [graphLoaded, setGraphLoaded] = useState(false);
   const [sharedAccused, setSharedAccused] = useState(0);
+  const [overviewNote, setOverviewNote] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -39,6 +40,7 @@ export default function GlobalDashboardPage() {
         if (!live) return;
         setGraphElements(r.elements ?? []);
         setSharedAccused(r.shared_accused_count ?? 0);
+        setOverviewNote(r.overview ? r.overview_note ?? null : null);
       })
       .catch(() => {
         if (live) setGraphElements([]);
@@ -76,7 +78,8 @@ export default function GlobalDashboardPage() {
       <div className="dossier-panel dossier-paperclip" style={{ padding: '28px' }}>
         <h3 className="dossier-panel-title text-base mb-1">Entity Relation Network</h3>
         <p className="dossier-panel-subtitle text-xs mb-3">
-          Every case you work, unioned — Accused, victims and districts linked to their FIRs.
+          Every case you work, unioned — Accused, victims and districts linked to the FIRs you've
+          pinned, hypothesised on, or queried.
           {sharedAccused > 0 && (
             <>
               {' '}
@@ -87,6 +90,11 @@ export default function GlobalDashboardPage() {
             </>
           )}
         </p>
+        {overviewNote && (
+          <p className="dossier-panel-subtitle text-xs mb-3" style={{ fontStyle: 'italic', color: 'var(--text-tertiary)' }}>
+            {overviewNote}
+          </p>
+        )}
         <div className="flex items-center gap-4 mb-4 dossier-mono flex-wrap" style={{ fontSize: '10px' }}>
           <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', display: 'inline-block' }} />Accused</span>
           <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, background: 'var(--accent-secondary)', display: 'inline-block' }} />FIR</span>

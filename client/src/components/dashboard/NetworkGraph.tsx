@@ -67,24 +67,40 @@ export default function NetworkGraph({
     const cy = cyRef.current;
     if (!cy || graphElements.length === 0) return;
 
-    const layout = cy.layout({
-      name: 'cose',
-      animate: !isFirstLayout.current, // Smooth transitions when dragging sliders
-      animationDuration: 300,
-      fit: true,
-      padding: 60,
-      randomize: isFirstLayout.current, // Only scatter on initial mount
-      nodeRepulsion: () => edgeLength * 9000, // Balanced multi-edge repulsion scaling
-      idealEdgeLength: () => edgeLength,
-      gravity: 0.15, // Extremely low gravity stops tightly linked clusters from collapsing
-      edgeElasticity: () => 45,
-      nodeOverlap: 60,
-      refresh: 20,
-      numIter: 1200
+    let layout: any;
+    // Defer one frame so the cytoscape container has real dimensions before
+    // `cose` reads them — otherwise a first run on a just-mounted panel piles
+    // every node at (0,0) and `fit` has nothing to fit to.
+    const raf = requestAnimationFrame(() => {
+      const c = cyRef.current;
+      if (!c) return;
+      c.resize();
+      layout = c.layout({
+        name: 'cose',
+        animate: !isFirstLayout.current, // Smooth transitions when dragging sliders
+        animationDuration: 300,
+        fit: true,
+        padding: 60,
+        randomize: isFirstLayout.current, // Only scatter on initial mount
+        nodeRepulsion: () => edgeLength * 9000, // Balanced multi-edge repulsion scaling
+        idealEdgeLength: () => edgeLength,
+        gravity: 0.15, // Extremely low gravity stops tightly linked clusters from collapsing
+        edgeElasticity: () => 45,
+        nodeOverlap: 60,
+        refresh: 20,
+        numIter: 1200,
+      });
+      layout.one('layoutstop', () => {
+        c.fit(undefined, 60);
+      });
+      layout.run();
+      isFirstLayout.current = false;
     });
 
-    layout.run();
-    isFirstLayout.current = false;
+    return () => {
+      cancelAnimationFrame(raf);
+      if (layout) layout.stop();
+    };
   }, [graphElements, edgeLength]);
 
   // Attach tap listener whenever elements or callback changes
@@ -272,6 +288,18 @@ export default function NetworkGraph({
               } as any
             },
             {
+              // ambient "most-connected accused" context, not the officer's
+              // own evidence — rendered faded
+              selector: 'node.overview',
+              style: {
+                'background-opacity': 0.4,
+                'background-image-opacity': 0.55,
+                'border-opacity': 0.35,
+                'border-style': 'dashed',
+                'color': '#8a7d67'
+              } as any
+            },
+            {
               selector: 'edge',
               style: {
                 'width': 1.5,
@@ -289,6 +317,19 @@ export default function NetworkGraph({
                 'edge-text-rotation': 'autorotate',
                 'text-margin-y': -8
               }
+            },
+            {
+              // faded ambient edges from the overview layer (must come after
+              // the generic `edge` rule so these props win)
+              selector: 'edge[?overview]',
+              style: {
+                'line-opacity': 0.4,
+                'line-style': 'dashed',
+                'line-color': '#b8ad97',
+                'target-arrow-color': '#b8ad97',
+                'color': '#8a7d67',
+                'text-background-opacity': 0.5
+              } as any
             }
           ]}
         />

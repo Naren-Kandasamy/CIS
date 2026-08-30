@@ -1,7 +1,8 @@
 """GET /api/graph and GET /api/cases/{id}/graph — the entity relation network
 views. NoSQL, the graph DB and the hypothesis index are all mocked; the point
-is the seed-FIR gathering, the Cytoscape element assembly, and the cross-case
-`shared` flag.
+is the seed-FIR gathering (pins + hypotheses + session-answer FIR uuids), the
+Cytoscape element assembly, the cross-case `shared` flag, and the thin-graph
+`overview` fallback.
 """
 import json
 from unittest.mock import patch, AsyncMock
@@ -153,3 +154,123 @@ def test_case_graph_builds_from_pins(
     acc = next(e for e in body["elements"] if e["data"].get("id") == "ACC-9")
     assert "caseCount" not in acc["data"]
     assert "shared" not in acc["data"]
+
+
+_FIR_C = "33333333-cccc-4ccc-8ccc-cccccccccccc"
+
+
+@patch("backend.api.routes.graph.run_query", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.list_hypotheses_by_case", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.routes.cases.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_case_graph_seed_includes_session_answer_fir_ids(
+    mock_session, mock_cases_get, mock_graph_get, mock_hyps, mock_run
+):
+    """A case with no pins/hypotheses still builds a graph from FIR uuids that
+    appear in its session answers (history:{sid})."""
+    mock_session.return_value = {"username": "dysp1", "role": "inspector"}
+    mock_cases_get.return_value = {"value": json.dumps({"case_id": "cX", "collaborators": ["dysp1"]})}
+    mock_hyps.return_value = []
+
+    history = {"value": json.dumps([
+        {"q": "robberies in Mysuru", "a": f"See [FIR: {_FIR_C}] and FIR {_FIR_A}."},
+    ])}
+
+    def _get(key):
+        if key == "case_board:cX":
+            return None                      # nothing pinned
+        if key == "case_sessions:cX":
+            return {"value": json.dumps(["s_1"])}
+        if key == "history:s_1":
+            return history
+        return None
+
+    mock_graph_get.side_effect = _get
+
+    def _run(cypher, params=None):
+        if "ACCUSED_IN" in cypher:
+            return [{"aid": "ACC-7", "fid": _FIR_C}]
+        if "VICTIM_IN" in cypher:
+            return []
+        return _fir_rows([_FIR_A, _FIR_C])
+
+    mock_run.side_effect = _run
+
+    r = client.get("/api/cases/cX/graph", headers={"Authorization": "Bearer t"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["seed_fir_count"] == 2          # both uuids scraped from the answer
+    assert any(e["data"].get("id") == "ACC-7" for e in body["elements"])
+
+
+@patch("backend.api.routes.graph._overview_layer", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.run_query", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.list_hypotheses_by_case", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_global_graph_appends_overview_when_thin(
+    mock_session, mock_get, mock_hyps, mock_run, mock_overview
+):
+    """Fewer than 3 accused nodes -> the overview layer is appended and flagged."""
+    mock_session.return_value = {"username": "dysp1", "role": "inspector"}
+    mock_hyps.return_value = []
+    mock_get.side_effect = lambda k: (
+        {"value": json.dumps(["cA"])} if k == "user_cases:dysp1"
+        else _pins([_FIR_A]) if k == "case_board:cA"
+        else None
+    )
+
+    def _run(cypher, params=None):
+        if "ACCUSED_IN" in cypher:
+            return []                          # seed FIR has no accused -> thin
+        if "VICTIM_IN" in cypher:
+            return []
+        return _fir_rows([_FIR_A])
+
+    mock_run.side_effect = _run
+    mock_overview.return_value = [
+        {"data": {"id": "ACC-TOP", "label": "ACC-TOP", "type": "person",
+                  "details": "Accused", "overview": True, "firCount": 61},
+         "classes": "person overview"},
+    ]
+
+    r = client.get("/api/graph", headers={"Authorization": "Bearer t"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["overview"] is True
+    assert body["overview_note"]
+    assert any(e["data"].get("overview") for e in body["elements"])
+    mock_overview.assert_awaited_once()
+
+
+@patch("backend.api.routes.graph._overview_layer", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.run_query", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.list_hypotheses_by_case", new_callable=AsyncMock)
+@patch("backend.api.routes.graph.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_global_graph_skips_overview_when_rich(
+    mock_session, mock_get, mock_hyps, mock_run, mock_overview
+):
+    """>= 3 accused nodes -> overview layer is NOT invoked."""
+    mock_session.return_value = {"username": "dysp1", "role": "inspector"}
+    mock_hyps.return_value = []
+    mock_get.side_effect = lambda k: (
+        {"value": json.dumps(["cA"])} if k == "user_cases:dysp1"
+        else _pins([_FIR_A]) if k == "case_board:cA"
+        else None
+    )
+
+    def _run(cypher, params=None):
+        if "ACCUSED_IN" in cypher:
+            return [{"aid": f"ACC-{i}", "fid": _FIR_A} for i in range(4)]
+        if "VICTIM_IN" in cypher:
+            return []
+        return _fir_rows([_FIR_A])
+
+    mock_run.side_effect = _run
+
+    r = client.get("/api/graph", headers={"Authorization": "Bearer t"})
+    assert r.status_code == 200
+    assert r.json()["overview"] is False
+    mock_overview.assert_not_awaited()
