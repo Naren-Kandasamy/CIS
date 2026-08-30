@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from shared.data_sources.config import get_anpr_provider
-from shared.graph_client import run_write, run_write_batch
+from shared.graph_client import run_write
 from shared.review_queue_engine import push_review_item
 from shared.review_queue_models import ReviewQueueItem
 from shared.models import WantedVehicleRecord
@@ -12,8 +12,6 @@ WANTED_VEHICLES_MOCK = {}
 async def get_wanted_vehicle(plate_number: str) -> WantedVehicleRecord | None:
     return WANTED_VEHICLES_MOCK.get(plate_number)
 
-async def ingest_and_check_anpr(plate_number: str, start: datetime, end: datetime):
-    provider = get_anpr_provider()
 async def push_anpr_records_to_graph(reads: list[dict]):
     if not reads:
         return

@@ -1,5 +1,4 @@
 import json
-import time
 
 async def write_hash_chained_entry(event_type: str, payload: dict):
     """

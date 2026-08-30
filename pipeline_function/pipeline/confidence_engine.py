@@ -65,8 +65,6 @@ def assign_tier(score: float, flags: list) -> str:
     if score >= 0.40: return "low"
     return "unverified"
 
-from shared.feedback_engine import get_trust_weight
-
 async def compute_confidence(item: EvidenceItem) -> ConfidenceSignal:
     c, cr = compute_source_convergence(item)
     s, sr, sf = compute_evidence_strength(item)

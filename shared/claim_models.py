@@ -1,7 +1,5 @@
 from pydantic import BaseModel
 from typing import Optional
-import uuid
-from datetime import datetime
 
 class ClaimRecord(BaseModel):
     claim_id: str

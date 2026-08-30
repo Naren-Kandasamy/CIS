@@ -1,10 +1,7 @@
-import uuid
 from datetime import datetime
 from shared.data_sources.config import get_cdr_provider, get_financial_provider
-from shared.graph_client import run_write, run_write_batch
+from shared.graph_client import run_write
 
-async def ingest_call_records(phone_number: str, start: datetime, end: datetime):
-    provider = get_cdr_provider()
 async def push_call_records_to_graph(records: list[dict]):
     if not records:
         return
@@ -51,8 +48,6 @@ async def ingest_call_records(phone_number: str, start: datetime, end: datetime)
     device_records = await provider.fetch_device_usage("", start, end) 
     await push_device_records_to_graph(device_records)
 
-async def ingest_financial_records(account_id: str, start: datetime, end: datetime):
-    provider = get_financial_provider()
 async def push_financial_records_to_graph(records: list[dict]):
     if not records:
         return

@@ -36,6 +36,20 @@ def _login(page):
     page.wait_for_url(re.compile(r"/app/cases$"), timeout=15000)
 
 
+# `.case-folder` also matches the "+ new case" tile, which is the ONLY such
+# element in the DOM while GET /api/cases is still in flight -- selecting it
+# with `.first` there opens the New-case dialog instead of navigating. Always
+# target a real folder and wait for the data load to have produced one.
+REAL_FOLDER = ".case-folder:not(.case-folder--new)"
+
+
+def _open_first_case(page):
+    folder = page.locator(REAL_FOLDER).first
+    folder.wait_for(state="visible", timeout=15000)
+    folder.click()
+    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+
+
 def test_login_lands_on_folder_grid(page):
     print("\n[1] login -> /cases folder grid ...")
     _login(page)
@@ -71,10 +85,7 @@ def test_create_case_via_dialog(page):
 def test_open_folder_into_workspace(page):
     print("\n[3] open folder -> workspace ...")
     _login(page)
-    folder = page.locator(".case-folder").first
-    folder.wait_for(state="visible", timeout=10000)
-    folder.click()
-    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+    _open_first_case(page)
     # workspace chrome: either the dossier panels or the "start first session" empty state
     page.wait_for_selector(".dossier-panel, .empty-state, .workspace-head", timeout=10000)
     print("    ok:", page.url)
@@ -83,12 +94,9 @@ def test_open_folder_into_workspace(page):
 def test_start_session_url_shape(page):
     print("\n[4] start session -> /sessions/s_ ...")
     _login(page)
-    page.locator(".case-folder").first.click()
-    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+    _open_first_case(page)
 
-    starter = page.locator(
-        ".drawer-sessions-head button, text=Start first session, text=New session"
-    ).first
+    starter = page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first
     starter.wait_for(state="visible", timeout=10000)
     starter.click()
     page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+/sessions/s_[0-9a-f]+"), timeout=15000)
@@ -98,11 +106,8 @@ def test_start_session_url_shape(page):
 def test_query_progress_then_evidence(page):
     print("\n[5] query -> status pill -> evidence ...")
     _login(page)
-    page.locator(".case-folder").first.click()
-    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
-    page.locator(
-        ".drawer-sessions-head button, text=Start first session, text=New session"
-    ).first.click()
+    _open_first_case(page)
+    page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first.click()
     page.wait_for_url(re.compile(r"/sessions/s_[0-9a-f]+"), timeout=15000)
 
     box = page.locator("textarea, .input-box input").first
@@ -123,13 +128,10 @@ def test_query_progress_then_evidence(page):
 def test_pin_citation_persists_across_reload(page):
     print("\n[6] pin citation -> reload -> still pinned ...")
     _login(page)
-    page.locator(".case-folder").first.click()
-    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+    _open_first_case(page)
     case_url = page.url
 
-    page.locator(
-        ".drawer-sessions-head button, text=Start first session, text=New session"
-    ).first.click()
+    page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first.click()
     page.wait_for_url(re.compile(r"/sessions/s_[0-9a-f]+"), timeout=15000)
     box = page.locator("textarea, .input-box input").first
     box.fill("list recent theft cases in Belagavi")
@@ -158,8 +160,7 @@ def test_pin_citation_persists_across_reload(page):
 def test_board_card_position_persists(page):
     print("\n[7] board: add card -> drag -> reload -> position kept ...")
     _login(page)
-    page.locator(".case-folder").first.click()
-    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+    _open_first_case(page)
     case_id = re.search(r"/cases/(c_[0-9a-f]+)", page.url).group(1)
 
     page.goto(f"{BASE}/cases/{case_id}/board")
@@ -192,11 +193,8 @@ def test_board_card_position_persists(page):
 def test_sse_cutoff_recovers_via_poll(page):
     print("\n[8] SSE stream with no terminal event -> poll recovery ...")
     _login(page)
-    page.locator(".case-folder").first.click()
-    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
-    page.locator(
-        ".drawer-sessions-head button, text=Start first session, text=New session"
-    ).first.click()
+    _open_first_case(page)
+    page.get_by_role("button", name=re.compile(r"start first session|new session", re.I)).first.click()
     page.wait_for_url(re.compile(r"/sessions/s_[0-9a-f]+"), timeout=15000)
 
     job_id = "job_pwtest_cutoff"

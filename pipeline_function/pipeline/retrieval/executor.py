@@ -86,7 +86,7 @@ async def run_graph_step(step, state):
             formatted.append({
                 "fir_id": f"Person: {row['person_id']}",
                 "score": 0.99,
-                "path": f"Algorithm: PageRank/Centrality",
+                "path": "Algorithm: PageRank/Centrality",
                 "metadata": {
                     "Accused ID": row["person_id"],
                     "Page Rank Score": str(row["rank"]),

@@ -1,6 +1,4 @@
-import os
 from pathlib import Path
-import json
 
 KB_CHUNK_DIR = Path("data/kb_chunks")
 KB_CHUNK_MAX_BYTES = 450_000   # safely under Catalyst's 500KB per-upload limit

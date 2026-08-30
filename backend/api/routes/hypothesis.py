@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from shared.hypothesis_models import HypothesisRecord
 from shared.hypothesis_engine import (
     create_hypothesis,
-    get_hypothesis,
     list_hypotheses,
     check_hypothesis,
     resolve_hypothesis,

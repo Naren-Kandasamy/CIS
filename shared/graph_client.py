@@ -1,4 +1,3 @@
-import asyncio
 from neo4j import AsyncGraphDatabase  # neo4j driver works with Memgraph bolt
 import os
 # BUG FIX: only load .env outside a Catalyst deployment. A developer's local

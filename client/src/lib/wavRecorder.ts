@@ -99,7 +99,10 @@ async function downsampleWithOfflineCtx(samples: Float32Array, inputRate: number
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const tempCtx = new AudioCtx();
   const buffer = tempCtx.createBuffer(1, samples.length, inputRate);
-  buffer.copyToChannel(samples, 0);
+  // Copy into a fresh ArrayBuffer-backed view: copyToChannel's lib.dom typing
+  // requires Float32Array<ArrayBuffer>, and `samples` may be backed by a
+  // SharedArrayBuffer-compatible buffer depending on its origin.
+  buffer.copyToChannel(new Float32Array(samples), 0);
   tempCtx.close();
   
   // Play the buffer into the offline context to resample it

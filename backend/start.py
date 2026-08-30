@@ -1,7 +1,5 @@
 import os
-import subprocess
 import sys
-import site
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.dirname(_here)

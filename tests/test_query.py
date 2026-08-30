@@ -55,7 +55,9 @@ def test_query_first_use_claims_session(mock_get_session, mock_get, mock_set, mo
     )
 
     assert response.status_code == 200
-    mock_dispatch.assert_called_once_with("brand-new-session", "any cases match this MO?")
+    # QueryRequest now carries a `language` field (default "en") that the route
+    # forwards to dispatch_query_job as its third positional arg.
+    mock_dispatch.assert_called_once_with("brand-new-session", "any cases match this MO?", "en")
     # session_owner claim write + rate counter write
     assert mock_set.call_count == 2
 
@@ -136,13 +138,15 @@ def test_query_rate_limit_exceeded(mock_get_session, mock_get, mock_set, mock_di
 
 
 @patch("backend.api.routes.query.dispatch_query_job", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
 @patch("backend.api.middleware.rbac.get_session")
-def test_query_rejects_case_scoped_session_id_prefix(mock_get_session, mock_dispatch):
-    # BUG FIX regression coverage: "s_" is the reserved prefix cases.py uses
-    # for its own collaborator-ACL'd session ids (see sessions.py). /api/query
-    # must never accept a session_id in that namespace, since its own
-    # ownership check has no case ACL at all.
+def test_query_unknown_case_scoped_session_rejected(mock_get_session, mock_get, mock_dispatch):
+    # "s_" session ids are now first-class: query.py no longer blocks the
+    # prefix outright but routes it through the case's collaborator ACL
+    # (see _authorize_session). An "s_" id with no session_meta record must
+    # still be refused -- 404, before dispatch.
     mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
+    mock_get.return_value = None
 
     response = client.post(
         "/api/query",
@@ -150,7 +154,7 @@ def test_query_rejects_case_scoped_session_id_prefix(mock_get_session, mock_disp
         headers={"Authorization": "Bearer mocktoken"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 404
     mock_dispatch.assert_not_called()
 
 
@@ -161,14 +165,12 @@ def test_query_rejects_oversized_query_text(mock_get_session, mock_dispatch):
 
     response = client.post(
         "/api/query",
-        json={"session_id": "s1", "query": "x" * 501},
+        json={"session_id": "s1", "query": "x" * 2001},
         headers={"Authorization": "Bearer mocktoken"},
     )
 
     # backend/api/middleware/input_validator.py's dedicated /query-path check
-    # rejects this with its own 400 at the ASGI layer before the route (or
-    # Pydantic's max_length=500) is ever reached -- see query.py's own
-    # comment on QueryRequest documenting this as the real, correctly-scoped
-    # protection for this exact path.
+    # (MAX_TEXT_QUERY_LEN = 2000) rejects this with its own 400 at the ASGI
+    # layer before the route or Pydantic's max_length=2000 is ever reached.
     assert response.status_code == 400
     mock_dispatch.assert_not_called()

@@ -1,8 +1,6 @@
 import re
 import json
-from fastapi import Request
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 
 MAX_TEXT_QUERY_LEN = 2000
 MAX_AUDIO_SIZE_BYTES = 5 * 1024 * 1024

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 import re
 
 from backend.sse_poller import stream_job_status
