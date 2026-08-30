@@ -55,9 +55,11 @@ async def run_graph_step(step, state):
 
     # Handle Algorithmic Queries
     if step.get("operation") == "pagerank":
-        # Execute Degree Centrality / Mock PageRank based on FIR counts
+        # Execute Degree Centrality / Mock PageRank based on FIR counts.
+        # Offender nodes are labelled :Accused, not :Person (a stale
+        # MATCH (p:Person) returned nothing on this dataset).
         cypher = """
-        MATCH (p:Person)-[:ACCUSED_IN]->(f:FIR)
+        MATCH (p:Accused)-[:ACCUSED_IN]->(f:FIR)
         """
         params = {}
         if city:
