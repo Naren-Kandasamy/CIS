@@ -182,7 +182,17 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
             if result_data:
                 history_doc = await nosql_get(f"history:{session_id}")
                 history = json.loads(history_doc["value"]) if history_doc else []
-                history.append({"q": query, "a": result_data.get("answer", "")})
+                # Persist evidence + visualization alongside {q, a} so
+                # GET /api/sessions/{sid} restores the full turn (cards, graph,
+                # map) on reload. Evidence items carry a whole FIR record in
+                # .data; cap per turn so a 10-turn history doc stays inside the
+                # NoSQL value-size limit.
+                history.append({
+                    "q": query,
+                    "a": result_data.get("answer", ""),
+                    "evidence": (result_data.get("evidence") or [])[:40],
+                    "visualization": result_data.get("visualization") or {},
+                })
                 history = history[-10:]
                 await nosql_set(f"history:{session_id}", json.dumps(history))
                 print(f"[DIAG][PIPELINE] ✅ History updated ({len(history)} entries)")
