@@ -10,7 +10,10 @@ export interface HypothesisRecord {
   /** Added in the redesign so hypotheses aggregate per case, not per FIR. */
   case_id?: string | null;
   officer_id: string;
+  /** Short gist shown by default on the board. */
   statement: string;
+  /** Full source text; revealed by "read full hypothesis". */
+  detail?: string | null;
   linked_entity_ids: string[];
   status: HypothesisStatus;
   created_date: string;

@@ -80,7 +80,17 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
                 # Re-read history inside the lock to catch concurrent updates
                 history_doc = await nosql_get(f"history:{session_id}")
                 history = json.loads(history_doc["value"]) if history_doc else []
-                history.append({"q": query, "a": job["result"]["answer"]})
+                # Persist evidence + visualization alongside {q, a} so
+                # GET /api/sessions/{sid} restores the FULL turn on reload --
+                # the evidence cards and the graph/map, not just the text.
+                # Cap evidence per turn so a 10-turn history doc stays inside
+                # the NoSQL value-size limit.
+                history.append({
+                    "q": query,
+                    "a": job["result"]["answer"],
+                    "evidence": (job["result"].get("evidence") or [])[:40],
+                    "visualization": job["result"].get("visualization") or {},
+                })
                 history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
                 

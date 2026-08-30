@@ -3,7 +3,12 @@ import { useParams } from 'react-router-dom';
 import { Check, Lightbulb, X } from 'lucide-react';
 import type { Message } from '../../types/chat';
 import { useBoardStore } from '../../stores/boardStore';
-import { collectLinkedEntities, extractAnalysis, extractCitedFirIds } from '../../lib/analysis';
+import {
+  collectLinkedEntities,
+  extractAnalysis,
+  extractCitedFirIds,
+  summarizeAnalysis,
+} from '../../lib/analysis';
 
 // A one-click bridge from "I just queried and saw a pattern" to a real
 // HypothesisRecord. Pre-fills the statement from the answer's Analytical
@@ -46,7 +51,9 @@ export function HypothesisSuggestion({ message }: { message: Message }) {
   if (!caseId || !analysis) return null;
 
   const start = () => {
-    setStatement(analysis.slice(0, MAX_STATEMENT));
+    // Seed a short gist, not the whole synthesis — the officer expands it if
+    // the theory needs more. Keeps the eventual board card index-card sized.
+    setStatement(summarizeAnalysis(analysis).slice(0, MAX_STATEMENT));
     setEntities(suggestedEntities.slice(0, MAX_ENTITIES));
     setError(null);
     setOpen(true);
@@ -58,7 +65,15 @@ export function HypothesisSuggestion({ message }: { message: Message }) {
     setBusy(true);
     setError(null);
     try {
-      await addHypothesis({ caseId, statement: text, linkedEntityIds: entities });
+      // statement = the officer's gist; detail = the full analysis it was
+      // distilled from, kept verbatim so "read full hypothesis" loses nothing.
+      const full = analysis.trim();
+      await addHypothesis({
+        caseId,
+        statement: text,
+        detail: full && full !== text ? full.slice(0, 8000) : null,
+        linkedEntityIds: entities,
+      });
       setDone(true);
     } catch {
       setError('Could not save. Try again.');
@@ -70,7 +85,7 @@ export function HypothesisSuggestion({ message }: { message: Message }) {
   if (!open) {
     return (
       <button type="button" className="hyp-suggest-trigger" onClick={start}>
-        <Lightbulb size={13} /> Log this analysis as a hypothesis
+        <Lightbulb size={15} /> Log this analysis as a hypothesis
       </button>
     );
   }

@@ -3,6 +3,60 @@ import { Lightbulb, Plus } from 'lucide-react';
 import type { HypothesisRecord } from '../../types/hypothesis';
 import { useBoardStore } from '../../stores/boardStore';
 
+// The workspace list is the "full read" surface: gist by default, with an
+// opt-in expand to the stored source text (`detail`). Legacy records have no
+// `detail`; if their own statement is long, still let it expand.
+function HypothesisBody({ h }: { h: HypothesisRecord }) {
+  const [open, setOpen] = useState(false);
+  const full = (h.detail ?? '').trim();
+  const hasFull = !!full && full !== h.statement.trim();
+  const longStmt =
+    !hasFull && (h.statement.length > 240 || h.statement.includes('\n'));
+  const canExpand = hasFull || longStmt;
+  const text = open && hasFull ? full : h.statement;
+
+  return (
+    <>
+      <p
+        className="text-sm"
+        style={{
+          color: 'var(--text-primary)',
+          whiteSpace: 'pre-wrap',
+          ...(canExpand && !open
+            ? {
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical' as const,
+                overflow: 'hidden',
+              }
+            : {}),
+        }}
+      >
+        {text}
+      </p>
+      {canExpand && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="dossier-mono text-[11px] mt-1 font-bold"
+          style={{
+            color: 'var(--accent-primary)',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}
+        >
+          {open ? '▴ Show summary' : '▾ Read full hypothesis'}
+        </button>
+      )}
+    </>
+  );
+}
+
 // Phase 4: read-mostly hypotheses summary for the case. Full editing / checking
 // / the corkboard lives in Phase 5; here we list them and allow a quick add.
 
@@ -113,9 +167,7 @@ export function HypothesisStrip({
                 {h.status}
               </span>
               <div className="min-w-0">
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {h.statement}
-                </p>
+                <HypothesisBody h={h} />
                 {h.linked_entity_ids.length > 0 && (
                   <p className="dossier-mono text-[11px] mt-0.5">
                     linked: {h.linked_entity_ids.join(', ')}

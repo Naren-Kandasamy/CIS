@@ -141,7 +141,12 @@ export const listCaseHypotheses = (caseId: string) =>
   apiFetch<HypothesesResponse>(`/api/cases/${caseId}/hypotheses`);
 export const createCaseHypothesis = (
   caseId: string,
-  body: { statement: string; linked_entity_ids: string[]; fir_id?: string | null },
+  body: {
+    statement: string;
+    detail?: string | null;
+    linked_entity_ids: string[];
+    fir_id?: string | null;
+  },
 ) =>
   apiFetch<{ status: string; hypothesis: HypothesisRecord }>(`/api/cases/${caseId}/hypotheses`, {
     method: 'POST',
@@ -152,6 +157,7 @@ export const listHypothesesByFir = (firId: string) =>
 export const createHypothesis = (body: {
   fir_id: string;
   statement: string;
+  detail?: string | null;
   linked_entity_ids: string[];
   case_id?: string | null;
 }) =>

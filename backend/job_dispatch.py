@@ -158,7 +158,18 @@ async def _local_pipeline_runner(job_id: str, session_id: str, query: str, langu
                 # sessions always reloaded empty.)
                 history_doc = await nosql_get(f"history:{session_id}")
                 history = json.loads(history_doc["value"]) if history_doc else []
-                history.append({"q": query, "a": result_data.get("answer", "")})
+                # Persist evidence + visualization alongside {q, a} so
+                # GET /api/sessions/{sid} restores the FULL turn on reload --
+                # the evidence cards and the graph/map, not just the text.
+                # Evidence items carry a whole FIR record in .data; cap the
+                # count per turn so a 10-turn history doc stays inside the
+                # NoSQL value-size limit.
+                history.append({
+                    "q": query,
+                    "a": result_data.get("answer", ""),
+                    "evidence": (result_data.get("evidence") or [])[:40],
+                    "visualization": result_data.get("visualization") or {},
+                })
                 history = history[-10:]  # Cap history to 10 turns
                 await nosql_set(f"history:{session_id}", json.dumps(history))
 

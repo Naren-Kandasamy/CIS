@@ -9,7 +9,9 @@ class HypothesisRecord(BaseModel):
     fir_id: str
     case_id: Optional[str] = None      # set when the hypothesis is case-scoped (Phase 4)
     officer_id: str
-    statement: str                    # free text, officer-authored
+    statement: str                    # free text, officer-authored -- a short gist
+    detail: Optional[str] = None      # full text the gist was distilled from (the
+                                      # source analysis); shown on "read full hypothesis"
     linked_entity_ids: List[str]      # accused_ids / fir_ids / person_ids referenced
     status: str = "open"              # "open" | "confirmed" | "refuted"
     created_date: str                 # ISO datetime

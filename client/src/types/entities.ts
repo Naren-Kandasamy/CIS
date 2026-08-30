@@ -3,7 +3,7 @@
 // out of hooks/useEntityDrawer.ts so pages/stores can share it without importing
 // a hook.
 
-export type EntityType = 'person' | 'fir' | 'location';
+export type EntityType = 'person' | 'fir' | 'location' | 'victim';
 
 export interface LinkedNode {
   id: string;

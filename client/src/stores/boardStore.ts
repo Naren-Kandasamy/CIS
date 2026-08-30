@@ -18,6 +18,7 @@ interface PinInput {
 interface AddHypothesisInput {
   caseId: string;
   statement: string;
+  detail?: string | null;
   linkedEntityIds?: string[];
   firId?: string | null;
 }
@@ -130,9 +131,10 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     }
   },
 
-  addHypothesis: async ({ caseId, statement, linkedEntityIds = [], firId }) => {
+  addHypothesis: async ({ caseId, statement, detail, linkedEntityIds = [], firId }) => {
     const { hypothesis } = await api.createCaseHypothesis(caseId, {
       statement,
+      detail: detail ?? null,
       linked_entity_ids: linkedEntityIds,
       fir_id: firId ?? null,
     });

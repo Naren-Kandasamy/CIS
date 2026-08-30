@@ -1,6 +1,7 @@
 import { Search, Shield } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { Message } from '../../types/chat';
+import type { SelectedEntity } from '../../types/entities';
 import { PipelineProgress } from './PipelineProgress';
 import { EvidencePanel, type EvidenceFeedback } from './EvidencePanel';
 import { HypothesisSuggestion } from './HypothesisSuggestion';
@@ -8,17 +9,10 @@ import { HypothesisSuggestion } from './HypothesisSuggestion';
 // Phase 3: one chat row (avatar + streaming stepper + markdown body + evidence),
 // extracted verbatim from SessionChatPage's message map (originally App.tsx).
 
-type EvidenceItem = NonNullable<Message['evidence']>[number];
 
 interface MessageBubbleProps {
   message: Message;
-  openEntity: (entity: {
-    type: 'fir';
-    id: string;
-    label: string;
-    data: Record<string, unknown>;
-    evidenceItems: EvidenceItem[];
-  }) => void;
+  openEntity: (entity: SelectedEntity) => void;
   feedback: EvidenceFeedback;
 }
 

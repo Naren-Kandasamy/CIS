@@ -30,6 +30,7 @@ class HypothesisCreateRequest(BaseModel):
     fir_id: str = Field(max_length=128)
     case_id: Optional[str] = Field(None, max_length=128)
     statement: str = Field(max_length=2000)
+    detail: Optional[str] = Field(None, max_length=8000)
     linked_entity_ids: List[str] = Field(default_factory=list, max_length=100)
 
 
@@ -58,6 +59,7 @@ async def create_hypothesis_endpoint(payload: HypothesisCreateRequest, request: 
         case_id=payload.case_id,
         officer_id=_officer_id(request),
         statement=payload.statement,
+        detail=payload.detail,
         linked_entity_ids=payload.linked_entity_ids,
         status="open",
         created_date=datetime.now(timezone.utc).isoformat(),

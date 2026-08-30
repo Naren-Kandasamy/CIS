@@ -184,6 +184,7 @@ async def run_graph_step(step, state):
             "score": 0.9,
             "path": f"FIR({row['crime_no']}) in {row['district']}",
             "metadata": {
+                "crime_no": row.get("crime_no", ""),
                 "crime_type": row["crime_type"],
                 "modus_operandi": row["modus_operandi"],
                 "narrative": row["narrative"],

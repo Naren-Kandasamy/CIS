@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { collectLinkedEntities, extractAnalysis, extractCitedFirIds } from './analysis';
+import {
+  collectLinkedEntities,
+  extractAnalysis,
+  extractCitedFirIds,
+  summarizeAnalysis,
+} from './analysis';
 
 const ANSWER = `### Field Urgent Summary
 - Mysuru (2024-10-28): Robbery incident reported [FIR: e0217466-14ff-4f5c-a196-0c48781bc195].
@@ -36,6 +41,28 @@ describe('extractAnalysis', () => {
   it('handles a section that runs to end of string (no trailing headings)', () => {
     const out = extractAnalysis('### Analytical Synthesis\nA short but sufficient theory statement here.');
     expect(out).toBe('A short but sufficient theory statement here.');
+  });
+});
+
+describe('summarizeAnalysis', () => {
+  it('returns short text unchanged, no ellipsis', () => {
+    const s = 'Two accused share a modus operandi across two districts.';
+    expect(summarizeAnalysis(s)).toBe(s);
+  });
+
+  it('trims a long paragraph to whole sentences under the cap, with an ellipsis', () => {
+    const long = extractAnalysis(ANSWER)!;
+    const out = summarizeAnalysis(long, 120);
+    expect(out.length).toBeLessThanOrEqual(121);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out).toContain('pattern of group-based robberies in Mysuru');
+  });
+
+  it('hard-cuts a single over-long sentence on a word boundary', () => {
+    const out = summarizeAnalysis(`${'alpha '.repeat(60)}end.`, 50);
+    expect(out.length).toBeLessThanOrEqual(51);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out).not.toMatch(/\s…$/); // no dangling space before the ellipsis
   });
 });
 

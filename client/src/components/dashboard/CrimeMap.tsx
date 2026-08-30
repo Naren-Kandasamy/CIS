@@ -25,11 +25,13 @@ interface CrimeMapProps {
 export default function CrimeMap({ markers }: CrimeMapProps) {
   const hasMarkers = markers && markers.length > 0;
   const mapMarkers = hasMarkers ? markers : DEFAULT_MARKERS;
-  // Center map on the first marker, or default to middle of Karnataka to show all pins
-  const centerPosition: [number, number] = hasMarkers 
-    ? markers[0].position 
-    : [14.0000, 76.2500];
-  const zoomLevel = hasMarkers ? 12 : 7;
+  // Distinct positions — several FIRs can share a district centroid.
+  const spread = new Set(mapMarkers.map((m) => `${m.position[0]},${m.position[1]}`)).size;
+  // One location → zoom in on it; multiple (or the default set) → pull back to
+  // show the whole of Karnataka.
+  const centerPosition: [number, number] =
+    hasMarkers && spread === 1 ? markers[0].position : [14.0, 76.25];
+  const zoomLevel = hasMarkers && spread === 1 ? 12 : 7;
 
   return (
     <div style={{ height: '360px', width: '100%', boxSizing: 'border-box' }}>

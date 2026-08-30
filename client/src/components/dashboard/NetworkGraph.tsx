@@ -103,39 +103,49 @@ export default function NetworkGraph({
     };
   }, [graphElements, edgeLength]);
 
-  // Attach tap listener whenever elements or callback changes
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy || !onNodeClick) return;
+  // Latest props for the tap handler — it's bound once in the `cy` callback
+  // (below), which is the only place react-cytoscapejs reliably hands us the
+  // live instance. The previous approach bound in an effect keyed on
+  // [graphElements, onNodeClick, evidence]; on mount `cyRef.current` was still
+  // null (a ref write doesn't re-run the effect) and for stable props it never
+  // rebound, so node taps silently did nothing.
+  const onNodeClickRef = useRef(onNodeClick);
+  const graphElementsRef = useRef(graphElements);
+  const evidenceRef = useRef(evidence);
+  onNodeClickRef.current = onNodeClick;
+  graphElementsRef.current = graphElements;
+  evidenceRef.current = evidence;
+  const tapBoundRef = useRef(false);
 
-    const handleTap = (evt: any) => {
-      const node = evt.target;
-      const data = node.data();
+  const bindTap = (cy: any) => {
+    if (tapBoundRef.current && cyRef.current === cy) return;
+    cyRef.current = cy;
+    tapBoundRef.current = true;
+    cy.off('tap', 'node');
+    cy.on('tap', 'node', (evt: any) => {
+      const cb = onNodeClickRef.current;
+      if (!cb) return;
+      const data = evt.target.data();
       const nodeId: string = data.id;
+      const els = graphElementsRef.current;
+      const ev = evidenceRef.current;
       const rawType: string = data.type ?? 'fir';
-      const type = (['person', 'fir', 'location'].includes(rawType) ? rawType : 'fir') as SelectedEntity['type'];
+      const type = (['person', 'fir', 'location', 'victim'].includes(rawType) ? rawType : 'fir') as SelectedEntity['type'];
 
-      const linkedNodes = resolveLinkedNodes(nodeId, graphElements);
+      const linkedNodes = resolveLinkedNodes(nodeId, els);
 
-      // Match evidence items for this node
       let evidenceItems: any[] = [];
-      if (type === 'fir' && evidence) {
-        evidenceItems = matchEvidenceByFirId(nodeId, evidence);
-      } else if (type === 'person' && evidence) {
-        // For a person, collect evidence for all linked FIR nodes
-        for (const ln of linkedNodes.filter(n => n.type === 'fir')) {
-          evidenceItems.push(...matchEvidenceByFirId(ln.id, evidence));
+      if (type === 'fir' && ev) {
+        evidenceItems = matchEvidenceByFirId(nodeId, ev);
+      } else if (type === 'person' && ev) {
+        for (const ln of linkedNodes.filter((n) => n.type === 'fir')) {
+          evidenceItems.push(...matchEvidenceByFirId(ln.id, ev));
         }
       }
 
-      onNodeClick({ type, id: nodeId, label: data.label ?? nodeId, data, evidenceItems, linkedNodes });
-    };
-
-    cy.on('tap', 'node', handleTap);
-    return () => {
-      cy.removeListener('tap', 'node', handleTap);
-    };
-  }, [graphElements, onNodeClick, evidence]);
+      cb({ type, id: nodeId, label: data.label ?? nodeId, data, evidenceItems, linkedNodes });
+    });
+  };
 
   const handleNodeSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNodeSize(parseInt(e.target.value, 10));
@@ -192,7 +202,7 @@ export default function NetworkGraph({
           elements={graphElements}
           layout={{ name: 'null' }}
           style={{ width: '100%', height: '100%' }}
-          cy={(cy) => { cyRef.current = cy; }}
+          cy={(cy) => { bindTap(cy); }}
           stylesheet={[
             {
               selector: 'node',

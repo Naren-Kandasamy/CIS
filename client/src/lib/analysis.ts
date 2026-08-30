@@ -29,6 +29,29 @@ export function extractAnalysis(markdown: string | undefined): string | null {
   return text.length >= 20 ? text : null;
 }
 
+/**
+ * Condense an Analytical Synthesis paragraph into a one/two-sentence gist to
+ * seed a hypothesis statement. The board renders a hypothesis as an index card,
+ * not a transcript — pre-filling the whole synthesis makes the card grow to a
+ * wall of text. The officer still edits/expands from here before committing.
+ */
+export function summarizeAnalysis(text: string, maxChars = 220): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxChars) return clean;
+
+  let out = '';
+  for (const s of clean.split(/(?<=[.!?])\s+/)) {
+    const next = out ? `${out} ${s}` : s;
+    if (out && next.length > maxChars) break;
+    out = next;
+    if (out.length >= maxChars) break;
+  }
+  if (out.length > maxChars) out = out.slice(0, maxChars).replace(/\s+\S*$/, '');
+
+  const truncated = out.length < clean.length;
+  return out.replace(/[.,;:\s]+$/, '') + (truncated ? '…' : '');
+}
+
 /** Unique FIR ids + accused ids referenced by a message's evidence items. */
 export function collectLinkedEntities(
   evidence: { fir_id?: string; data?: Record<string, unknown> }[] | undefined,

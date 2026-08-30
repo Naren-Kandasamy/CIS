@@ -193,6 +193,37 @@
   margin: 16px 0 4px 0;
 }
 
+/* Pin-to-Key-Suspects action */
+.entity-pin-suspect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin: 8px 0 4px 0;
+  padding: 9px 12px;
+  background: rgba(169, 121, 31, 0.14);
+  border: 1px solid var(--accent-gold);
+  border-radius: 3px;
+  color: #8a6215;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.entity-pin-suspect:hover:not(:disabled) {
+  background: rgba(169, 121, 31, 0.26);
+}
+.entity-pin-suspect.is-pinned {
+  background: var(--accent-glow);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  cursor: default;
+}
+
 /* Linked node chips */
 .entity-chip-grid {
   display: flex;

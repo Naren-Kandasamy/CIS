@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PinnedItem } from '../../types/board';
 import type { SelectedEntity } from '../../types/entities';
 import { getCaseGraph } from '../../lib/api';
+import { districtCentroid, districtKey } from '../../lib/districts';
 import NetworkGraph from '../dashboard/NetworkGraph';
 import CrimeMap from '../dashboard/CrimeMap';
 import { EntityInlinePanel } from '../dashboard/EntityDrawer';
@@ -18,19 +19,43 @@ function toNum(v: unknown): number | null {
 
 function deriveMarkers(citations: PinnedItem[]): { position: [number, number]; popup: string }[] {
   const markers: { position: [number, number]; popup: string }[] = [];
+  // FIRs with no coords of their own get grouped onto their district centroid,
+  // one marker per district with a count + a few crime numbers.
+  const byDistrict = new Map<string, { pos: [number, number]; label: string; nos: string[] }>();
+
   citations.forEach((pin, i) => {
     const c = pin.content as Record<string, any>;
     const d = (c.data as Record<string, any>) ?? {};
+    const crimeNo = String(c.crime_no ?? d.crime_no ?? c.fir_id ?? `FIR ${i + 1}`);
+    const districtName = String(c.district ?? d.district ?? '').trim();
+
     const lat = toNum(d.latitude ?? d.lat);
     const lng = toNum(d.longitude ?? d.lng ?? d.lon);
     if (lat != null && lng != null) {
-      const firId = String(c.fir_id ?? d.crime_no ?? `fir-${i}`);
       markers.push({
         position: [lat, lng],
-        popup: `${d.crime_no ?? firId}${d.district ? ` · ${d.district}` : ''}`,
+        popup: `${crimeNo}${districtName ? ` · ${districtName}` : ''}`,
       });
+      return;
     }
+
+    const key = districtKey(districtName);
+    const pos = districtCentroid(districtName);
+    if (!key || !pos) return;
+    const entry = byDistrict.get(key) ?? { pos, label: districtName || key, nos: [] };
+    entry.nos.push(crimeNo);
+    byDistrict.set(key, entry);
   });
+
+  for (const { pos, label, nos } of byDistrict.values()) {
+    const shown = nos.slice(0, 5).join(', ');
+    const more = nos.length > 5 ? `, +${nos.length - 5} more` : '';
+    markers.push({
+      position: pos,
+      popup: `${label} — ${nos.length} FIR${nos.length === 1 ? '' : 's'}: ${shown}${more}`,
+    });
+  }
+
   return markers;
 }
 

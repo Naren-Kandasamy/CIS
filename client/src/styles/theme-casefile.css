@@ -309,27 +309,93 @@
   font-family: 'IBM Plex Mono', monospace;
 }
 
+/* ── Pin-to-board button on an evidence card ─────────────────────────────── */
+.evidence-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(169, 121, 31, 0.12);
+  border: 1px solid var(--accent-gold);
+  border-radius: 999px;
+  color: #8a6215;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.evidence-pin-btn:hover:not(:disabled) {
+  background: rgba(169, 121, 31, 0.24);
+}
+.evidence-pin-btn.is-pinned {
+  background: var(--accent-glow);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  cursor: default;
+}
+
+/* Accused chips on an evidence card — entry point to "Pin to Key Suspects" */
+.evidence-accused-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--paper-line);
+}
+.evidence-accused-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-tertiary);
+}
+.evidence-accused-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent-primary);
+  border-radius: 999px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.evidence-accused-chip:hover {
+  background: var(--accent-primary);
+  color: #fff;
+}
+
 /* ── "Log this analysis as a hypothesis" — chat → HypothesisRecord bridge ── */
 .hyp-suggest-trigger {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  padding: 5px 10px;
-  background: transparent;
-  border: 1px dashed var(--accent-gold);
-  border-radius: 3px;
-  color: var(--accent-gold);
+  gap: 7px;
+  margin-top: 6px;
+  padding: 8px 14px;
+  background: rgba(169, 121, 31, 0.14);
+  border: 1px solid var(--accent-gold);
+  border-radius: 4px;
+  color: #8a6215;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .hyp-suggest-trigger:hover {
-  background: rgba(169, 121, 31, 0.1);
-  color: #8a6215;
+  background: rgba(169, 121, 31, 0.26);
+  color: #6f4e11;
 }
 
 .hyp-suggest {
@@ -442,9 +508,10 @@
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 4px;
+  gap: 6px;
+  margin-top: 6px;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--accent-secondary);
 }

@@ -28,6 +28,9 @@ export function HypothesisNoteCard({
   const [resolveMode, setResolveMode] = useState<'confirmed' | 'refuted' | null>(null);
   const [reason, setReason] = useState('');
 
+  // The corkboard is a glance view: gist only, always clamped so no card can
+  // grow into a wall of text. The full source text lives on the workspace's
+  // "Working Hypotheses" strip ("Read full hypothesis" there).
   const isOpen = hypothesis.status === 'open';
 
   const submitResolve = () => {
@@ -41,7 +44,7 @@ export function HypothesisNoteCard({
     <div className="hyp-note">
       <span className={`hyp-note-ribbon ${hypothesis.status}`}>{hypothesis.status}</span>
 
-      <div className="hyp-note-body">{hypothesis.statement}</div>
+      <div className="hyp-note-body clamped">{hypothesis.statement}</div>
 
       {hypothesis.linked_entity_ids.length > 0 && (
         <div className="hyp-note-entities" data-no-drag>

@@ -1,5 +1,6 @@
 import { Database } from 'lucide-react';
 import type { Message } from '../../types/chat';
+import type { SelectedEntity } from '../../types/entities';
 import type { FeedbackVerdict } from '../../stores/chatStore';
 import { EvidenceCard } from './EvidenceCard';
 
@@ -20,13 +21,7 @@ export interface EvidenceFeedback {
 
 interface EvidencePanelProps {
   evidence: EvidenceItem[];
-  openEntity: (entity: {
-    type: 'fir';
-    id: string;
-    label: string;
-    data: Record<string, unknown>;
-    evidenceItems: EvidenceItem[];
-  }) => void;
+  openEntity: (entity: SelectedEntity) => void;
   feedback: EvidenceFeedback;
 }
 

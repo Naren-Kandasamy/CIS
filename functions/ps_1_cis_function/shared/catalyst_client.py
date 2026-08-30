@@ -376,6 +376,7 @@ async def ztsql_execute(sql: str, params: list = None):
 # .webm and .m4a return 400 INVALID_FILE_EXTENSION. Zia validates by
 # extension, so the name we send matters as much as the bytes.
 ZIA_ASR_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac"}
+
 _ZIA_ASR_MIMES = {
     ".wav": "audio/wav", ".mp3": "audio/mpeg",
     ".ogg": "audio/ogg", ".flac": "audio/flac",
@@ -657,16 +658,10 @@ async def normalize_transcript_text(text: str, source_lang: str = "en") -> str:
 async def transcribe_and_normalize(audio_bytes: bytes, declared_language: str,
                                     filename: str = "recording.wav") -> str:
     """
-    Layer 1 orchestrator: ASR -> (conditional) translate -> plain text into Layer 2.
+    Layer 1 orchestrator: Audio ASR -> (conditional) translate -> Legal Domain LLM Normalizer.
     """
-    if declared_language in ZIA_VOICE_LANGS:
-        raw_transcript = await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
-        return await normalize_transcript_text(raw_transcript, source_lang=declared_language)
-
-    raise ValueError(
-        f"Zia ASR does not support '{declared_language}'. "
-        f"Route typed text in this language through translate_text() instead."
-    )
+    raw_transcript = await transcribe_audio(audio_bytes, language=declared_language, filename=filename)
+    return await normalize_transcript_text(raw_transcript, source_lang=declared_language)
 
 # --- Real Catalyst NoSQL persistence ---
 # BUG FIX: this used to be a plain in-memory dict (_mock_nosql_cache), never

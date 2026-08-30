@@ -50,7 +50,8 @@ export default function CorkboardPage() {
     <div className="board-page">
       <header className="board-page-head">
         <div>
-          <h1 className="stamp-font">{current?.title ?? 'Evidence board'}</h1>
+          <span className="board-page-eyebrow">Evidence Board</span>
+          <h1 className="stamp-font">{current?.title ?? 'Untitled case'}</h1>
           <p>Pin hypotheses, suspects and case files; cord the connections.</p>
         </div>
         <button

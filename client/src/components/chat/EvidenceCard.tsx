@@ -2,8 +2,10 @@ import { useState, type MouseEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { Pin } from 'lucide-react';
 import type { Message } from '../../types/chat';
+import type { SelectedEntity } from '../../types/entities';
 import type { FeedbackVerdict } from '../../stores/chatStore';
 import { useBoardStore } from '../../stores/boardStore';
+import { firLabel } from '../../lib/utils';
 import { FeedbackControls } from './FeedbackControls';
 
 // Phase 3: a single retrieved-evidence citation card, extracted verbatim from
@@ -14,13 +16,7 @@ type EvidenceItem = NonNullable<Message['evidence']>[number];
 interface EvidenceCardProps {
   item: EvidenceItem;
   idx: number;
-  openEntity: (entity: {
-    type: 'fir';
-    id: string;
-    label: string;
-    data: Record<string, unknown>;
-    evidenceItems: EvidenceItem[];
-  }) => void;
+  openEntity: (entity: SelectedEntity) => void;
   recorded?: { verdict: FeedbackVerdict };
   isCorrectionOpen: boolean;
   explanation: string;
@@ -77,6 +73,22 @@ export function EvidenceCard({
     }
   };
 
+  const accusedIds: string[] = Array.isArray(item.data?.accused_ids)
+    ? (item.data!.accused_ids as unknown[]).map(String).filter(Boolean)
+    : [];
+
+  const openAccused = (e: MouseEvent, accusedId: string) => {
+    e.stopPropagation();
+    openEntity({
+      type: 'person',
+      id: accusedId,
+      label: accusedId,
+      data: { id: accusedId, accused_ids: accusedIds },
+      evidenceItems: [item],
+      linkedNodes: [],
+    });
+  };
+
   const confidenceTier = String(item.confidence ?? '').toLowerCase();
   const confidenceColor =
     confidenceTier === 'high'
@@ -84,11 +96,12 @@ export function EvidenceCard({
       : confidenceTier === 'medium'
         ? 'text-amber-800 bg-amber-100 border-amber-300'
         : 'text-rose-800 bg-rose-100 border-rose-300';
+  const firTitle = firLabel(item.data?.crime_no as string | undefined, item.fir_id);
   const openThis = () =>
     openEntity({
       type: 'fir',
       id: item.fir_id ?? `evidence-${idx}`,
-      label: item.fir_id ?? 'Case File',
+      label: firTitle,
       data: item.data ?? {},
       evidenceItems: [item],
     });
@@ -103,14 +116,14 @@ export function EvidenceCard({
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') openThis();
       }}
-      aria-label={`View details for ${item.data?.crime_no || item.fir_id || 'case'}`}
+      aria-label={`View details for ${firTitle}`}
     >
       <div
         className="flex items-center justify-between pb-2"
         style={{ borderBottom: '1px dashed var(--paper-line)' }}
       >
         <div className="font-mono font-medium text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-          {item.data?.crime_no || item.fir_id || 'No Case ID'}
+          {firTitle}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {item.confidence && (
@@ -125,18 +138,13 @@ export function EvidenceCard({
               type="button"
               onClick={pinThis}
               disabled={alreadyPinned || pinBusy}
-              aria-label={alreadyPinned ? 'Pinned to case board' : 'Pin to case board'}
-              title={alreadyPinned ? 'Pinned to case board' : 'Pin to case board'}
-              className="flex items-center"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: alreadyPinned ? 'default' : 'pointer',
-                color: alreadyPinned ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-                opacity: pinBusy ? 0.5 : 1,
-              }}
+              aria-label={alreadyPinned ? 'Pinned to case board' : 'Pin this FIR to the case board'}
+              title={alreadyPinned ? 'Pinned to case board' : 'Pin this FIR to the case board'}
+              className={`evidence-pin-btn${alreadyPinned ? ' is-pinned' : ''}`}
+              style={{ opacity: pinBusy ? 0.5 : 1 }}
             >
-              <Pin size={13} fill={alreadyPinned ? 'currentColor' : 'none'} />
+              <Pin size={15} fill={alreadyPinned ? 'currentColor' : 'none'} />
+              <span>{alreadyPinned ? 'Pinned' : pinBusy ? 'Pinning…' : 'Pin'}</span>
             </button>
           )}
         </div>
@@ -163,12 +171,29 @@ export function EvidenceCard({
           </div>
         )}
         <div
-          className="text-[9px] mt-1"
-          style={{ color: 'var(--text-tertiary)', fontFamily: 'IBM Plex Mono, monospace' }}
+          className="text-[11px] mt-1.5 font-semibold"
+          style={{ color: 'var(--accent-secondary)', fontFamily: 'IBM Plex Mono, monospace' }}
         >
-          Click to expand →
+          Click card to expand full details →
         </div>
       </div>
+
+      {accusedIds.length > 0 && (
+        <div className="evidence-accused-row">
+          <span className="evidence-accused-label">Accused</span>
+          {accusedIds.map((aid) => (
+            <button
+              key={aid}
+              type="button"
+              className="evidence-accused-chip"
+              onClick={(e) => openAccused(e, aid)}
+              title={`Open ${aid} — pin as a key suspect`}
+            >
+              {aid}
+            </button>
+          ))}
+        </div>
+      )}
 
       <FeedbackControls
         item={item}

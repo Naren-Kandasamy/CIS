@@ -55,6 +55,7 @@ class BoardLayoutPutRequest(BaseModel):
 
 class CaseHypothesisCreateRequest(BaseModel):
     statement: str = Field(max_length=2000)
+    detail: Optional[str] = Field(None, max_length=8000)
     linked_entity_ids: List[str] = Field(default_factory=list, max_length=100)
     fir_id: Optional[str] = Field(None, max_length=128)
 
@@ -318,6 +319,7 @@ async def create_case_hypothesis(case_id: str, body: CaseHypothesisCreateRequest
         case_id=case_id,
         officer_id=username,
         statement=body.statement,
+        detail=body.detail,
         linked_entity_ids=body.linked_entity_ids,
         status="open",
         created_date=datetime.now(timezone.utc).isoformat(),
