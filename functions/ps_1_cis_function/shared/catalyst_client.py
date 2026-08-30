@@ -496,18 +496,9 @@ def preprocess_indic_phonetics(text: str) -> str:
     return result
 
 async def transcribe_audio(audio_bytes: bytes, language: str = "kn", filename: str = "recording.wav") -> str:
-    """In-Repo ONNX Indic ASR Transcription (models/indic_asr_tiny.onnx + Cloud Fallback)."""
-    # 1. Primary: Try In-Repo ONNX Indic ASR Model (~9.66 MB in models/)
-    try:
-        from shared.onnx_indic_asr import ONNXIndicASR
-        onnx_text = ONNXIndicASR.transcribe(audio_bytes, language=language)
-        if onnx_text and onnx_text.strip():
-            print(f"[ONNX IN-REPO ASR SUCCESS] Transcribed: '{onnx_text.strip()}'")
-            return preprocess_indic_phonetics(onnx_text.strip())
-    except Exception as e:
-        print(f"[ONNX IN-REPO ASR NOTE] {e}")
-
-    # 2. Secondary: Try HuggingFace Cloud Inference API for Indic-ASR / Whisper-Hindi2Hinglish
+    """Cloud ASR cascade: HuggingFace -> Groq/Whisper -> Zia. Every hop is
+    best-effort; the next one is tried on empty result or error."""
+    # 1. HuggingFace Cloud Inference API for Indic-ASR / Whisper-Hindi2Hinglish
     hf_key = _env("HF_API_KEY", "HUGGINGFACE_API_KEY")
     hf_models = [
         "OriserveAI/Whisper-Hindi2Hinglish",

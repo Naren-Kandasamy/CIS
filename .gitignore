@@ -99,7 +99,3 @@ screenshots/
 /impeccable-skill-v4.1.2/
 /ui-ux-pro-max-skill-2.15.0/
 
-# ONNX ASR model binaries — large; not tracked in git (see Docs/redesign/INDIC_ASR_INTEGRATION.md)
-models/*.onnx
-models/*.bin
-functions/ps_1_cis_function/models/*.onnx

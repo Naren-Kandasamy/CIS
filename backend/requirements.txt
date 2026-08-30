@@ -12,11 +12,6 @@ neo4j==5.28.4
 rapidfuzz==3.13.0
 zcatalyst-sdk==1.4.0
 
-# in-repo ONNX Indic ASR path (shared/onnx_indic_asr.py). Optional at runtime --
-# transcribe_audio() catches ImportError and falls through to the cloud cascade.
-numpy==2.1.3
-onnxruntime==1.24.4
-
 # test-only -- needed to run test_*.py (pytest.mark.anyio, pytest.mark.asyncio, mocker fixture)
 pytest>=8.3.3
 pytest-mock>=3.14.0
