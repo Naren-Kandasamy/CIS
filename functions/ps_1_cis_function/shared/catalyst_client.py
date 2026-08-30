@@ -43,6 +43,33 @@ def _get_mock_db_lock() -> asyncio.Lock:
         _MOCK_DB_LOCK = asyncio.Lock()
     return _MOCK_DB_LOCK
 
+# BUG FIX: _get_nosql_access_token / _get_zia_access_token did a lock-free
+# check-then-refresh on a module-level cache dict. Under concurrency with a
+# cold or just-expired cache -- e.g. GET /api/cases fans out N parallel
+# nosql_get() calls, and every request path does so once the ~1h token
+# expires -- every coroutine simultaneously POSTs the same refresh_token to
+# accounts.zoho.in, which rejects concurrent refresh-token grants with a
+# 400. That HTTPStatusError was uncaught and surfaced as a bare 500 from the
+# route. One lazy lock per token cache serialises the refresh; coroutines
+# that were waiting re-check the cache on acquire and reuse the fresh token.
+# Lazy-init (not a module-level asyncio.Lock()) so the lock binds to whatever
+# event loop is running -- Catalyst Functions spin up a fresh loop per
+# invocation via asyncio.run(); same reasoning as _get_mock_db_lock above.
+_NOSQL_TOKEN_LOCK: asyncio.Lock | None = None
+_ZIA_TOKEN_LOCK: asyncio.Lock | None = None
+
+def _get_nosql_token_lock() -> asyncio.Lock:
+    global _NOSQL_TOKEN_LOCK
+    if _NOSQL_TOKEN_LOCK is None:
+        _NOSQL_TOKEN_LOCK = asyncio.Lock()
+    return _NOSQL_TOKEN_LOCK
+
+def _get_zia_token_lock() -> asyncio.Lock:
+    global _ZIA_TOKEN_LOCK
+    if _ZIA_TOKEN_LOCK is None:
+        _ZIA_TOKEN_LOCK = asyncio.Lock()
+    return _ZIA_TOKEN_LOCK
+
 def get_lock(key: str) -> asyncio.Lock:
     # BUG FIX: this used to re-check "does this cached lock belong to a stale/
     # closed event loop" via getattr(existing, '_loop', None) is not
@@ -136,24 +163,32 @@ async def _get_zia_access_token() -> str:
     if _zia_token_cache["access_token"] and now < _zia_token_cache["expires_at"]:
         return _zia_token_cache["access_token"]
 
-    refresh_token = _env("ZC_ZIA_REFRESH_TOKEN", "ZIA_REFRESH_TOKEN")
-    client_id = _env("ZC_CLIENT_ID", "CATALYST_CLIENT_ID")
-    client_secret = _env("ZC_CLIENT_SECRET", "CATALYST_CLIENT_SECRET")
-    if not (refresh_token and client_id and client_secret):
-        raise EnvironmentError("ZIA_REFRESH_TOKEN is not set")
+    async with _get_zia_token_lock():
+        # Re-check under the lock: another coroutine may have refreshed while
+        # we were waiting, in which case reuse its token instead of firing a
+        # second (concurrent, and thus rejected) refresh-token grant.
+        now = time.time()
+        if _zia_token_cache["access_token"] and now < _zia_token_cache["expires_at"]:
+            return _zia_token_cache["access_token"]
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-            "client_secret": client_secret,
-        }, timeout=15.0)
-        r.raise_for_status()
-        data = r.json()
-        _zia_token_cache["access_token"] = data["access_token"]
-        _zia_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
-        return _zia_token_cache["access_token"]
+        refresh_token = _env("ZC_ZIA_REFRESH_TOKEN", "ZIA_REFRESH_TOKEN")
+        client_id = _env("ZC_CLIENT_ID", "CATALYST_CLIENT_ID")
+        client_secret = _env("ZC_CLIENT_SECRET", "CATALYST_CLIENT_SECRET")
+        if not (refresh_token and client_id and client_secret):
+            raise EnvironmentError("ZIA_REFRESH_TOKEN is not set")
+
+        async with httpx.AsyncClient() as client:
+            r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }, timeout=15.0)
+            r.raise_for_status()
+            data = r.json()
+            _zia_token_cache["access_token"] = data["access_token"]
+            _zia_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+            return _zia_token_cache["access_token"]
 
 async def _zia_headers() -> dict:
     CATALYST_ORG_ID = _env("ZC_ORG_ID", "CATALYST_ORG_ID", "60075634347")
@@ -459,31 +494,39 @@ async def _get_nosql_access_token() -> str:
     if _nosql_token_cache["access_token"] and now < _nosql_token_cache["expires_at"]:
         return _nosql_token_cache["access_token"]
 
-    refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
-    client_id = _env("ZC_CLIENT_ID", "CATALYST_CLIENT_ID")
-    client_secret = _env("ZC_CLIENT_SECRET", "CATALYST_CLIENT_SECRET")
-    if refresh_token and client_id and client_secret:
-        async with httpx.AsyncClient() as client:
-            r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": client_id,
-                "client_secret": client_secret,
-            }, timeout=15.0)
-            r.raise_for_status()
-            data = r.json()
-            _nosql_token_cache["access_token"] = data["access_token"]
-            _nosql_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+    async with _get_nosql_token_lock():
+        # Re-check under the lock: another coroutine may have refreshed while
+        # we were waiting. Zoho rejects concurrent refresh-token grants with a
+        # 400, so the first waiter refreshes and the rest reuse its token.
+        now = time.time()
+        if _nosql_token_cache["access_token"] and now < _nosql_token_cache["expires_at"]:
             return _nosql_token_cache["access_token"]
 
-    token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
-    if not token:
-        raise EnvironmentError(
-            "No Catalyst NoSQL credentials configured -- set CATALYST_REFRESH_TOKEN, "
-            "CATALYST_CLIENT_ID and CATALYST_CLIENT_SECRET (preferred, auto-refreshes), "
-            "or at minimum CATALYST_ACCESS_TOKEN"
-        )
-    return token
+        refresh_token = _env("ZC_REFRESH_TOKEN", "CATALYST_REFRESH_TOKEN")
+        client_id = _env("ZC_CLIENT_ID", "CATALYST_CLIENT_ID")
+        client_secret = _env("ZC_CLIENT_SECRET", "CATALYST_CLIENT_SECRET")
+        if refresh_token and client_id and client_secret:
+            async with httpx.AsyncClient() as client:
+                r = await client.post("https://accounts.zoho.in/oauth/v2/token", params={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }, timeout=15.0)
+                r.raise_for_status()
+                data = r.json()
+                _nosql_token_cache["access_token"] = data["access_token"]
+                _nosql_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+                return _nosql_token_cache["access_token"]
+
+        token = _env("ZC_ACCESS_TOKEN", "CATALYST_ACCESS_TOKEN") or _env("ZC_API_TOKEN", "CATALYST_API_TOKEN")
+        if not token:
+            raise EnvironmentError(
+                "No Catalyst NoSQL credentials configured -- set CATALYST_REFRESH_TOKEN, "
+                "CATALYST_CLIENT_ID and CATALYST_CLIENT_SECRET (preferred, auto-refreshes), "
+                "or at minimum CATALYST_ACCESS_TOKEN"
+            )
+        return token
 
 async def _nosql_headers() -> dict:
     token = await _get_nosql_access_token()
@@ -498,12 +541,27 @@ async def _nosql_request(method: str, path: str, json_body) -> dict:
     url = _nosql_base_url() + path
     last_error = None
     max_attempts = 6
+    # Transient upstream statuses worth retrying. A 401 is deliberately NOT in
+    # here -- that means the cached token is bad, and retrying with the same
+    # header just burns attempts; let it surface so the caller/cache can react.
+    RETRYABLE_STATUS = {429, 500, 502, 503, 504}
     for attempt in range(max_attempts):
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.request(method, url, headers=headers, json=json_body, timeout=15.0)
                 r.raise_for_status()
                 return r.json()
+        except httpx.HTTPStatusError as e:
+            # BUG FIX: raise_for_status() throws HTTPStatusError, which this
+            # loop never caught -- a transient 429/5xx from Catalyst NoSQL
+            # (seen under concurrency: /api/cases fans out many parallel
+            # item/fetch calls) propagated straight out as a route 500.
+            if e.response.status_code not in RETRYABLE_STATUS:
+                raise
+            last_error = e
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
         except httpx.RequestError as e:
             last_error = e
             if attempt < max_attempts - 1:

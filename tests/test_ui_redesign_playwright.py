@@ -6,6 +6,13 @@ servers -- backend :8001, client :5173/app/, login dysp1 / demo1234.
 
     python tests/test_ui_redesign_playwright.py
 
+For a DETERMINISTIC run (CI, or just repeatable), start the backend with
+MOCK_NOSQL_ONLY=true: .nosql_mock_db.json ships seeded users, cases and
+graph-backed FIRs, so every step -- including the query -> evidence -> pin
+flow -- has stable data and no dependence on live Catalyst latency or the
+per-officer /api/query rate limit (30/60s, easily tripped by back-to-back
+runs against the real backend).
+
 Covers:
   * login lands on the /cases folder grid, NOT the chat
   * create a case through the dialog -> its folder tile appears
@@ -76,12 +83,16 @@ def test_create_case_via_dialog(page):
     dialog.locator(".dialog-field input").first.fill(title)
     dialog.locator(".modal-actions .btn-primary").click()
 
-    # the new folder tile shows up in the grid. The visible <h3> title sits
-    # inside the folder lid (clipped until hover); the always-present
-    # aria-label ("Open case <n> — <title>") is the reliable anchor.
+    # Creating a case drops you straight into its workspace (CasesIndexPage's
+    # NewCaseDialog onSubmit navigates to /cases/<c_>), so the tile is not on
+    # the grid we just left -- assert the workspace landing, then go back to
+    # the folder room and confirm the new folder is now in the grid. The
+    # visible <h3> title sits inside the folder lid (clipped until hover); the
+    # always-present aria-label ("Open case <n> — <title>") is the anchor.
+    page.wait_for_url(re.compile(r"/app/cases/c_[0-9a-f]+$"), timeout=10000)
+    page.goto(f"{BASE}/cases")
     page.wait_for_selector(f'.case-folder[aria-label*="{title}"]', timeout=10000)
     print("    ok:", title)
-    return title
 
 
 def test_open_folder_into_workspace(page):
@@ -138,12 +149,21 @@ def test_pin_citation_persists_across_reload(page):
     box = page.locator("textarea, .input-box input").first
     box.fill("list recent theft cases in Belagavi")
     page.locator("button[type='submit'], button.action-btn.primary").first.click()
-    page.wait_for_selector(".status-pill", state="hidden", timeout=60000)
+    # Wait for the pill to actually appear before waiting for it to go --
+    # otherwise the "hidden" check passes instantly (element not yet in the
+    # DOM) and we race the still-running query.
+    try:
+        page.wait_for_selector(".status-pill", timeout=10000)
+    except Exception:
+        pass  # very fast (cached) queries may never show the pill
+    page.wait_for_selector(".status-pill", state="hidden", timeout=120000)
 
     # the evidence cards live inside a <details> that starts collapsed --
-    # expand it so the per-row "Pin to case board" button is visible.
+    # expand it so the per-row "Pin to case board" button is visible. On a
+    # real (cloud) backend the pipeline can keep streaming evidence for a
+    # while after the progress pill clears, so wait generously.
     details = page.locator(".evidence-card details").first
-    details.wait_for(state="attached", timeout=10000)
+    details.wait_for(state="attached", timeout=90000)
     if not details.evaluate("d => d.open"):
         details.locator("summary").click()
     pin = page.locator("button[aria-label='Pin to case board']").first
@@ -169,6 +189,12 @@ def test_board_card_position_persists(page):
 
     page.goto(f"{BASE}/cases/{case_id}/board")
     page.wait_for_selector(".board-toolbar", timeout=15000)
+    # Wait for the board load to settle before adding a card: the layout
+    # fetch resolves after mount and replaces the store's card array, so a
+    # note added while `loading` is still true gets clobbered by that
+    # response. `.board-empty-note` renders only when `!loading` (and no
+    # cards); an existing `.board-card` means the same "settled" state.
+    page.wait_for_selector(".board-empty-note, .board-card", timeout=15000)
 
     # add a blank note (the toolbar renders even on an empty board)
     cards_before = page.locator(".board-card").count()
@@ -176,24 +202,55 @@ def test_board_card_position_persists(page):
     page.wait_for_function(
         "n => document.querySelectorAll('.board-card').length > n", arg=cards_before, timeout=10000
     )
-    card = page.locator(".board-card").last
-    card.wait_for(state="visible", timeout=5000)
+    page.locator(".board-card").last.wait_for(state="visible", timeout=5000)
+    # Adding the first card flips cards.length 0 -> 1, which triggers the
+    # board's fit-to-cards effect (re-centre + re-zoom) and a layout PUT to
+    # the backend that, on a real (cloud) backend, resolves slowly and
+    # re-renders the card. Wait for that to settle before dragging, or the
+    # pointerdown lands on a node that's about to be replaced and does
+    # nothing.
+    try:
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception:
+        pass
+    time.sleep(1.5)
 
-    start = card.bounding_box()
-    page.mouse.move(start["x"] + start["width"] / 2, start["y"] + 20)
-    page.mouse.down()
-    page.mouse.move(start["x"] + 180, start["y"] + 120, steps=10)
-    page.mouse.up()
-    time.sleep(1.5)  # let the ~800ms debounced PUT flush
-    moved = card.bounding_box()
-    assert abs(moved["x"] - start["x"]) > 60, "card did not move"
+    # The card's position lives in *board* coordinates on its inline style
+    # (left/top, pre pan-zoom transform). Screen bounding boxes can't be
+    # compared across a reload -- the board auto-fits to a different zoom
+    # each mount -- so assert on the board coordinates instead. Re-resolve
+    # the locator on every read: fit-to-cards may have swapped the node.
+    def board_xy():
+        return page.locator(".board-card").last.evaluate(
+            "el => [parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0]"
+        )
+
+    def drag_once():
+        box = page.locator(".board-card").last.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(box["x"] + box["width"] / 2 + 220, box["y"] + box["height"] / 2 + 160, steps=20)
+        page.mouse.up()
+        time.sleep(1.8)  # let the ~800ms debounced PUT flush
+
+    start_xy = board_xy()
+    drag_once()
+    moved_xy = board_xy()
+    if moved_xy == start_xy:  # pointer sequence didn't take -- one retry
+        drag_once()
+        moved_xy = board_xy()
+    dx, dy = moved_xy[0] - start_xy[0], moved_xy[1] - start_xy[1]
+    assert abs(dx) > 60 and abs(dy) > 40, f"card did not move: dx={dx}, dy={dy}"
 
     page.reload()
     page.wait_for_selector(".board-card", timeout=10000)
-    after = page.locator(".board-card").last.bounding_box()
-    # within a few px of where it was dropped (allow for zoom rounding)
-    assert abs(after["x"] - moved["x"]) < 12 and abs(after["y"] - moved["y"]) < 12, (
-        f"position not persisted: dropped at {moved}, reloaded at {after}"
+    time.sleep(1.0)
+    after_xy = page.locator(".board-card").last.evaluate(
+        "el => [parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0]"
+    )
+    # board coordinates round-trip through the layout PUT/GET unchanged
+    assert abs(after_xy[0] - moved_xy[0]) < 4 and abs(after_xy[1] - moved_xy[1]) < 4, (
+        f"position not persisted: dropped at {moved_xy}, reloaded at {after_xy}"
     )
     print("    ok")
 
