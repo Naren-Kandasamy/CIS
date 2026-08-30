@@ -219,13 +219,22 @@ function hashStr(s: string): number {
   return h >>> 0;
 }
 
-function scatter(id: string, idx: number): { x: number; y: number; rotation: number } {
+// `seq` is the running count of *auto-placed* cards (never mixed with the
+// index of user-placed layout cards), so every unplaced card lands in its own
+// grid cell — the ±14px hash jitter is cosmetic and stays well inside the
+// 300×280 cell pitch, so cards can never overlap on a hash collision.
+// `originY` pushes the grid clear of any cards the user has already dragged.
+function scatter(
+  id: string,
+  seq: number,
+  originY = 80,
+): { x: number; y: number; rotation: number } {
   const h = hashStr(id);
-  const col = idx % SCATTER_COLS;
-  const row = Math.floor(idx / SCATTER_COLS);
+  const col = seq % SCATTER_COLS;
+  const row = Math.floor(seq / SCATTER_COLS);
   return {
-    x: 80 + col * 300 + ((h % 40) - 20),
-    y: 80 + row * 280 + (((h >> 6) % 40) - 20),
+    x: 80 + col * 300 + ((h % 28) - 14),
+    y: originY + row * 280 + (((h >> 6) % 28) - 14),
     rotation: ((h >> 12) % 9) - 4,
   };
 }
@@ -237,6 +246,14 @@ export function deriveBoardCards(
 ): BoardCard[] {
   const out: BoardCard[] = layout ? [...layout] : [];
   const ids = new Set(out.map((c) => c.id));
+
+  // Auto-placed cards get their own sequential grid, started below whatever the
+  // user has already dragged onto the board so a fresh hypothesis/pin never
+  // materializes underneath an existing card.
+  let seq = 0;
+  const originY =
+    out.length > 0 ? Math.max(80, ...out.map((c) => c.y + c.h)) + 40 : 80;
+
   const push = (card: BoardCard) => {
     if (ids.has(card.id)) return;
     ids.add(card.id);
@@ -254,7 +271,7 @@ export function deriveBoardCards(
       h: 200,
       color: 'var(--pin-gold)',
       connections: [],
-      ...scatter(id, out.length),
+      ...scatter(id, seq++, originY),
     });
   });
 
@@ -273,7 +290,7 @@ export function deriveBoardCards(
         h: 120,
         color: 'var(--pin-green)',
         connections: [],
-        ...scatter(id, out.length),
+        ...scatter(id, seq++, originY),
       });
     } else if (p.content_type === 'suspect') {
       const sid = String(c.id ?? c.label ?? c.name ?? '').trim();
@@ -288,7 +305,7 @@ export function deriveBoardCards(
         h: 175,
         color: 'var(--pin-blue)',
         connections: [],
-        ...scatter(id, out.length),
+        ...scatter(id, seq++, originY),
       });
     }
   });

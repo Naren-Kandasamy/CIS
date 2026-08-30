@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../lib/api';
 import { useBoardStore } from '../stores/boardStore';
 import type { HypothesisCheckLog, HypothesisRecord } from '../types/hypothesis';
@@ -21,6 +21,40 @@ export function useHypotheses(caseId: string) {
 
   const [checkLogs, setCheckLogs] = useState<Record<string, HypothesisCheckLog>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Hydrate previously-run checks so they survive a page reload (the check
+  // engine persists last_check:{id} server-side). Fetch each hypothesis's
+  // last check once.
+  const hydratedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const pending = hypotheses
+      .map((h) => h.hypothesis_id)
+      .filter((id) => !hydratedRef.current.has(id));
+    if (pending.length === 0) return;
+    pending.forEach((id) => hydratedRef.current.add(id));
+    let cancelled = false;
+    Promise.all(
+      pending.map((id) =>
+        api
+          .getLastHypothesisCheck(id)
+          .then((r) => (r.log ? ([id, r.log] as const) : null))
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const found = results.filter((x): x is readonly [string, HypothesisCheckLog] => x !== null);
+      if (found.length) {
+        setCheckLogs((prev) => {
+          const next = { ...prev };
+          for (const [id, log] of found) if (!next[id]) next[id] = log;
+          return next;
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hypotheses]);
 
   const check = useCallback(async (hypothesisId: string) => {
     setBusyId(hypothesisId);

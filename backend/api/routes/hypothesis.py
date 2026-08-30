@@ -13,6 +13,7 @@ from shared.hypothesis_engine import (
     create_hypothesis,
     list_hypotheses,
     check_hypothesis,
+    get_last_check,
     resolve_hypothesis,
 )
 
@@ -80,6 +81,15 @@ async def check_hypothesis_endpoint(hypothesis_id: str, request: Request):
         return {"status": "checked", "log": log}
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@router.get("/api/investigation/hypothesis/{hypothesis_id}/check")
+async def get_last_check_endpoint(hypothesis_id: str, request: Request):
+    # The check engine already persists last_check:{id}; this just reads it
+    # back so the board can re-render a prior result after a page reload.
+    _officer_id(request)
+    log = await get_last_check(hypothesis_id)
+    return {"hypothesis_id": hypothesis_id, "log": log}
 
 
 @router.post("/api/investigation/hypothesis/{hypothesis_id}/resolve")

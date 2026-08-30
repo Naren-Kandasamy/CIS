@@ -10,6 +10,7 @@ from shared.hypothesis_models import HypothesisRecord, HypothesisCheckLog
 from shared.hypothesis_engine import (
     create_hypothesis,
     get_hypothesis,
+    get_last_check,
     list_hypotheses,
     list_hypotheses_by_case,
     check_hypothesis,
@@ -66,6 +67,12 @@ async def test_check_hypothesis():
     assert log.new_supporting_evidence_count >= 0
     assert log.new_contradicting_evidence_count >= 0
     assert "new supporting item" in log.notes
+
+    # the last check is persisted and readable back (board reload path)
+    last = await get_last_check("hyp-002")
+    assert isinstance(last, HypothesisCheckLog)
+    assert last.check_id == log.check_id
+    assert await get_last_check("hyp-never-checked") is None
     print("  ✅ Hypothesis evidence check passed!")
 
 

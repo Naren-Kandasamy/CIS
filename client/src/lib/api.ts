@@ -164,6 +164,12 @@ export const checkHypothesis = (hypothesisId: string) =>
     `/api/investigation/hypothesis/${hypothesisId}/check`,
     { method: 'POST' },
   );
+// The last persisted check result, so the board can show it again after a
+// reload (the check itself is a POST; this is its GET counterpart).
+export const getLastHypothesisCheck = (hypothesisId: string) =>
+  apiFetch<{ hypothesis_id: string; log: HypothesisCheckLog | null }>(
+    `/api/investigation/hypothesis/${hypothesisId}/check`,
+  );
 export const resolveHypothesis = (
   hypothesisId: string,
   body: { status: 'confirmed' | 'refuted'; resolved_reason: string },

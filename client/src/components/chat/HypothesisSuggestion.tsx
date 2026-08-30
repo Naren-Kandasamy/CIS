@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Check, Lightbulb, X } from 'lucide-react';
 import type { Message } from '../../types/chat';
 import { useBoardStore } from '../../stores/boardStore';
-import { collectLinkedEntities, extractAnalysis } from '../../lib/analysis';
+import { collectLinkedEntities, extractAnalysis, extractCitedFirIds } from '../../lib/analysis';
 
 // A one-click bridge from "I just queried and saw a pattern" to a real
 // HypothesisRecord. Pre-fills the statement from the answer's Analytical
@@ -19,10 +19,13 @@ export function HypothesisSuggestion({ message }: { message: Message }) {
   const addHypothesis = useBoardStore((s) => s.addHypothesis);
 
   const analysis = useMemo(() => extractAnalysis(message.content), [message.content]);
-  const suggestedEntities = useMemo(
-    () => collectLinkedEntities(message.evidence),
-    [message.evidence],
-  );
+  const suggestedEntities = useMemo(() => {
+    const fromEvidence = collectLinkedEntities(message.evidence);
+    if (fromEvidence.length > 0) return fromEvidence;
+    // Reloaded turn: no evidence array survived history — recover FIR ids from
+    // the answer's own [FIR: …] citations instead.
+    return extractCitedFirIds(message.content);
+  }, [message.evidence, message.content]);
 
   const [open, setOpen] = useState(false);
   const [statement, setStatement] = useState('');

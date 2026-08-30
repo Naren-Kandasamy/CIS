@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectLinkedEntities, extractAnalysis } from './analysis';
+import { collectLinkedEntities, extractAnalysis, extractCitedFirIds } from './analysis';
 
 const ANSWER = `### Field Urgent Summary
 - Mysuru (2024-10-28): Robbery incident reported [FIR: e0217466-14ff-4f5c-a196-0c48781bc195].
@@ -52,5 +52,23 @@ describe('collectLinkedEntities', () => {
   it('is safe on missing / empty evidence', () => {
     expect(collectLinkedEntities(undefined)).toEqual([]);
     expect(collectLinkedEntities([{ fir_id: '' }, { data: {} } as any])).toEqual([]);
+  });
+});
+
+describe('extractCitedFirIds', () => {
+  it('pulls unique FIR ids out of [FIR: …] citations', () => {
+    const ids = extractCitedFirIds(ANSWER);
+    expect(new Set(ids)).toEqual(
+      new Set([
+        'e0217466-14ff-4f5c-a196-0c48781bc195',
+        'dca8e229-d436-4e16-9b57-824328e8d9e9',
+        '7d299603-1152-4e7a-83d4-463627b1fe0e',
+      ]),
+    );
+  });
+
+  it('returns [] when there are no citations / no input', () => {
+    expect(extractCitedFirIds('no citations here')).toEqual([]);
+    expect(extractCitedFirIds(undefined)).toEqual([]);
   });
 });
