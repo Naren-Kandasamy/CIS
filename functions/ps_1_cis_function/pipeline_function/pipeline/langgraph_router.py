@@ -1,6 +1,5 @@
-import operator
 import secrets
-from typing import Annotated, Sequence, TypedDict
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
 import json
 
@@ -756,6 +755,7 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
         }
 
         await write_status_callback(job_id, status="done", result=result_data)
+        return result_data
     except Exception as e:
         print(f"[Pipeline Error] run_langgraph_pipeline failed: {e}")
         # BUG FIX (info leak): error=str(e) put the raw exception text
@@ -768,3 +768,4 @@ async def run_langgraph_pipeline(job_id: str, query: str, write_status_callback,
             await write_status_callback(job_id, status="failed", error="Pipeline processing failed, please retry.")
         except Exception as write_error:
             print(f"[Pipeline Error] Also failed to write failed status: {write_error}")
+        return None
