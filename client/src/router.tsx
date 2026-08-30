@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createHashRouter, Navigate } from 'react-router-dom';
 import RequireAuth from './components/auth/RequireAuth';
 import AppShell from './layouts/AppShell';
 import LoginPage from './pages/LoginPage';
@@ -9,7 +9,7 @@ import CorkboardPage from './pages/CorkboardPage';
 import SessionChatPage from './pages/SessionChatPage';
 import NotFoundPage from './pages/NotFoundPage';
 
-export const router = createBrowserRouter(
+export const router = createHashRouter(
   [
     { path: '/login', element: <LoginPage /> },
     {
@@ -29,6 +29,5 @@ export const router = createBrowserRouter(
         },
       ],
     },
-  ],
-  { basename: '/app' },
+  ]
 );
