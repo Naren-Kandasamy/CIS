@@ -47,11 +47,15 @@ def test_transcribe_route_success(mock_get_session, mock_transcribe):
     assert args[1] == "kn"
 
 
+@patch("backend.api.routes.transcribe.transcribe_and_normalize", new_callable=AsyncMock)
 @patch("backend.api.middleware.rbac.get_session")
-def test_transcribe_route_unsupported_language(mock_get_session):
+def test_transcribe_route_non_zia_language_degrades(mock_get_session, mock_transcribe):
     mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
-    # language="ta" (Tamil) is not a Zia ASR voice language: the orchestrator
-    # raises ValueError, which the route maps to HTTP 400.
+    # feat/indic-asr change: a non-Zia voice language (e.g. "ta") no longer
+    # hard-fails with 400. transcribe_audio() sends it to Zia as "en" (or the
+    # ONNX/HF/Whisper cascade handles it), and normalize_transcript_text still
+    # cleans the result. The route just returns whatever the orchestrator gives.
+    mock_transcribe.return_value = "cleaned tamil-origin query"
     response = client.post(
         "/api/transcribe",
         headers=AUTH_HEADERS,
@@ -59,8 +63,41 @@ def test_transcribe_route_unsupported_language(mock_get_session):
         data={"language": "ta"},
     )
 
-    assert response.status_code == 400
-    assert "Zia ASR does not support 'ta'" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json() == {"transcript": "cleaned tamil-origin query"}
+    args, _ = mock_transcribe.call_args
+    assert args[1] == "ta"  # route still forwards the declared language verbatim
+
+
+@patch("backend.api.routes.transcribe.normalize_transcript_text", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_normalize_route(mock_get_session, mock_normalize):
+    mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
+    mock_normalize.return_value = "Show crime details for FIR No. 142 at Belagavi station"
+    response = client.post(
+        "/api/transcribe/normalize",
+        headers=AUTH_HEADERS,
+        json={"text": "belagavi station case 142 torisi", "language": "kn-IN"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["normalized_text"] == "Show crime details for FIR No. 142 at Belagavi station"
+    assert body["original_text"] == "belagavi station case 142 torisi"
+    mock_normalize.assert_awaited_once_with("belagavi station case 142 torisi", source_lang="kn-IN")
+
+
+@patch("backend.api.routes.transcribe.normalize_transcript_text", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_normalize_route_returns_raw_on_failure(mock_get_session, mock_normalize):
+    mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
+    mock_normalize.side_effect = RuntimeError("LLM down")
+    response = client.post(
+        "/api/transcribe/normalize",
+        headers=AUTH_HEADERS,
+        json={"text": "raw transcript", "language": "en-IN"},
+    )
+    assert response.status_code == 200
+    assert response.json()["normalized_text"] == "raw transcript"
 
 
 @patch("backend.api.routes.translate.translate_text", new_callable=AsyncMock)

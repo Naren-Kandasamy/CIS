@@ -188,3 +188,12 @@ export const transcribe = (audio: Blob, language: string) => {
   fd.append('language', language);
   return apiFetch<{ transcript: string }>('/api/transcribe', { method: 'POST', body: fd });
 };
+
+// Post-process a raw (browser or Zia) transcript into a clean investigative
+// query — police-station names, IPC/BNS sections, code-mixed verbs. Best-effort
+// server-side: returns the input unchanged on failure.
+export const normalizeTranscript = (text: string, language: string) =>
+  apiFetch<{ normalized_text: string; original_text: string }>('/api/transcribe/normalize', {
+    method: 'POST',
+    body: { text, language },
+  });
