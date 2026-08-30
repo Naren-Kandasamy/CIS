@@ -4,7 +4,7 @@ Read this first. `PHASE_HANDOFF.md` (same folder) has the phase-by-phase
 detail; the approved plan is at
 `/Users/vijayaraaghavanks/.claude/plans/https-www-bullet-in-board-online-ok-so-jaunty-neumann.md`.
 
-Last updated: 2026-08-30 (through commit `e31c313`).
+Last updated: 2026-08-30 (through commit `9845585`).
 
 ---
 
@@ -62,9 +62,17 @@ Both servers are usually already running:
 - **test data:** cases `c_98e67a51` "Test Case Beta" (has pinned citations +
   a hypothesis + sessions) and `c_446e4f82` "Test Case Alpha".
 
-`pytest` + `pytest-asyncio` were `pip install`-ed into `.venv` (they weren't
-there before). `playwright` is **not** installed and browser binaries aren't
-provisioned — `tests/test_ui*_playwright.py` are CI-ready but can't run here.
+`pytest` + `pytest-asyncio` + `playwright` (1.62.0) are all `pip install`-ed
+into `.venv` now, and chromium binaries are provisioned
+(`~/Library/Caches/ms-playwright/chromium-1234`). Run the E2E suite with
+`.venv/bin/python tests/test_ui_redesign_playwright.py` (needs both dev
+servers up). Current state: 6/8 scenarios green; scenarios 2 / 6 / 7
+(create-case-via-dialog, pin-persist, board-persist) flake on this box
+against the intermittently-500ing Catalyst dev backend — each does a
+backend write then asserts a UI refetch inside a tight timeout. The
+features themselves are verified working (manually in Phases 4/5, and
+board add/drag re-verified this round). Restart the backend if you see the
+500s (`GET /api/cases/:id/sessions` was the usual culprit).
 
 ---
 
@@ -88,10 +96,10 @@ provisioned — `tests/test_ui*_playwright.py` are CI-ready but can't run here.
   `pipeline_function/pipeline/langgraph_router.py` matched nothing against this
   data — that was why the ER network showed only demo elements. **Fixed in
   `d62deed`** (uses `:Accused` now).
-- **CARTO basemap watermark**: the Leaflet map's Voyager tiles now show
-  "API KEY REQUIRED / carto.com/basemaps/apikey" — CARTO gates that basemap
-  behind a key. Cosmetic; markers/zoom/pan work. Same in the reference
-  screenshots. Plain OSM tiles would drop the watermark and the sepia tint.
+- **Basemap**: `CrimeMap.tsx` now uses plain OpenStreetMap tiles
+  (`tile.openstreetmap.org`) — CARTO's Voyager basemap started stamping
+  "API KEY REQUIRED" on every tile. The wrapper div's `filter: sepia(...)`
+  still gives the aged-paper cast, so the look is preserved.
 - **MCP Chrome screenshot bridge renders at a fixed size** (~1176×1027 or
   ~1389×868) regardless of `resize_window`. Don't trust it for responsive
   checks; the app has no responsive breakpoints anyway (desktop workstation
@@ -109,22 +117,22 @@ provisioned — `tests/test_ui*_playwright.py` are CI-ready but can't run here.
 
 ```
 npx vite build          # clean, ~840 modules
-npx vitest run          # 18/18 (sse, chatStore, analysis)
-npx oxlint src/         # exit 0, 0 findings
-npx tsc --noEmit -p tsconfig.app.json
+npx vitest run          # 20/20 (sse, chatStore, analysis)
+npx oxlint src/         # exit 0 (1 pre-existing warning in ui/badge.tsx)
+npx tsc --noEmit -p tsconfig.app.json   # exit 0 — now fully clean
 ```
 
-`tsc` is **not** clean repo-wide (~4 pre-existing errors:
-`chat/VoiceVisualizer.tsx`, `dashboard/NetworkGraph.tsx` ×2 —
-`react-cytoscapejs` has no types, `lib/wavRecorder.ts`). Gate = *newly
-touched / new* files must be tsc-clean; those 4 files predate this work.
+`tsc` is **clean repo-wide** as of the lint sweep (`3c389e3`): a
+hand-written `types/react-cytoscapejs.d.ts` plus small fixes to
+`VoiceVisualizer.tsx` / `wavRecorder.ts` cleared the 4 old errors.
 
 Backend: `source .venv/bin/activate && python -m pytest tests/ -q
--p no:cacheprovider`. ~99+ pass. Pre-existing failures unrelated to this
-work: `test_query.py` ×3, `test_chaos`, `test_zia_mocked`, and ~6 collection
-errors needing `CATALYST_API_TOKEN` / live services (`test_catalyst`,
-`test_sdk`, `test_llm_json`, `test_shutdown`, …). Confirmed pre-existing via
-`git stash`.
+-p no:cacheprovider` → **124 passed**. The old collection errors are gone
+(`tests/conftest.py` `collect_ignore` for probe/e2e scripts) and
+`test_query.py` / `test_zia_mocked.py` were updated to the current route
+contracts. `ruff check .` is also clean (`ruff.toml`, narrow F/E9/B
+ruleset). Standalone probe scripts still need `CATALYST_API_TOKEN` / live
+services and are run by hand, not via `pytest tests/`.
 
 Redesign-specific backend tests, all green:
 `tests/test_cases_board_layout.py`, `tests/test_graph_endpoints.py`,
@@ -188,13 +196,14 @@ dark mode. Tailwind v4 CSS-first, **no `tailwind.config.js`**.
   `boardStore.addHypothesis` → `POST /api/cases/:id/hypotheses`. **Never
   auto-creates** — the officer edits and commits. Rendered by `MessageBubble`
   after the evidence panel.
-- Caveat: restored-history messages (`{q,a}` only) carry no `evidence`, so
-  their entity pre-fill is empty (statement still seeds); fresh in-session
-  responses get the chips.
+- Restored-history messages (`{q,a}` only) carry no `evidence`; the chips now
+  fall back to FIR ids parsed from the answer's `[FIR: …]` citations
+  (`extractCitedFirIds`), so a reloaded turn still pre-fills links.
 
 **Backend endpoints added across the redesign** (all in `backend/api/routes/`,
 not mirrored): `PUT/GET /api/cases/:id/board/layout`,
-`GET/POST /api/cases/:id/hypotheses`, `PATCH /api/sessions/:id` `{title}`,
+`GET/POST /api/cases/:id/hypotheses`, `GET /api/investigation/hypothesis/:id/check`
+(read back the last persisted check log), `PATCH /api/sessions/:id` `{title}`,
 `GET /api/graph`, `GET /api/cases/:id/graph`. `shared/hypothesis_{models,
 engine}.py` gained `case_id` + a `hypotheses_by_case:{id}` index (mirrored).
 `backend/api/middleware/input_validator.py` gained a `/board/layout` exemption
@@ -205,6 +214,12 @@ from the 2 KB JSON body cap (`MAX_BOARD_LAYOUT_BYTES = 256 KB`).
 ## Commit history (this branch, newest first)
 
 ```
+9845585 polish: drop plastic-sheen gradients, centre chat greeting, OSM basemap
+f614c71 fix: board scatter overlap, persist hypothesis checks, restored-msg prefill
+a3baf41 fix(board): always render corkboard canvas + toolbar; load once per case
+e4c2a4e chore: reconcile functions/ pipeline mirror with pipeline_function/
+3c389e3 chore: repo-wide lint sweep + pin ruff config
+852d944 docs: SESSION_HANDOFF — hypothesis-suggestion feature + prioritised follow-ups
 e31c313 feat(chat): "log this analysis as a hypothesis" — one-click from query
 c212986 docs: SESSION_HANDOFF — seed broadening, overview, layout fix, ruff note
 8454ad6 feat(graph): broaden ER-network seed + thin-graph overview fallback
@@ -228,95 +243,74 @@ db6247e feat(client): Phase 2 — chat state store + session-id/title contract
 
 ---
 
-## Open follow-ups — start here in a fresh session
+## Open follow-ups
 
-### A. Housekeeping (do first — the tree is not clean)
+The A / B / C list below is **almost entirely done** as of `9845585`. The
+working tree is clean. What's left is genuinely optional.
 
-**A1. Commit or drop the parallel cleanup sweep already in the working tree.**
-Not from the redesign sessions; left unstaged on purpose. `git status` shows
-~30 modified files:
-- a repo-wide `ruff --fix` pass (mostly unused-import removal + minor reformat)
-  across `backend/`, `shared/`, `functions/`, `ingestion/`, `pipeline_function/`
-- new `ruff.toml`
-- new `client/src/types/react-cytoscapejs.d.ts` — a hand type-decl that
-  **clears 2 of the 4 pre-existing `tsc` errors** (`NetworkGraph.tsx`)
-- `client/src/components/chat/VoiceVisualizer.tsx` + `lib/wavRecorder.ts` —
-  the other 2 pre-existing `tsc` errors, being fixed
-- `tests/conftest.py` — adds `collect_ignore` for probe scripts so
-  `pytest tests/` stops aborting on collection
-- `tests/test_query.py`, `tests/test_zia_mocked.py` — someone started on the
-  pre-existing failures
+### Done this round (`3c389e3` → `9845585`)
 
-Review it, run the gates, and commit as its own `chore:` — or discard. Until
-then any new commit risks dragging pieces of it in (stage explicit paths).
+- ✅ **A1** — repo-wide lint sweep committed (`3c389e3`): `ruff.toml` (narrow
+  F/E9/B ruleset, `ruff check .` clean), dead imports + dead duplicate
+  function stubs removed, `react-cytoscapejs.d.ts` + `VoiceVisualizer` /
+  `wavRecorder` fixes → **`tsc` fully clean**, `tests/conftest.py`
+  `collect_ignore` → `pytest tests/` runs 124 green, `test_query` /
+  `test_zia_mocked` brought to current contracts. The risky bit
+  (`ingest_extended_graphs.py` had its `synthetic_*` side-effect imports
+  stripped) was caught and restored with `# noqa: F401`.
+- ✅ **A2** — `functions/` pipeline mirror reconciled (`e4c2a4e`): the two
+  missing `return`s in `run_langgraph_pipeline` restored (the deployed copy
+  was skipping the history write), unused imports dropped. `langgraph_router`
+  / `executor` / `synthesizer` mirrors now match canonical.
+- ✅ **B1** — Playwright installed + run (`a3baf41`). 6/8 green; found & fixed
+  the SSE poll-recovery scenario (its mock frames used a `{"type":…}` key the
+  client parser ignores — real frames are `event:` + `data:` lines). See the
+  Local-dev note above for the 2/6/7 flake.
+- ✅ **B2** — `deriveBoardCards` scatter (`f614c71`): auto-placed cards now get
+  their own sequential grid started below any user-placed cards; jitter
+  tightened so a hash collision can't cause overlap.
+- ✅ **B3** — hypothesis checks persist across reload (`f614c71`): new
+  `GET /api/investigation/hypothesis/:id/check` reads back the already-stored
+  `last_check:{id}`; `useHypotheses` hydrates `checkLogs` from it on mount.
+- ✅ **B4** — restored-message entity prefill (`f614c71`): `extractCitedFirIds`
+  recovers FIR ids from the answer's `[FIR: …]` citations when a reloaded turn
+  has no `evidence` array.
+- ✅ **A3 (bonus)** — empty corkboard had no toolbar → no way to add the first
+  card. `CorkboardCanvas` + toolbar now always render (`a3baf41`), with an
+  inline empty hint. Also fixed a race where `loadCase` re-fired on
+  `cases.length` change and clobbered a just-added unsaved card.
+- ✅ **C1** — plastic-sheen gradients removed from `.message-content` and
+  `.dossier-stat-card` (`9845585`); laid-paper grain + soft vignette kept.
+- ✅ **C2** — pre-conversation chat greeting is now centred
+  (`.chat-messages--intro`), not pinned top-left over blank paper.
+- ✅ **C3** — `CrimeMap` switched to plain OSM tiles; the "API KEY REQUIRED"
+  CARTO watermark is gone, sepia cast preserved by the wrapper's CSS filter.
 
-**A2. `functions/` mirror drift.**
-`functions/ps_1_cis_function/pipeline_function/pipeline/langgraph_router.py` is
-missing two `return` statements (~lines 758/770) vs the `pipeline_function/`
-original — a pre-existing divergence, unrelated to the redesign. Reconcile the
-mirror (diff the two files) so a future `shared/`-style mirror check is clean.
+### Still open (optional)
 
-### B. Bugs / functional gaps
-
-**B1. Playwright suites are authored but never run.**
-`tests/test_ui_playwright.py`, `tests/test_ui_redesign_playwright.py` (8
-scenarios: folder landing, dialog create, session URL shape, query→evidence,
-pin persist, board drag persist, SSE poll-recovery). `playwright` isn't in
-`.venv` and no browser binaries — `pip install playwright && playwright
-install chromium`, start both servers, then `python tests/test_ui_redesign_playwright.py`.
-
-**B2. Corkboard `deriveBoardCards` scatter** can overlap on hash collisions for
-3+ un-placed cards. Harmless once dragged, but a real first-load annoyance.
-`stores/boardStore.ts` — the `scatter()` FNV-hash placement.
-
-**B3. Hypothesis-`check` logs are session-transient.** The corkboard shows a
-`HypothesisCheckLog` after you click Check, but there's no server list endpoint
-to re-read them on reload. Needs a `GET /api/investigation/hypothesis/:id/checks`
-(or fold the last check into the record).
-
-**B4. Hypothesis-suggestion entity pre-fill is empty on restored messages.**
-`history:{sid}` stores only `{q, a}` — no evidence — so a page-reloaded answer's
-"Log as hypothesis" seeds the statement but no entity chips. Options: persist a
-trimmed evidence list per turn, or in `HypothesisSuggestion` fall back to
-regexing FIR uuids out of the answer's `[FIR: …]` citations.
-
-### C. Polish / nice-to-have
-
-**C1. Chat bubble "plastic sheen".** `.message-content` in
-`styles/theme-casefile.css` layers a heavy diagonal highlight gradient that
-reads as glossy plastic, not paper. Soften or drop the
-`linear-gradient(100deg …)` / `linear-gradient(-75deg …)` fold layers.
-
-**C2. Chat greeting gap** — large empty space above the first message (noted
-since Phase 1).
-
-**C3. CARTO basemap watermark** on the Leaflet map (see gotchas) — swap the
-tile URL to plain OSM to lose the "API KEY REQUIRED" text, at the cost of the
-sepia Voyager tint.
-
-**C4. No mobile/responsive layout.** Deliberately out of scope (desktop
-workstation tool); would be net-new work if ever wanted.
-
-### Done this round (for reference)
-
-- ✅ `:Person`→`:Accused` in the pipeline graph builders (`d62deed`).
-- ✅ ER network seed broadened to include session-query FIRs + thin-graph
-  overview fallback (`8454ad6`).
-- ✅ `NetworkGraph` `cose` layout no longer piles nodes at (0,0) (`8454ad6`).
-- ✅ "Log this analysis as a hypothesis" chat bridge (`e31c313`).
+- **B1 tail** — Playwright scenarios **2 / 6 / 7** (create-case-via-dialog,
+  pin-persist, board-persist) flake on this box: each does a backend write
+  then asserts a UI refetch inside a tight timeout, against the
+  intermittently-500ing Catalyst dev backend. Worth a headed run with traces
+  (`--headed`, `page.pause()`) on a stable backend; the features themselves
+  work. `tests/test_ui_playwright.py` (the older pre-redesign suite) also
+  hasn't been run this round.
+- **C4** — no mobile/responsive layout. Deliberately out of scope (desktop
+  workstation tool); net-new work if ever wanted.
 
 ---
 
 ## If you're picking this up
 
 - Confirm branch (`git branch --show-current` → `feature/ui-redesign-v2`),
-  check `git status` (expect the A1 sweep unless it's been committed), servers
-  up (`curl -s localhost:8001/health`), log in `dysp1`/`demo1234`.
-- Frontend work: gates from `client/` (build / vitest / oxlint / tsc-clean on
-  touched files).
+  `git status` clean, servers up (`curl -s localhost:8001/health`), log in
+  `dysp1`/`demo1234`.
+- Frontend work: gates from `client/` — `npx vite build`, `npx vitest run`
+  (20/20), `npx oxlint src/` (0), `npx tsc --noEmit -p tsconfig.app.json` (0,
+  now fully clean).
 - Backend work: edit → restart uvicorn (no `--reload`) → `pytest` the touched
-  suites → live curl / browser.
-- Stage **explicit paths** when committing until A1 is resolved — don't
-  `git add -A`.
+  suites (`python -m pytest tests/ -q` → 124) → live curl / browser.
+  `ruff check .` should stay clean.
 - Anything framed as "phase N" → follow the plan file; commit phase-wise;
   update `PHASE_HANDOFF.md`; ask for `/compact`.
+- **Never merge to `main`** until the user says so.
