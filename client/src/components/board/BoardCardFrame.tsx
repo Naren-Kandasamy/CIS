@@ -65,6 +65,11 @@ export function BoardCardFrame({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Only act when the frame itself has focus. Without this guard the space /
+    // enter keydown from a child <textarea>/<input> (free-note text, hypothesis
+    // resolve reason, …) bubbles up here and gets preventDefault()'d — you
+    // couldn't type a space inside a card.
+    if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onSelect();

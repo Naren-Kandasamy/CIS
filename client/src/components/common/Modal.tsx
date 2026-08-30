@@ -19,6 +19,13 @@ export default function Modal({ open, onClose, title, description, children, act
   const cardRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
+  // Keep the latest onClose without making it an effect dependency. Callers
+  // pass a fresh inline arrow every render; if the effect below re-ran on that,
+  // its cleanup fired `returnFocusRef.current.focus()` on every keystroke —
+  // focus jumped out of the field after one character.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     returnFocusRef.current = document.activeElement as HTMLElement | null;
@@ -28,7 +35,7 @@ export default function Modal({ open, onClose, title, description, children, act
       )?.focus();
     }, 0);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
     return () => {
@@ -36,7 +43,7 @@ export default function Modal({ open, onClose, title, description, children, act
       document.removeEventListener('keydown', onKey);
       returnFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

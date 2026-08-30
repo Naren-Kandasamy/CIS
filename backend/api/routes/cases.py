@@ -24,6 +24,24 @@ from shared.auth import get_user
 from shared.hypothesis_models import HypothesisRecord
 from shared.hypothesis_engine import create_hypothesis, list_hypotheses_by_case
 
+
+async def _nosql_get_stable(key: str, retries: int = 2, delay: float = 0.35):
+    """nosql_get with a couple of retries on a None result.
+
+    Catalyst NoSQL is eventually consistent: a `case:{id}` / `session_meta:{id}`
+    doc written moments ago can briefly read back as absent, which made
+    `list_cases` / `list_case_sessions` drop rows and "flicker" between
+    refreshes. A short retry papers over that lag without masking a genuine
+    delete (a truly absent key just returns None after the retries).
+    """
+    doc = await nosql_get(key)
+    for _ in range(retries):
+        if doc is not None:
+            return doc
+        await asyncio.sleep(delay)
+        doc = await nosql_get(key)
+    return doc
+
 router = APIRouter()
 
 # ── Board card layout (Phase 4) ─────────────────────────────────────────────
@@ -135,10 +153,10 @@ async def list_cases(request: Request):
 
     cases = []
     if case_ids:
-        case_docs = await asyncio.gather(*(nosql_get(f"case:{cid}") for cid in case_ids))
+        case_docs = await asyncio.gather(*(_nosql_get_stable(f"case:{cid}") for cid in case_ids))
         cases = [json.loads(doc["value"]) for doc in case_docs if doc]
-        
-    cases.sort(key=lambda c: c["last_activity_at"], reverse=True)
+
+    cases.sort(key=lambda c: c.get("last_activity_at", 0), reverse=True)
     return {"cases": cases}
 
 
@@ -235,10 +253,10 @@ async def list_case_sessions(case_id: str, request: Request):
 
     sessions = []
     if session_ids:
-        meta_docs = await asyncio.gather(*(nosql_get(f"session_meta:{sid}") for sid in session_ids))
+        meta_docs = await asyncio.gather(*(_nosql_get_stable(f"session_meta:{sid}") for sid in session_ids))
         sessions = [json.loads(doc["value"]) for doc in meta_docs if doc]
-        
-    sessions.sort(key=lambda s: s["last_activity_at"], reverse=True)
+
+    sessions.sort(key=lambda s: s.get("last_activity_at", 0), reverse=True)
     return {"sessions": sessions}
 
 
