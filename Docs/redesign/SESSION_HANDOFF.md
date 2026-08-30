@@ -4,7 +4,7 @@ Read this first. `PHASE_HANDOFF.md` (same folder) has the phase-by-phase
 detail; the approved plan is at
 `/Users/vijayaraaghavanks/.claude/plans/https-www-bullet-in-board-online-ok-so-jaunty-neumann.md`.
 
-Last updated: 2026-08-30.
+Last updated: 2026-08-30 (through commit `e31c313`).
 
 ---
 
@@ -12,10 +12,12 @@ Last updated: 2026-08-30.
 
 A multi-phase UI redesign of the CIS (Conversational Crime Intelligence
 System) frontend for Karnataka State Police on Zoho Catalyst. **Phases 0–7 of
-the plan are complete**, plus two post-plan additions (global dashboard
-restore, graph-DB-backed entity relation network). Everything lives on branch
-**`feature/ui-redesign-v2`** and is **NOT merged to `main`** — the user will
-say when. The app is runnable and demoable right now.
+the plan are complete**, plus post-plan additions: global dashboard restore,
+graph-DB-backed entity relation network (per-case + officer-wide, with a
+thin-graph overview fallback), the `:Person`→`:Accused` pipeline fix, and a
+one-click "log this analysis as a hypothesis" bridge in chat. Everything lives
+on branch **`feature/ui-redesign-v2`** and is **NOT merged to `main`** — the
+user will say when. The app is runnable and demoable right now.
 
 The redesign: log in → land in a room of manila **case folders** → open one →
 a per-case **workspace** (persistent pinned citations, key suspects, a
@@ -107,7 +109,7 @@ provisioned — `tests/test_ui*_playwright.py` are CI-ready but can't run here.
 
 ```
 npx vite build          # clean, ~840 modules
-npx vitest run          # 13/13
+npx vitest run          # 18/18 (sse, chatStore, analysis)
 npx oxlint src/         # exit 0, 0 findings
 npx tsc --noEmit -p tsconfig.app.json
 ```
@@ -175,6 +177,21 @@ dark mode. Tailwind v4 CSS-first, **no `tailwind.config.js`**.
   `cy.resize()` + fit-on-`layoutstop` — before that, an 80-node graph on a
   just-mounted panel piled every node at (0,0).
 
+**Hypothesis suggestion from chat** (`e31c313`):
+- `lib/analysis.ts` — `extractAnalysis(markdown)` pulls the
+  `### Analytical Synthesis` prose out of a synthesis answer (strips
+  `[FIR: …]` citations; returns `null` for profile/follow-up/error answers);
+  `collectLinkedEntities(evidence)` unions FIR ids + `data.accused_ids`.
+- `components/chat/HypothesisSuggestion.tsx` — a gold "Log this analysis as a
+  hypothesis" affordance under a finished assistant message. Opens an inline
+  editor pre-filled with the analysis text + removable entity chips; Save →
+  `boardStore.addHypothesis` → `POST /api/cases/:id/hypotheses`. **Never
+  auto-creates** — the officer edits and commits. Rendered by `MessageBubble`
+  after the evidence panel.
+- Caveat: restored-history messages (`{q,a}` only) carry no `evidence`, so
+  their entity pre-fill is empty (statement still seeds); fresh in-session
+  responses get the chips.
+
 **Backend endpoints added across the redesign** (all in `backend/api/routes/`,
 not mirrored): `PUT/GET /api/cases/:id/board/layout`,
 `GET/POST /api/cases/:id/hypotheses`, `PATCH /api/sessions/:id` `{title}`,
@@ -188,6 +205,8 @@ from the 2 KB JSON body cap (`MAX_BOARD_LAYOUT_BYTES = 256 KB`).
 ## Commit history (this branch, newest first)
 
 ```
+e31c313 feat(chat): "log this analysis as a hypothesis" — one-click from query
+c212986 docs: SESSION_HANDOFF — seed broadening, overview, layout fix, ruff note
 8454ad6 feat(graph): broaden ER-network seed + thin-graph overview fallback
 2b560d7 docs: mark :Person->:Accused pipeline fix done in SESSION_HANDOFF
 d62deed fix(pipeline): entity graph queries use :Accused, not :Person
@@ -209,42 +228,95 @@ db6247e feat(client): Phase 2 — chat state store + session-id/title contract
 
 ---
 
-## Known issues / open follow-ups (none blocking)
+## Open follow-ups — start here in a fresh session
 
-1. ~~Pipeline graph builder uses `:Person`~~ — **FIXED (`d62deed`)**.
-   `langgraph_router.py`'s cytoscape builder and `executor.py`'s
-   pagerank branch now `MATCH (p:Accused)-[:ACCUSED_IN]->(f:FIR)`; the
-   viz also gets Location + Victim nodes. Mirrored to `functions/`.
-   Pre-existing 2-line drift in the `functions/` `langgraph_router.py`
-   mirror (~lines 758/770, two missing `return`s) was left untouched.
-2. **Corkboard `deriveBoardCards` scatter** can overlap on hash collisions for
-   3+ unplaced cards; harmless once dragged.
-3. **Check logs are session-transient** on the corkboard (no server list
-   endpoint to re-read `HypothesisCheckLog`s).
-4. **Chat message bubble** has a heavy diagonal highlight gradient that reads
-   as plastic sheen rather than paper (`styles/theme-casefile.css`
-   `.message-content`) — pre-existing, a candidate for a polish pass.
-5. **Playwright suites** (`tests/test_ui_playwright.py`,
-   `tests/test_ui_redesign_playwright.py`) are authored but unrun here.
-6. **No true mobile/responsive** layout — out of scope by design; would be
-   net-new work.
-7. **CARTO map watermark** (see gotchas).
-8. **Uncommitted parallel cleanup in the working tree** (not from the redesign
-   sessions): a repo-wide `ruff --fix` sweep (~30 files, mostly unused-import
-   removal + minor reformat), a new `ruff.toml`, a new
-   `client/src/types/react-cytoscapejs.d.ts` (would clear 2 of the 4
-   pre-existing `tsc` errors), and edits to `tests/conftest.py` (adds
-   `collect_ignore` so `pytest tests/` stops aborting on probe scripts),
-   `tests/test_query.py`, `tests/test_zia_mocked.py`. The redesign commits
-   deliberately did **not** stage these — review and commit them separately.
+### A. Housekeeping (do first — the tree is not clean)
+
+**A1. Commit or drop the parallel cleanup sweep already in the working tree.**
+Not from the redesign sessions; left unstaged on purpose. `git status` shows
+~30 modified files:
+- a repo-wide `ruff --fix` pass (mostly unused-import removal + minor reformat)
+  across `backend/`, `shared/`, `functions/`, `ingestion/`, `pipeline_function/`
+- new `ruff.toml`
+- new `client/src/types/react-cytoscapejs.d.ts` — a hand type-decl that
+  **clears 2 of the 4 pre-existing `tsc` errors** (`NetworkGraph.tsx`)
+- `client/src/components/chat/VoiceVisualizer.tsx` + `lib/wavRecorder.ts` —
+  the other 2 pre-existing `tsc` errors, being fixed
+- `tests/conftest.py` — adds `collect_ignore` for probe scripts so
+  `pytest tests/` stops aborting on collection
+- `tests/test_query.py`, `tests/test_zia_mocked.py` — someone started on the
+  pre-existing failures
+
+Review it, run the gates, and commit as its own `chore:` — or discard. Until
+then any new commit risks dragging pieces of it in (stage explicit paths).
+
+**A2. `functions/` mirror drift.**
+`functions/ps_1_cis_function/pipeline_function/pipeline/langgraph_router.py` is
+missing two `return` statements (~lines 758/770) vs the `pipeline_function/`
+original — a pre-existing divergence, unrelated to the redesign. Reconcile the
+mirror (diff the two files) so a future `shared/`-style mirror check is clean.
+
+### B. Bugs / functional gaps
+
+**B1. Playwright suites are authored but never run.**
+`tests/test_ui_playwright.py`, `tests/test_ui_redesign_playwright.py` (8
+scenarios: folder landing, dialog create, session URL shape, query→evidence,
+pin persist, board drag persist, SSE poll-recovery). `playwright` isn't in
+`.venv` and no browser binaries — `pip install playwright && playwright
+install chromium`, start both servers, then `python tests/test_ui_redesign_playwright.py`.
+
+**B2. Corkboard `deriveBoardCards` scatter** can overlap on hash collisions for
+3+ un-placed cards. Harmless once dragged, but a real first-load annoyance.
+`stores/boardStore.ts` — the `scatter()` FNV-hash placement.
+
+**B3. Hypothesis-`check` logs are session-transient.** The corkboard shows a
+`HypothesisCheckLog` after you click Check, but there's no server list endpoint
+to re-read them on reload. Needs a `GET /api/investigation/hypothesis/:id/checks`
+(or fold the last check into the record).
+
+**B4. Hypothesis-suggestion entity pre-fill is empty on restored messages.**
+`history:{sid}` stores only `{q, a}` — no evidence — so a page-reloaded answer's
+"Log as hypothesis" seeds the statement but no entity chips. Options: persist a
+trimmed evidence list per turn, or in `HypothesisSuggestion` fall back to
+regexing FIR uuids out of the answer's `[FIR: …]` citations.
+
+### C. Polish / nice-to-have
+
+**C1. Chat bubble "plastic sheen".** `.message-content` in
+`styles/theme-casefile.css` layers a heavy diagonal highlight gradient that
+reads as glossy plastic, not paper. Soften or drop the
+`linear-gradient(100deg …)` / `linear-gradient(-75deg …)` fold layers.
+
+**C2. Chat greeting gap** — large empty space above the first message (noted
+since Phase 1).
+
+**C3. CARTO basemap watermark** on the Leaflet map (see gotchas) — swap the
+tile URL to plain OSM to lose the "API KEY REQUIRED" text, at the cost of the
+sepia Voyager tint.
+
+**C4. No mobile/responsive layout.** Deliberately out of scope (desktop
+workstation tool); would be net-new work if ever wanted.
+
+### Done this round (for reference)
+
+- ✅ `:Person`→`:Accused` in the pipeline graph builders (`d62deed`).
+- ✅ ER network seed broadened to include session-query FIRs + thin-graph
+  overview fallback (`8454ad6`).
+- ✅ `NetworkGraph` `cose` layout no longer piles nodes at (0,0) (`8454ad6`).
+- ✅ "Log this analysis as a hypothesis" chat bridge (`e31c313`).
 
 ---
 
 ## If you're picking this up
 
-- Confirm branch + `git status` clean, servers up (`/health`), log in.
-- For frontend work: gates from `client/`.
-- For backend work: edit → restart uvicorn → `pytest` the touched suites →
-  live curl / browser.
-- Anything the user frames as "phase N" → follow the plan file; commit
-  phase-wise; update `PHASE_HANDOFF.md`; ask for `/compact`.
+- Confirm branch (`git branch --show-current` → `feature/ui-redesign-v2`),
+  check `git status` (expect the A1 sweep unless it's been committed), servers
+  up (`curl -s localhost:8001/health`), log in `dysp1`/`demo1234`.
+- Frontend work: gates from `client/` (build / vitest / oxlint / tsc-clean on
+  touched files).
+- Backend work: edit → restart uvicorn (no `--reload`) → `pytest` the touched
+  suites → live curl / browser.
+- Stage **explicit paths** when committing until A1 is resolved — don't
+  `git add -A`.
+- Anything framed as "phase N" → follow the plan file; commit phase-wise;
+  update `PHASE_HANDOFF.md`; ask for `/compact`.
