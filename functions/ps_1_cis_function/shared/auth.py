@@ -80,7 +80,16 @@ async def authenticate(username: str, password: str) -> dict | None:
     return user
 
 
-async def create_user(username: str, password: str, role: str, display_name: str = "") -> None:
+# BUG FIX (2026-09 audit, Phase 1 of jurisdiction scoping -- see
+# Docs/audit/2026-09-01_security_audit_and_fixes.md): home_district is added
+# here and threaded into the session so it's available to any route that
+# wants to default/restrict a query to an officer's own district. This patch
+# does not yet enforce or default anything with it -- see the audit report
+# for why full enforcement (which needs officer context threaded through the
+# LangGraph retrieval pipeline, a much larger and untested-in-this-session
+# change) is scoped as a separate follow-up. home_district is optional and
+# defaults to None so existing callers/tests that don't pass it keep working.
+async def create_user(username: str, password: str, role: str, display_name: str = "", home_district: str | None = None) -> None:
     if role not in ROLE_RANK:
         raise ValueError(f"Unknown role: {role!r}. Must be one of {ROLE_HIERARCHY}")
     user = {
@@ -88,13 +97,19 @@ async def create_user(username: str, password: str, role: str, display_name: str
         "password_hash": _hash_password(password),
         "role": role,
         "display_name": display_name or username,
+        "home_district": home_district,
     }
     await nosql_set(f"user:{username}", json.dumps(user))
 
 
-async def create_session(username: str, role: str) -> str:
+async def create_session(username: str, role: str, home_district: str | None = None) -> str:
     token = secrets.token_urlsafe(32)
-    session = {"username": username, "role": role, "created_at": time.time()}
+    session = {
+        "username": username,
+        "role": role,
+        "home_district": home_district,
+        "created_at": time.time(),
+    }
     await nosql_set(f"session:{token}", json.dumps(session), ttl=SESSION_TTL_SECONDS)
     return token
 
