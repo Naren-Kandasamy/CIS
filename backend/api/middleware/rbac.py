@@ -16,6 +16,25 @@ ROUTE_MIN_ROLE = {
     "/api/export/pdf": "sub_inspector",
 }
 
+# BUG FIX (authorization): resolve_review_item let ANY authenticated officer,
+# of any rank, permanently mark a cold-case-match / contradiction /
+# ANPR-wanted-hit / interstate-handoff alert as "reviewed" or "dismissed".
+# These review-queue items are system-wide, not scoped to any case's
+# collaborator list (see shared/review_queue_engine.py -- by design, so any
+# officer can see cross-jurisdiction alerts), which meant a constable could
+# silently dismiss an alert a DySP was relying on, with no rank check at all.
+# ROUTE_MIN_ROLE above only supports exact-path matches (fine for the static
+# /api/export/pdf route), but this route has a dynamic {item_id} segment, so
+# it needs its own prefix/suffix match instead of a dict lookup.
+def _is_review_queue_resolve(path: str) -> bool:
+    return path.startswith("/api/review-queue/") and path.endswith("/resolve")
+
+# (matcher, minimum_role) pairs for routes whose path isn't a fixed string.
+# Checked in order, after the exact-match ROUTE_MIN_ROLE lookup misses.
+DYNAMIC_ROUTE_MIN_ROLE = [
+    (_is_review_queue_resolve, "asi"),
+]
+
 class RBACMiddleware:
     def __init__(self, app):
         self.app = app
@@ -49,6 +68,12 @@ class RBACMiddleware:
             return await self._send_error(scope, receive, send, 401, "Session expired or invalid -- please log in again")
 
         min_role = ROUTE_MIN_ROLE.get(path)
+        if min_role is None:
+            for matcher, role in DYNAMIC_ROUTE_MIN_ROLE:
+                if matcher(path):
+                    min_role = role
+                    break
+
         if min_role and not role_meets_minimum(session["role"], min_role):
             return await self._send_error(scope, receive, send, 403, "Insufficient rank for this action")
 

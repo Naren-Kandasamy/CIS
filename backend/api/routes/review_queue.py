@@ -22,6 +22,13 @@ async def list_review_queue(request: Request, fir_id: Optional[str] = None):
 async def resolve_review_item(item_id: str, payload: ResolvePayload, request: Request):
     """
     Mark a review queue alert as reviewed or dismissed.
+
+    Rank-gated: RBACMiddleware (backend/api/middleware/rbac.py,
+    DYNAMIC_ROUTE_MIN_ROLE) requires at least "asi" for this exact route --
+    review-queue items are system-wide rather than case-scoped (see
+    shared/review_queue_engine.py), so without a rank floor any authenticated
+    officer, regardless of seniority, could dismiss an alert another officer
+    was relying on.
     """
     if payload.status not in {"reviewed", "dismissed"}:
         raise HTTPException(status_code=400, detail="Invalid status. Must be 'reviewed' or 'dismissed'.")

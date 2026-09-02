@@ -135,3 +135,49 @@ def test_resolve_review_item_api(mock_get_session, mock_set, mock_get_item):
     
     # Check that nosql_set was called to save the updated item
     mock_set.assert_called_once()
+
+
+@patch("backend.api.routes.review_queue.get_review_item", new_callable=AsyncMock)
+@patch("backend.api.routes.review_queue.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_resolve_review_item_requires_minimum_rank(mock_get_session, mock_set, mock_get_item):
+    # BUG FIX regression: resolving a review-queue item previously required
+    # no rank at all -- any authenticated officer, including a constable,
+    # could dismiss an alert. RBACMiddleware now enforces a minimum rank of
+    # "asi" on this route; head_constable/constable must be rejected before
+    # the route body (and get_review_item/nosql_set) ever runs.
+    mock_get_session.return_value = {"username": "officer_low", "role": "constable"}
+
+    response = client.post(
+        "/api/review-queue/item_123/resolve",
+        json={"status": "reviewed"},
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Insufficient rank for this action"}
+    mock_get_item.assert_not_called()
+    mock_set.assert_not_called()
+
+
+@patch("backend.api.routes.review_queue.get_review_item", new_callable=AsyncMock)
+@patch("backend.api.routes.review_queue.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_resolve_review_item_allows_asi(mock_get_session, mock_set, mock_get_item):
+    mock_get_session.return_value = {"username": "officer_asi", "role": "asi"}
+    mock_get_item.return_value = ReviewQueueItem(
+        item_id="item_123",
+        item_type="cold_case_match",
+        fir_id="FIR1",
+        summary="Test match",
+        created_date="2024-01-01T00:00:00",
+    )
+
+    response = client.post(
+        "/api/review-queue/item_123/resolve",
+        json={"status": "dismissed"},
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "dismissed"
