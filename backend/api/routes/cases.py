@@ -165,7 +165,25 @@ async def delete_case(case_id: str, request: Request):
     username = request.state.username
     async with get_case_lock(case_id):
         case = await _require_collaborator(case_id, username)
-        
+
+        # BUG FIX (authorization): deletion previously only required being
+        # *any* collaborator on the case, with no further check -- since
+        # add_collaborator lets any existing collaborator add further
+        # collaborators of any rank, this meant a single added officer
+        # (regardless of rank, and regardless of who created the case)
+        # could unilaterally destroy the entire shared case file --
+        # sessions, board, and hypotheses -- for every other collaborator,
+        # with no soft-delete/undo. Restrict hard deletion to the officer
+        # who created the case, matching the audit trail already kept in
+        # case["created_by"]. Other collaborators can still remove
+        # themselves from a case (see below) without destroying it for
+        # everyone else.
+        if case.get("created_by") != username:
+            raise HTTPException(
+                403,
+                "Only the officer who created this case can delete it.",
+            )
+
         # Remove from all collaborators' indexes
         for collab in case.get("collaborators", []):
             await _remove_case_from_user_index(collab, case_id)

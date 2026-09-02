@@ -134,3 +134,64 @@ def test_add_collaborator_unknown_officer_rejected(mock_get_session, mock_get_us
     )
 
     assert response.status_code == 404
+
+
+# BUG FIX regression coverage: delete_case previously let ANY collaborator on
+# a case delete it outright (cascading to every session/board/hypothesis for
+# every other collaborator too), not just the officer who created it.
+@patch("backend.api.routes.cases.nosql_delete", new_callable=AsyncMock)
+@patch("backend.api.routes.cases.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.routes.cases.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_delete_case_non_creator_collaborator_rejected(mock_get_session, mock_get, mock_set, mock_delete):
+    mock_get_session.return_value = {"username": "officer_2", "role": "inspector"}
+    existing_case = {
+        "case_id": "c_real0001",
+        "title": "Real case",
+        "created_by": "officer_1",
+        "collaborators": ["officer_1", "officer_2"],
+    }
+    mock_get.return_value = {"value": json.dumps(existing_case)}
+
+    response = client.delete(
+        "/api/cases/c_real0001",
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Only the officer who created this case can delete it."}
+    mock_delete.assert_not_called()
+
+
+@patch("backend.api.routes.cases.nosql_delete", new_callable=AsyncMock)
+@patch("backend.api.routes.cases.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.routes.cases.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_delete_case_creator_allowed(mock_get_session, mock_get, mock_set, mock_delete):
+    mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
+    existing_case = {
+        "case_id": "c_real0001",
+        "title": "Real case",
+        "created_by": "officer_1",
+        "collaborators": ["officer_1", "officer_2"],
+    }
+
+    def get_side_effect(key):
+        if key == "case:c_real0001":
+            return {"value": json.dumps(existing_case)}
+        if key.startswith("user_cases:"):
+            return {"value": json.dumps(["c_real0001"])}
+        if key == "case_sessions:c_real0001":
+            return None
+        return None
+
+    mock_get.side_effect = get_side_effect
+
+    response = client.delete(
+        "/api/cases/c_real0001",
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "deleted"}
+    mock_delete.assert_called()
