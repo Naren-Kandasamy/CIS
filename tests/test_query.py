@@ -137,6 +137,66 @@ def test_query_rate_limit_exceeded(mock_get_session, mock_get, mock_set, mock_di
     mock_dispatch.assert_not_called()
 
 
+@patch("backend.api.routes.query.read_job_status", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_query_status_cross_officer_blocked(mock_get_session, mock_get, mock_set, mock_read_job):
+    # BUG FIX regression: /api/query/status/{job_id} previously returned any
+    # job's answer/evidence to any authenticated officer, with no check that
+    # the requester was authorized on the job's own session_id. It must now
+    # run the same _authorize_session check /api/query itself runs.
+    mock_get_session.return_value = {"username": "officer_2", "role": "inspector"}
+    mock_read_job.return_value = {
+        "session_id": "someone-elses-session",
+        "status": "done",
+        "result": {"answer": "secret findings", "evidence": []},
+    }
+
+    def get_side_effect(key):
+        if key == "session_owner:someone-elses-session":
+            return {"value": "officer_1"}
+        return None
+
+    mock_get.side_effect = get_side_effect
+
+    response = client.get(
+        "/api/query/status/job_999",
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "This session belongs to a different officer"}
+
+
+@patch("backend.api.routes.query.read_job_status", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_query_status_same_owner_allowed(mock_get_session, mock_get, mock_set, mock_read_job):
+    mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
+    mock_read_job.return_value = {
+        "session_id": "my-session",
+        "status": "done",
+        "result": {"answer": "my findings", "evidence": []},
+    }
+
+    def get_side_effect(key):
+        if key == "session_owner:my-session":
+            return {"value": "officer_1"}
+        return None
+
+    mock_get.side_effect = get_side_effect
+
+    response = client.get(
+        "/api/query/status/job_123",
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "my findings"
+
+
 @patch("backend.api.routes.query.dispatch_query_job", new_callable=AsyncMock)
 @patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
 @patch("backend.api.middleware.rbac.get_session")

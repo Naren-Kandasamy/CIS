@@ -44,7 +44,7 @@ class QueryRequest(BaseModel):
     # reduce protection -- it removes a check that was net-negative (blocking
     # legitimate input) while the real check keeps running unchanged.
 
-from backend.job_dispatch import dispatch_query_job
+from backend.job_dispatch import dispatch_query_job, read_job_status
 
 async def _authorize_session(session_id: str, username: str):
     # BUG FIX (IDOR): session_id is a client-generated UUID4 with no
@@ -113,16 +113,31 @@ async def warmup(http_request: Request):
 # answer to NoSQL, yet the client is left on the last progress stage with no
 # terminal event and no means of recovery. This lets the client fetch a
 # completed job after a dropped stream.
+#
+# BUG FIX (IDOR): this previously required only *some* valid session, with no
+# check that the requesting officer was authorized on the job's own
+# session_id/case. job_id is a random UUID4 so it isn't guessable, but every
+# other endpoint that reads investigation state (see /api/query above,
+# /api/sessions/{id}, /api/cases/{id}/...) re-validates case/session
+# ownership before returning data -- this one didn't, so a job_id that leaked
+# via a log, a shared screen, or browser history would let a different
+# officer replay another officer's answer/evidence. Reuse the exact same
+# _authorize_session check /api/query already runs, keyed off the job's own
+# recorded session_id, so this endpoint follows the same access-control rule
+# as the rest of the app instead of being a silent exception to it.
 @router.get("/api/query/status/{job_id}")
 async def query_status(job_id: str, http_request: Request):
     username = getattr(http_request.state, "username", None)
     if not username:
         raise HTTPException(401, "No authenticated session")
 
-    from backend.job_dispatch import read_job_status
     job = await read_job_status(job_id)
     if not job:
         raise HTTPException(404, "Unknown job")
+
+    job_session_id = job.get("session_id")
+    if job_session_id:
+        await _authorize_session(job_session_id, username)
 
     status = job.get("status")
     if status == "failed":
