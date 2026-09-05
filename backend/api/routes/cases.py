@@ -14,7 +14,7 @@ import time
 import uuid
 import asyncio
 from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -55,7 +55,7 @@ _MAX_CARDS = 200
 
 class BoardCardModel(BaseModel):
     id: str = Field(min_length=1, max_length=128)
-    kind: Literal["hypothesis", "suspect", "fir", "note"]
+    kind: Literal["hypothesis", "suspect", "fir", "note", "photo"]
     refId: Optional[str] = Field(None, max_length=128)
     x: float
     y: float
@@ -65,10 +65,26 @@ class BoardCardModel(BaseModel):
     rotation: Optional[float] = None
     text: Optional[str] = Field(None, max_length=2000)
     connections: List[str] = Field(default_factory=list, max_length=50)
+    # Photo cards only: a client-resized JPEG/PNG as a data: URI. Capped well
+    # under Catalyst NoSQL's per-doc limit even with _MAX_CARDS photos on one
+    # board — the client resizes to a small thumbnail before ever sending this.
+    photoUrl: Optional[str] = Field(None, max_length=200_000)
+    label: Optional[str] = Field(None, max_length=200)
+    # fir/suspect cards only: a snapshot of the pin's content, taken the first
+    # time the card is materialized on the board. The board and the pin log
+    # (case_board) are deliberately independent — unpinning must not blank out
+    # or delete a card that's already on the board, so the card carries its own
+    # copy of what to render instead of always joining live against the pin.
+    content: Optional[Dict[str, Any]] = None
 
 
 class BoardLayoutPutRequest(BaseModel):
     cards: List[BoardCardModel] = Field(default_factory=list, max_length=_MAX_CARDS)
+    # Card ids explicitly removed from the board despite their suspect/citation
+    # still being pinned. Without this, deriveBoardCards would just re-scatter
+    # a fresh card for the pin on the next load — dismissing is a real, sticky
+    # decision, independent of pin status (see BoardCardModel.content above).
+    dismissed: List[str] = Field(default_factory=list, max_length=500)
 
 
 class CaseHypothesisCreateRequest(BaseModel):
@@ -92,6 +108,12 @@ class PinItemRequest(BaseModel):
     source_session_id: str
     content_type: str
     content: dict
+
+
+class UnpinRequest(BaseModel):
+    # pinned_at is the float timestamp the pin was written with — the only
+    # stable identifier an append-only log entry has without a schema change.
+    pinned_at: float
 
 
 async def _require_collaborator(case_id: str, username: str) -> dict:
@@ -278,6 +300,24 @@ async def pin_to_case_board(case_id: str, body: PinItemRequest, request: Request
     return {"status": "pinned"}
 
 
+@router.delete("/api/cases/{case_id}/board")
+async def unpin_from_case_board(case_id: str, body: UnpinRequest, request: Request):
+    """Unpin one entry from the case_board log — an officer decides a citation
+    or suspect no longer belongs (e.g. cleared, or pinned in error). Since the
+    log has no per-entry id, `pinned_at` (unique to the millisecond) identifies
+    the row to drop."""
+    username = request.state.username
+    async with get_case_lock(case_id):
+        await _require_collaborator(case_id, username)
+        board_doc = await nosql_get(f"case_board:{case_id}")
+        board = json.loads(board_doc["value"]) if board_doc else []
+        next_board = [p for p in board if p.get("pinned_at") != body.pinned_at]
+        if len(next_board) == len(board):
+            raise HTTPException(404, "Pin not found")
+        await nosql_set(f"case_board:{case_id}", json.dumps(next_board))
+    return {"status": "unpinned"}
+
+
 @router.get("/api/cases/{case_id}/board")
 async def get_case_board(case_id: str, request: Request):
     username = request.state.username
@@ -292,8 +332,9 @@ async def get_case_board_layout(case_id: str, request: Request):
     await _require_collaborator(case_id, username)
     layout_doc = await nosql_get(f"case_board_layout:{case_id}")
     if not layout_doc:
-        return {"cards": []}
-    return {"cards": json.loads(layout_doc["value"]).get("cards", [])}
+        return {"cards": [], "dismissed": []}
+    parsed = json.loads(layout_doc["value"])
+    return {"cards": parsed.get("cards", []), "dismissed": parsed.get("dismissed", [])}
 
 
 @router.put("/api/cases/{case_id}/board/layout")
@@ -303,11 +344,12 @@ async def put_case_board_layout(case_id: str, body: BoardLayoutPutRequest, reque
         await _require_collaborator(case_id, username)
         doc = {
             "cards": [c.model_dump() for c in body.cards],
+            "dismissed": body.dismissed,
             "updated_at": time.time(),
             "updated_by": username,
         }
         await nosql_set(f"case_board_layout:{case_id}", json.dumps(doc))
-    return {"cards": doc["cards"]}
+    return {"cards": doc["cards"], "dismissed": doc["dismissed"]}
 
 
 @router.get("/api/cases/{case_id}/hypotheses")

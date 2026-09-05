@@ -19,6 +19,9 @@ export interface BoardResponse {
 }
 export interface BoardLayoutResponse {
   cards: BoardCard[];
+  /** Card ids explicitly removed from the board despite their suspect/citation
+   * still being pinned — kept out of the auto-materialized set on every load. */
+  dismissed?: string[];
 }
 export interface HypothesesResponse {
   hypotheses: HypothesisRecord[];

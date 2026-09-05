@@ -23,6 +23,7 @@ export default function CorkboardPage() {
   const layout = useBoardStore((s) => (caseId ? s.layoutByCase[caseId] : undefined));
   const hypotheses = useBoardStore((s) => (caseId ? s.hypothesesByCase[caseId] : undefined));
   const pins = useBoardStore((s) => (caseId ? s.pinsByCase[caseId] : undefined));
+  const dismissed = useBoardStore((s) => (caseId ? s.dismissedByCase[caseId] : undefined));
 
   // Load the board's server state exactly once per case. Keeping cases.length
   // out of the deps matters: fetchCases() resolving mid-session would otherwise
@@ -38,8 +39,8 @@ export default function CorkboardPage() {
   }, [cases.length, fetchCases]);
 
   const cards = useMemo(
-    () => deriveBoardCards(layout, hypotheses, pins),
-    [layout, hypotheses, pins],
+    () => deriveBoardCards(layout, hypotheses, pins, dismissed),
+    [layout, hypotheses, pins, dismissed],
   );
 
   const current = cases.find((c) => c.case_id === caseId);

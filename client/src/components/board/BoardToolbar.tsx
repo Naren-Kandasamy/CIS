@@ -1,9 +1,10 @@
-import { Maximize2, Minus, Plus, RotateCcw, Spline, StickyNote } from 'lucide-react';
+import { ImagePlus, Maximize2, Minus, Plus, RotateCcw, Spline, StickyNote } from 'lucide-react';
 
 interface Props {
   zoom: number;
   linking: boolean;
   onAddNote: () => void;
+  onAddPhoto: () => void;
   onToggleLink: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -15,6 +16,7 @@ export function BoardToolbar({
   zoom,
   linking,
   onAddNote,
+  onAddPhoto,
   onToggleLink,
   onZoomIn,
   onZoomOut,
@@ -25,6 +27,9 @@ export function BoardToolbar({
     <div className="board-toolbar" data-no-drag>
       <button type="button" onClick={onAddNote} title="Add a blank note">
         <StickyNote size={13} /> Note
+      </button>
+      <button type="button" onClick={onAddPhoto} title="Pin a photo — evidence, accused, victim">
+        <ImagePlus size={13} /> Photo
       </button>
       <button
         type="button"

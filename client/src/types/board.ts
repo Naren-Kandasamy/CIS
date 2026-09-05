@@ -2,7 +2,7 @@
 // (case_board_layout:{case_id}), distinct from the append-only pin log
 // (case_board:{case_id}).
 
-export type BoardCardKind = 'hypothesis' | 'suspect' | 'fir' | 'note';
+export type BoardCardKind = 'hypothesis' | 'suspect' | 'fir' | 'note' | 'photo';
 
 export interface BoardCard {
   /** Stable id. Hypothesis-backed cards use `hyp:<hypothesis_id>`. */
@@ -20,6 +20,15 @@ export interface BoardCard {
   rotation?: number;
   /** Free-note body text. */
   text?: string;
+  /** Photo cards only: a client-resized data: URI. */
+  photoUrl?: string;
+  /** Photo cards only: caption — who/what the photo shows. */
+  label?: string;
+  /** fir/suspect cards only: a snapshot of the pin's content, taken when the
+   * card is first materialized — keeps the card renderable on the board after
+   * the underlying pin is removed from the case_board log (unpinning is
+   * intentionally independent of what's arranged on the board). */
+  content?: Record<string, unknown>;
   /** Ids of other cards this one is corded to. */
   connections: string[];
 }

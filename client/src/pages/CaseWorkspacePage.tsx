@@ -96,9 +96,9 @@ export default function CaseWorkspacePage() {
           <HypothesisStrip caseId={caseId} hypotheses={hyps} />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <CitationsTable citations={citations} />
+              <CitationsTable caseId={caseId} citations={citations} />
             </div>
-            <KeySuspectsList suspects={suspects} />
+            <KeySuspectsList caseId={caseId} suspects={suspects} />
           </div>
           <WorkspaceGraphs caseId={caseId} citations={citations} suspects={suspects} />
         </>

@@ -1,13 +1,15 @@
-import { FileText } from 'lucide-react';
+import { FileText, X } from 'lucide-react';
 import type { PinnedItem } from '../../types/board';
 import { useEntityStore } from '../../stores/entityStore';
+import { useBoardStore } from '../../stores/boardStore';
 
 // Phase 4: persistent citations for a case — every FIR pinned to the board from
 // any chat session. Replaces the old recent-conversations mock table, which was
 // fed by the last query's in-memory `visualization`.
 
-export function CitationsTable({ citations }: { citations: PinnedItem[] }) {
+export function CitationsTable({ caseId, citations }: { caseId: string; citations: PinnedItem[] }) {
   const openEntity = useEntityStore((s) => s.open);
+  const unpin = useBoardStore((s) => s.unpin);
 
   const openRow = (pin: PinnedItem) => {
     const c = pin.content as Record<string, any>;
@@ -19,6 +21,11 @@ export function CitationsTable({ citations }: { citations: PinnedItem[] }) {
       data: c.data ?? c,
       evidenceItems: [c],
     });
+  };
+
+  const unpinRow = (pin: PinnedItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    unpin(caseId, pin.pinned_at).catch(() => {});
   };
 
   return (
@@ -41,6 +48,7 @@ export function CitationsTable({ citations }: { citations: PinnedItem[] }) {
                 <th className="py-2 pr-3">Type</th>
                 <th className="py-2 pr-3">District</th>
                 <th className="py-2 pr-3">Confidence</th>
+                <th className="py-2 pr-3" />
               </tr>
             </thead>
             <tbody>
@@ -65,6 +73,16 @@ export function CitationsTable({ citations }: { citations: PinnedItem[] }) {
                     <td className="py-2 pr-3">{c.data?.district ?? '—'}</td>
                     <td className="py-2 pr-3 dossier-mono text-xs uppercase">
                       {c.confidence ?? '—'}
+                    </td>
+                    <td className="py-2 pr-1 text-right">
+                      <button
+                        type="button"
+                        className="dossier-unpin-btn"
+                        title="Unpin this citation"
+                        onClick={(e) => unpinRow(pin, e)}
+                      >
+                        <X size={12} />
+                      </button>
                     </td>
                   </tr>
                 );
