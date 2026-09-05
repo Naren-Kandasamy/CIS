@@ -49,6 +49,15 @@ jobs:
           rm -rf functions/ps_1_cis_function/shared
           cp -r shared functions/ps_1_cis_function/
 
+          # BUG FIX (2026-09 audit): this copy step already ran on every
+          # deploy, so a stale *committed* mirror was never a deploy-time
+          # risk by itself -- but nothing previously confirmed the copy
+          # actually produced an identical tree (e.g. a permissions error, a
+          # partial copy, or someone silently changing this step later).
+          # Fail the deploy loudly instead of shipping a function whose code
+          # doesn't match what was just committed.
+          ./scripts/verify_shared_mirror.sh
+
           # BUG FIX: zcatalyst-cli exits 0 even when the deploy does nothing --
           # an expired CATALYST_TOKEN prints "Error: Authentication failure" and
           # "No components deployed!" and the job still went green. Every run

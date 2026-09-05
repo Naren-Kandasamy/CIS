@@ -45,6 +45,7 @@ class QueryRequest(BaseModel):
     # legitimate input) while the real check keeps running unchanged.
 
 from backend.job_dispatch import dispatch_query_job
+from shared.audit_engine import write_hash_chained_entry
 
 async def _authorize_session(session_id: str, username: str):
     # BUG FIX (IDOR): session_id is a client-generated UUID4 with no
@@ -89,6 +90,42 @@ async def query(request: QueryRequest, http_request: Request):
         raise HTTPException(401, "No authenticated session")
     await _enforce_query_rate_limit(username)
     await _authorize_session(request.session_id, username)
+
+    # BUG FIX (2026-09 audit, Phase 1 of jurisdiction scoping -- see
+    # Docs/audit/2026-09-01_security_audit_and_fixes.md): every query an
+    # officer runs is now recorded in the tamper-evident audit log
+    # (shared/audit_engine.py, previously a print()-only stub). This gives a
+    # real "who queried what, when" trail, which is the audit-trail half of
+    # the "Integrity & Anti-Corruption Layer" checklist item. It does NOT yet
+    # flag cross-district access -- that needs the officer's rank/home
+    # district compared against the *district the query actually resolved
+    # to*, which is only known after NER runs deep inside the LangGraph
+    # pipeline (a separate deployment). Logging at the API boundary, where
+    # identity is already verified, is the safe first cut; comparing against
+    # resolved districts is the scoped follow-up noted in the audit report.
+    # Never let a logging failure block a legitimate query -- write_hash_
+    # chained_entry already swallows its own errors, so this is just a
+    # best-effort call, not wrapped further.
+    role = getattr(http_request.state, "role", None)
+    try:
+        await write_hash_chained_entry("query:submitted", {
+            "username": username,
+            "role": role,
+            "session_id": request.session_id,
+            "query": request.query,
+            "language": request.language,
+        })
+    except Exception as e:
+        # Defense in depth: write_hash_chained_entry already catches its own
+        # storage errors internally and returns None rather than raising (see
+        # shared/audit_engine.py) -- this second guard exists so that even a
+        # future bug *inside* the audit engine itself (a bad edit that
+        # removes that internal try/except, an unrelated exception in its
+        # hashing/serialization path) can never block an officer from
+        # submitting a query. Audit logging must be best-effort with respect
+        # to the primary investigative workflow, never a dependency of it.
+        print(f"[AUDIT] query:submitted logging failed unexpectedly, continuing anyway: {e}")
+
     job_id = await dispatch_query_job(request.session_id, request.query, request.language)
     return EventSourceResponse(stream_job_status(job_id))
 

@@ -11,6 +11,7 @@ from pipeline_function.pipeline.evidence import EvidenceObject
 from pipeline_function.pipeline.catalyst_resilient_client import llm_complete_resilient
 from pipeline_function.pipeline.confidence_engine import run_confidence_engine
 from pipeline_function.pipeline.synthesis.synthesizer import SYNTHESIS_SYSTEM
+from pipeline_function.pipeline.synthesis.citation_verifier import verify_citations
 from pipeline_function.pipeline.synthesis.fallback import build_fallback_response
 from shared.language_utils import detect_language, is_viable
 from shared.catalyst_client import translate_text
@@ -613,6 +614,37 @@ async def synthesizing_response_node(state: AgentState):
 
     try:
         ans = await llm_complete_resilient(prompt=prompt, system=system, temperature=0.2, max_tokens=1500)
+
+        # BUG FIX (2026-09 audit): verify every "[FIR: <id>]" citation the
+        # model produced actually corresponds to a retrieved evidence item --
+        # see pipeline_function/pipeline/synthesis/citation_verifier.py for
+        # why this matters (SYNTHESIS_SYSTEM's "never invent FIR IDs" rule
+        # was previously enforced by prompt wording alone, with nothing
+        # checking compliance). Flag, don't discard: an unverified citation
+        # is a strong signal something's wrong, but silently dropping the
+        # whole response would hide potentially-useful analysis behind one
+        # bad citation. The officer sees the caveat inline; the event goes to
+        # the tamper-evident audit log either way for later review.
+        citation_check = verify_citations(ans, evidence_dicts)
+        if citation_check["unverified"]:
+            unverified_str = ", ".join(citation_check["unverified"])
+            ans += (
+                f"\n\n⚠ SYSTEM NOTICE: this response cites FIR ID(s) not found in "
+                f"the retrieved evidence for this query: {unverified_str}. Do not "
+                f"act on these citations without independently verifying them in "
+                f"the case record."
+            )
+            try:
+                await write_hash_chained_entry("synthesis:unverified_citation", {
+                    "job_id": state.get("job_id"),
+                    "session_id": state.get("session_id"),
+                    "query": query,
+                    "unverified_fir_ids": citation_check["unverified"],
+                    "known_fir_ids": [item["fir_id"] for item in evidence_dicts],
+                })
+            except Exception as e:
+                print(f"[AUDIT] synthesis:unverified_citation logging failed, continuing anyway: {e}")
+
         ans += partial_notice
     except Exception as e:
         print(f"[Synthesis Error] LLM call failed: {e}")

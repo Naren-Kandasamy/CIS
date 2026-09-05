@@ -37,12 +37,13 @@ def test_query_unauthorized():
     assert response.status_code == 401
 
 
+@patch("backend.api.routes.query.write_hash_chained_entry", new_callable=AsyncMock)
 @patch("backend.api.routes.query.stream_job_status", new=_fake_stream)
 @patch("backend.api.routes.query.dispatch_query_job", new_callable=AsyncMock)
 @patch("backend.api.routes.query.nosql_set", new_callable=AsyncMock)
 @patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
 @patch("backend.api.middleware.rbac.get_session")
-def test_query_first_use_claims_session(mock_get_session, mock_get, mock_set, mock_dispatch):
+def test_query_first_use_claims_session(mock_get_session, mock_get, mock_set, mock_dispatch, mock_audit):
     mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
     # session_owner:<sid> unclaimed, query_rate:officer_1 unset
     mock_get.return_value = None
@@ -60,6 +61,15 @@ def test_query_first_use_claims_session(mock_get_session, mock_get, mock_set, mo
     mock_dispatch.assert_called_once_with("brand-new-session", "any cases match this MO?", "en")
     # session_owner claim write + rate counter write
     assert mock_set.call_count == 2
+    # BUG FIX (2026-09 audit) regression coverage: every submitted query is
+    # now recorded in the tamper-evident audit log (shared/audit_engine.py).
+    mock_audit.assert_called_once_with("query:submitted", {
+        "username": "officer_1",
+        "role": "inspector",
+        "session_id": "brand-new-session",
+        "query": "any cases match this MO?",
+        "language": "en",
+    })
 
 
 @patch("backend.api.routes.query.dispatch_query_job", new_callable=AsyncMock)
@@ -89,12 +99,13 @@ def test_query_cross_officer_session_reuse_blocked(mock_get_session, mock_get, m
     mock_dispatch.assert_not_called()
 
 
+@patch("backend.api.routes.query.write_hash_chained_entry", new_callable=AsyncMock)
 @patch("backend.api.routes.query.stream_job_status", new=_fake_stream)
 @patch("backend.api.routes.query.dispatch_query_job", new_callable=AsyncMock)
 @patch("backend.api.routes.query.nosql_set", new_callable=AsyncMock)
 @patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
 @patch("backend.api.middleware.rbac.get_session")
-def test_query_same_owner_reuse_allowed(mock_get_session, mock_get, mock_set, mock_dispatch):
+def test_query_same_owner_reuse_allowed(mock_get_session, mock_get, mock_set, mock_dispatch, mock_audit):
     mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
 
     def get_side_effect(key):
@@ -174,3 +185,30 @@ def test_query_rejects_oversized_query_text(mock_get_session, mock_dispatch):
     # layer before the route or Pydantic's max_length=2000 is ever reached.
     assert response.status_code == 400
     mock_dispatch.assert_not_called()
+
+
+# BUG FIX (2026-09 audit) regression coverage: write_hash_chained_entry
+# already swallows its own storage errors and returns None (see
+# tests/test_audit_engine.py). This proves the /api/query route adds its own
+# defense-in-depth guard too -- even an unexpected exception raised directly
+# out of the audit call must not stop a legitimate query from completing.
+@patch("backend.api.routes.query.write_hash_chained_entry", new_callable=AsyncMock)
+@patch("backend.api.routes.query.stream_job_status", new=_fake_stream)
+@patch("backend.api.routes.query.dispatch_query_job", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_set", new_callable=AsyncMock)
+@patch("backend.api.routes.query.nosql_get", new_callable=AsyncMock)
+@patch("backend.api.middleware.rbac.get_session")
+def test_query_audit_log_failure_does_not_block_query(mock_get_session, mock_get, mock_set, mock_dispatch, mock_audit):
+    mock_get_session.return_value = {"username": "officer_1", "role": "inspector"}
+    mock_get.return_value = None
+    mock_dispatch.return_value = "job_789"
+    mock_audit.side_effect = RuntimeError("audit store unreachable")
+
+    response = client.post(
+        "/api/query",
+        json={"session_id": "another-session", "query": "status update"},
+        headers={"Authorization": "Bearer mocktoken"},
+    )
+
+    assert response.status_code == 200
+    mock_dispatch.assert_called_once()

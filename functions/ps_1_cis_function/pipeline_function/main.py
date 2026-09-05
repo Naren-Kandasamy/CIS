@@ -24,30 +24,87 @@ async def warm_connections():
 
 _warmed_up = False
 
+async def _main_async(job_id: str, session_id: str, query: str, language: str):
+    global _warmed_up
+    if not _warmed_up:
+        try:
+            await warm_connections()
+        except Exception as e:
+            print(f"Warm-up failed (non-fatal): {e}")
+        _warmed_up = True
+
+    await _run_pipeline(job_id, session_id, query, language)
+
+_loop = None
+
 def handler(event, context):
     """
     Triggered as a Signals Function target -- invoked when the Rule routes an
     event from the Custom Publisher here. Runs the full LangGraph pipeline
     inside this single invocation.
     """
-    global _warmed_up
-    if not _warmed_up:
-        try:
-            asyncio.run(warm_connections())
-        except Exception as e:
-            print(f"Warm-up failed (non-fatal): {e}")
-        _warmed_up = True
+    global _warmed_up, _loop
     raw_data = event.get_raw_data()
-    job_data = raw_data['events'][0]['data']
+    
+    # CRITICAL WORKAROUND: langchain_core caches a global ThreadPoolExecutor.
+    # In a serverless environment, background threads may be killed or atexit 
+    # hooks run between invocations, leaving this executor in a "shutdown" state.
+    # BUG FIX: simply clearing the cache leaked the old threads, leading to an OOM SIGKILL.
+    try:
+        import langchain_core.callbacks.manager
+        if hasattr(langchain_core.callbacks.manager._executor, "cache_info"):
+            if langchain_core.callbacks.manager._executor.cache_info().currsize > 0:
+                executor = langchain_core.callbacks.manager._executor()
+                if hasattr(executor, "shutdown"):
+                    executor.shutdown(wait=False)
+        langchain_core.callbacks.manager._executor.cache_clear()
+    except Exception as e:
+        logger.warning(f"Failed to clear langchain_core executor cache: {e}")
 
-    job_id = job_data["job_id"]
-    session_id = job_data["session_id"]
-    query = job_data["query"]
-    language = job_data.get("language", "en")
-    logger.info(f"Received job {job_id} for session {session_id} (language: {language})")
+    # BUG FIX: anyio (used by httpx) caches its ThreadPoolExecutor globally.
+    # Using `asyncio.run()` creates a new loop per invocation, but when it exits,
+    # it shuts down the executor. Subsequent invocations will try to use the 
+    # shut down executor and crash with "cannot schedule new futures after shutdown".
+    # We use a persistent global event loop to keep the executor alive.
+    if _loop is None or _loop.is_closed():
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
 
-    asyncio.run(_run_pipeline(job_id, session_id, query, language))
-    context.close_with_success()
+    try:
+        job_data = raw_data['events'][0]['data']
+        
+        # Catalyst sometimes wraps the entire POST JSON payload in another 'data' key
+        if isinstance(job_data, str):
+            job_data = json.loads(job_data)
+        if "data" in job_data and isinstance(job_data["data"], str):
+            job_data = json.loads(job_data["data"])
+        elif "data" in job_data and isinstance(job_data["data"], dict):
+            job_data = job_data["data"]
+
+        # Warm-up ping
+        if job_data.get("warmup"):
+            logger.info("Warm-up ping received")
+            if not _warmed_up:
+                try:
+                    _loop.run_until_complete(warm_connections())
+                    _warmed_up = True
+                    logger.info("Warm-up complete")
+                except Exception as e:
+                    logger.error(f"Warm-up failed (non-fatal): {e}")
+            context.close_with_success()
+            return
+
+        job_id = job_data["job_id"]
+        session_id = job_data["session_id"]
+        query = job_data["query"]
+        language = job_data.get("language", "en")
+        logger.info(f"Received job {job_id} for session {session_id} (language: {language})")
+
+        _loop.run_until_complete(_main_async(job_id, session_id, query, language))
+        context.close_with_success()
+    except Exception as e:
+        logger.error(f"Pipeline crashed: {e}")
+        context.close_with_failure()
 
 async def _run_pipeline(job_id: str, session_id: str, query: str, language: str = "en"):
     # BUG FIX: no idempotency guard previously existed -- a redelivered
@@ -71,37 +128,37 @@ async def _run_pipeline(job_id: str, session_id: str, query: str, language: str 
             session_state = json.loads(session_doc["value"]) if session_doc else {}
 
         # Run the pipeline WITHOUT holding the session lock
-        await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
+        result_data = await run_langgraph_pipeline(job_id, query, write_job_status, history, session_state=session_state, session_id=session_id, language=language)
 
         # --- Narrow lock: write updated history after pipeline ---
         async with get_session_lock(session_id):
-            job = await read_job_status(job_id)
-            if job and job.get("status") == "done":
+            if result_data:
                 # Re-read history inside the lock to catch concurrent updates
                 history_doc = await nosql_get(f"history:{session_id}")
                 history = json.loads(history_doc["value"]) if history_doc else []
                 # Persist evidence + visualization alongside {q, a} so
                 # GET /api/sessions/{sid} restores the FULL turn on reload --
                 # the evidence cards and the graph/map, not just the text.
-                # Cap evidence per turn so a 10-turn history doc stays inside
-                # the NoSQL value-size limit.
+                # Evidence items carry a whole FIR record in .data; cap the
+                # count per turn so a 10-turn history doc stays inside the
+                # NoSQL value-size limit.
                 history.append({
                     "q": query,
-                    "a": job["result"]["answer"],
-                    "evidence": (job["result"].get("evidence") or [])[:40],
-                    "visualization": job["result"].get("visualization") or {},
+                    "a": result_data.get("answer", ""),
+                    "evidence": (result_data.get("evidence") or [])[:40],
+                    "visualization": result_data.get("visualization") or {},
                 })
                 history = history[-10:]  # Cap history to 10
                 await nosql_set(f"history:{session_id}", json.dumps(history))
                 
                 # Write back the session state for coreference and follow-up
                 # GUARD: only overwrite valid investigative state if the new query wasn't a firewall block/fallback
-                intent = job["result"].get("intent_parsed", {}).get("intent")
+                intent = result_data.get("intent_parsed", {}).get("intent")
                 if intent not in ["malicious", "greeting", "fallback"]:
                     new_session_state = {
                         "prior_query": query,
-                        "prior_entity_json": job["result"].get("intent_parsed", {}).get("entities", {}),
-                        "prior_evidence_items": job["result"].get("evidence", [])
+                        "prior_entity_json": result_data.get("intent_parsed", {}).get("entities", {}),
+                        "prior_evidence_items": result_data.get("evidence", [])
                     }
                     await nosql_set(f"session:{session_id}", json.dumps(new_session_state))
 
