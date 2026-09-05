@@ -113,6 +113,9 @@
   box-shadow: 4px 12px 24px rgba(43, 33, 20, 0.34);
   z-index: 30;
 }
+.board-card.is-resizing {
+  z-index: 30;
+}
 .board-card:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
@@ -123,6 +126,55 @@
 .corkboard.is-linking .board-card.link-source {
   outline: 2px dashed var(--yarn);
   outline-offset: 3px;
+}
+
+.board-card-actions {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+.board-card:hover .board-card-actions,
+.board-card:focus-within .board-card-actions {
+  opacity: 1;
+}
+.board-card-action {
+  padding: 3px 4px;
+  border-radius: 50%;
+}
+.board-card-action.is-unpinned {
+  opacity: 0.55;
+}
+
+.board-card-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background: linear-gradient(
+    135deg,
+    transparent 0%,
+    transparent 45%,
+    rgba(59, 44, 24, 0.45) 45%,
+    rgba(59, 44, 24, 0.45) 55%,
+    transparent 55%,
+    transparent 65%,
+    rgba(59, 44, 24, 0.45) 65%,
+    rgba(59, 44, 24, 0.45) 75%,
+    transparent 75%
+  );
+}
+.board-card:hover .board-card-resize-handle,
+.board-card.is-resizing .board-card-resize-handle {
+  opacity: 1;
 }
 
 .board-pin {
@@ -332,6 +384,12 @@
   font-size: 11.5px;
   color: var(--text-secondary);
 }
+.fir-card-crime-no {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
 
 /* ── free note ─────────────────────────────────────────────────────────── */
 .free-note {
@@ -359,6 +417,85 @@
   outline: none;
   font: inherit;
   color: inherit;
+}
+
+/* ── photo card ────────────────────────────────────────────────────────── */
+.photo-card {
+  position: relative;
+  height: 100%;
+  padding: 8px 8px 9px;
+  background: var(--index-card);
+  border: 1px solid rgba(59, 44, 24, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.photo-frame {
+  position: relative;
+  flex: 1;
+  min-height: 110px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(59, 44, 24, 0.18);
+  overflow: hidden;
+  filter: sepia(0.2) contrast(1.03);
+}
+.photo-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.photo-upload-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.photo-upload-placeholder:hover {
+  color: var(--text-secondary);
+}
+.photo-caption {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-primary);
+  text-align: center;
+  word-break: break-word;
+  min-height: 14px;
+}
+.photo-caption .is-placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.75;
+}
+.photo-caption input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--glass-border);
+  outline: none;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+}
+.photo-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.photo-card:hover .photo-remove,
+.photo-card:focus-within .photo-remove {
+  opacity: 1;
 }
 
 /* ── toolbar ───────────────────────────────────────────────────────────── */

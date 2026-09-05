@@ -12,6 +12,8 @@ import { HypothesisNoteCard } from './HypothesisNoteCard';
 import { SuspectTile } from './SuspectTile';
 import { FirCard } from './FirCard';
 import { FreeNoteCard } from './FreeNoteCard';
+import { PhotoCard } from './PhotoCard';
+import { readAndResizeImage } from '../../lib/imageResize';
 
 // The freeform board. A single pan/zoom transform on `.corkboard-surface`;
 // cards are absolutely positioned in board coordinates; the yarn layer draws
@@ -47,8 +49,12 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
   const upsertCard = useBoardStore((s) => s.upsertCard);
   const patchCard = useBoardStore((s) => s.patchCard);
   const removeCard = useBoardStore((s) => s.removeCard);
+  const dismissCard = useBoardStore((s) => s.dismissCard);
   const persistLayout = useBoardStore((s) => s.persistLayout);
+  const unpin = useBoardStore((s) => s.unpin);
+  const pin = useBoardStore((s) => s.pin);
   const pins = useBoardStore((s) => s.pinsByCase[caseId]);
+  const rawLayout = useBoardStore((s) => s.layoutByCase[caseId]);
   const loading = useBoardStore((s) => s.loadingByCase[caseId] ?? false);
   const openEntity = useEntityStore((s) => s.open);
   const { checkLogs, busyId, check, resolve } = useHypotheses(caseId);
@@ -84,6 +90,34 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
     });
     return { suspectPinByRef: suspect, firPinByRef: fir };
   }, [pins]);
+
+  // The board and the case_board pin log are deliberately independent: a
+  // fir/suspect card keeps rendering from its own `content` snapshot once
+  // placed, so unpinning (from here or the workspace) never blanks or removes
+  // it — "pinned" only governs whether it shows in the workspace lists.
+  const livePinFor = (card: BoardCard): PinnedItem | undefined =>
+    card.kind === 'suspect'
+      ? suspectPinByRef.get(card.refId ?? '')
+      : card.kind === 'fir'
+        ? firPinByRef.get(card.refId ?? '')
+        : undefined;
+
+  const pinContentFor = (card: BoardCard): PinnedItem => {
+    const live = livePinFor(card);
+    if (live) return live;
+    if (card.content) {
+      return {
+        pinned_by: '',
+        pinned_at: 0,
+        source_session_id: '',
+        content_type: card.kind,
+        content: card.content,
+      };
+    }
+    return fallbackPin(card);
+  };
+
+  const isPinned = (card: BoardCard) => livePinFor(card) !== undefined;
 
   const refIds = useMemo(() => {
     const s = new Set<string>();
@@ -177,6 +211,21 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
     });
   }, [cards, loading]);
 
+  // ── materialize pinned fir/suspect cards durably ───────────────────────
+  // deriveBoardCards synthesizes a scattered card for every pinned fir/suspect
+  // that isn't in the persisted layout yet, but that synthesis is ephemeral —
+  // recomputed each render from the live pin. Write each one into the layout
+  // (with its content snapshot) the first time it's seen, so unpinning later
+  // never makes it vanish from a board the officer has already been using.
+  useEffect(() => {
+    if (loading) return;
+    const layoutIds = new Set((rawLayout ?? []).map((c) => c.id));
+    const fresh = cards.filter((c) => (c.kind === 'fir' || c.kind === 'suspect') && !layoutIds.has(c.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((c) => upsertCard(caseId, c));
+    persistLayout(caseId, 0);
+  }, [cards, rawLayout, loading, caseId, upsertCard, persistLayout]);
+
   // ── view helpers ───────────────────────────────────────────────────────
   const zoomAroundCentre = (factor: number) => {
     const el = viewportRef.current;
@@ -267,6 +316,64 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
     persist();
   };
 
+  // ── photo cards ────────────────────────────────────────────────────────
+  // Empty tile first (instant, no file dialog blocking the click) — the
+  // officer fills it in via the tile's own "Add photo" affordance, or via the
+  // toolbar's file picker below which fills it inline.
+  const addPhoto = () => {
+    const { x, y } = boardCentre();
+    upsertCard(caseId, {
+      id: `photo:${Date.now().toString(36)}`,
+      kind: 'photo',
+      refId: null,
+      x: x - 85,
+      y: y - 105,
+      w: 170,
+      h: 210,
+      color: 'var(--pin-red)',
+      rotation: jitter(),
+      connections: [],
+      label: '',
+    });
+    persist();
+  };
+
+  // Removing a fir/suspect card is a real, sticky "dismiss" — it never touches
+  // the case_board pin log (the board is a separate mapping surface), and it
+  // stays off the board even though the pin still stands, so it doesn't just
+  // reappear the next time the board is opened.
+  const deleteCard = (card: BoardCard) => {
+    dismissCard(caseId, card.id);
+    persist();
+  };
+
+  // Pin/unpin toggle, available on the board itself as well as the workspace.
+  const togglePinForCard = (card: BoardCard) => {
+    const live = livePinFor(card);
+    if (live) {
+      unpin(caseId, live.pinned_at).catch(() => {});
+      return;
+    }
+    const content = card.content ?? { id: card.refId, label: card.refId ?? card.id };
+    pin({
+      caseId,
+      sourceSessionId: '',
+      contentType: card.kind === 'suspect' ? 'suspect' : 'citation',
+      content,
+    }).catch(() => {});
+  };
+
+  const setPhotoForCard = (cardId: string, file: File) => {
+    readAndResizeImage(file)
+      .then((dataUrl) => {
+        patchCard(caseId, cardId, { photoUrl: dataUrl });
+        persist();
+      })
+      .catch(() => {
+        // Not a readable image — leave the tile as-is.
+      });
+  };
+
   const addCardForEntity = (entityId: string) => {
     const id = `note:${entityId}`;
     if (cards.some((c) => c.id === id)) return;
@@ -298,7 +405,7 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
       return;
     }
     if (card.kind === 'suspect') {
-      const p = suspectPinByRef.get(card.refId ?? '') ?? fallbackPin(card);
+      const p = pinContentFor(card);
       const c = p.content as Record<string, any>;
       openEntity({
         type: 'person',
@@ -309,7 +416,7 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
         evidenceItems: [],
       });
     } else if (card.kind === 'fir') {
-      const p = firPinByRef.get(card.refId ?? '') ?? fallbackPin(card);
+      const p = pinContentFor(card);
       const c = p.content as Record<string, any>;
       openEntity({
         type: 'fir',
@@ -357,6 +464,7 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
         zoom={view.k}
         linking={linking}
         onAddNote={addNote}
+        onAddPhoto={addPhoto}
         onToggleLink={() => {
           setLinking((v) => !v);
           setLinkSource(null);
@@ -384,6 +492,15 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
               onDragMove={(x, y) => upsertCard(caseId, { ...card, x, y })}
               onDragEnd={persist}
               onSelect={() => selectCard(card)}
+              onResize={(w, h) => upsertCard(caseId, { ...card, w, h })}
+              onResizeEnd={persist}
+              onDelete={
+                card.kind === 'suspect' || card.kind === 'fir' ? () => deleteCard(card) : undefined
+              }
+              onTogglePin={
+                card.kind === 'suspect' || card.kind === 'fir' ? () => togglePinForCard(card) : undefined
+              }
+              pinned={card.kind === 'suspect' || card.kind === 'fir' ? isPinned(card) : undefined}
             >
               {card.kind === 'hypothesis' &&
                 (() => {
@@ -402,12 +519,8 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
                     <div className="free-note">Hypothesis unavailable</div>
                   );
                 })()}
-              {card.kind === 'suspect' && (
-                <SuspectTile pin={suspectPinByRef.get(card.refId ?? '') ?? fallbackPin(card)} />
-              )}
-              {card.kind === 'fir' && (
-                <FirCard pin={firPinByRef.get(card.refId ?? '') ?? fallbackPin(card)} />
-              )}
+              {card.kind === 'suspect' && <SuspectTile pin={pinContentFor(card)} />}
+              {card.kind === 'fir' && <FirCard pin={pinContentFor(card)} />}
               {card.kind === 'note' && (
                 <FreeNoteCard
                   card={card}
@@ -415,6 +528,20 @@ export function CorkboardCanvas({ caseId, cards, hypotheses }: Props) {
                     patchCard(caseId, card.id, { text: t });
                     persist();
                   }}
+                  onRemove={() => {
+                    removeCard(caseId, card.id);
+                    persist();
+                  }}
+                />
+              )}
+              {card.kind === 'photo' && (
+                <PhotoCard
+                  card={card}
+                  onChangeLabel={(label) => {
+                    patchCard(caseId, card.id, { label });
+                    persist();
+                  }}
+                  onPickFile={(file) => setPhotoForCard(card.id, file)}
                   onRemove={() => {
                     removeCard(caseId, card.id);
                     persist();

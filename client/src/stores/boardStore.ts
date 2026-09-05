@@ -26,6 +26,8 @@ interface AddHypothesisInput {
 interface BoardState {
   pinsByCase: Record<string, PinnedItem[]>;
   layoutByCase: Record<string, BoardCard[]>;
+  /** Card ids explicitly dismissed from the board (see dismissCard). */
+  dismissedByCase: Record<string, string[]>;
   hypothesesByCase: Record<string, HypothesisRecord[]>;
   loadingByCase: Record<string, boolean>;
 
@@ -36,6 +38,12 @@ interface BoardState {
   loadCase: (caseId: string) => Promise<void>;
 
   pin: (input: PinInput) => Promise<void>;
+  /** Unpin one case_board entry (identified by its pinned_at timestamp).
+   * Deliberately independent of the evidence board: a card already on the
+   * board (fir/suspect) carries its own content snapshot and is untouched by
+   * this — pinned/unpinned only changes whether it shows in the workspace's
+   * Pinned Citations / Key Suspects lists. */
+  unpin: (caseId: string, pinnedAt: number) => Promise<void>;
   putLayout: (caseId: string, cards: BoardCard[]) => Promise<void>;
   addHypothesis: (input: AddHypothesisInput) => Promise<HypothesisRecord>;
 
@@ -48,6 +56,9 @@ interface BoardState {
   patchCard: (caseId: string, id: string, patch: Partial<BoardCard>) => void;
   /** Drop a card from the local layout. */
   removeCard: (caseId: string, id: string) => void;
+  /** Remove a fir/suspect card from the board AND mark it dismissed, so it
+   * doesn't get auto-recreated on the next load while its pin still stands. */
+  dismissCard: (caseId: string, id: string) => void;
   /** Debounced PUT of the current local layout (drags are already applied). */
   persistLayout: (caseId: string, delayMs?: number) => void;
   /** Upsert a single hypothesis record into hypothesesByCase (after resolve). */
@@ -61,6 +72,7 @@ const _flushTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 export const useBoardStore = create<BoardState>((set, get) => ({
   pinsByCase: {},
   layoutByCase: {},
+  dismissedByCase: {},
   hypothesesByCase: {},
   loadingByCase: {},
 
@@ -71,8 +83,11 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   },
 
   fetchLayout: async (caseId) => {
-    const { cards } = await api.getBoardLayout(caseId);
-    set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: cards } }));
+    const { cards, dismissed } = await api.getBoardLayout(caseId);
+    set((s) => ({
+      layoutByCase: { ...s.layoutByCase, [caseId]: cards },
+      dismissedByCase: { ...s.dismissedByCase, [caseId]: dismissed ?? [] },
+    }));
     return cards;
   },
 
@@ -119,11 +134,24 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     }
   },
 
+  unpin: async (caseId, pinnedAt) => {
+    const prev = get().pinsByCase[caseId] ?? [];
+    set((s) => ({
+      pinsByCase: { ...s.pinsByCase, [caseId]: prev.filter((p) => p.pinned_at !== pinnedAt) },
+    }));
+    try {
+      await api.unpinFromBoard(caseId, pinnedAt);
+    } catch (err) {
+      set((s) => ({ pinsByCase: { ...s.pinsByCase, [caseId]: prev } }));
+      throw err;
+    }
+  },
+
   putLayout: async (caseId, cards) => {
     const prev = get().layoutByCase[caseId] ?? [];
     set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: cards } }));
     try {
-      const { cards: saved } = await api.putBoardLayout(caseId, cards);
+      const { cards: saved } = await api.putBoardLayout(caseId, cards, get().dismissedByCase[caseId] ?? []);
       set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: saved } }));
     } catch (err) {
       set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: prev } }));
@@ -178,15 +206,33 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       },
     })),
 
+  dismissCard: (caseId, id) =>
+    set((s) => ({
+      layoutByCase: {
+        ...s.layoutByCase,
+        [caseId]: (s.layoutByCase[caseId] ?? []).filter((c) => c.id !== id),
+      },
+      dismissedByCase: {
+        ...s.dismissedByCase,
+        [caseId]: (s.dismissedByCase[caseId] ?? []).includes(id)
+          ? s.dismissedByCase[caseId]
+          : [...(s.dismissedByCase[caseId] ?? []), id],
+      },
+    })),
+
   persistLayout: (caseId, delayMs = 800) => {
     if (_flushTimers[caseId]) clearTimeout(_flushTimers[caseId]);
     _flushTimers[caseId] = setTimeout(() => {
       delete _flushTimers[caseId];
       const cards = get().layoutByCase[caseId] ?? [];
+      const dismissed = get().dismissedByCase[caseId] ?? [];
       api
-        .putBoardLayout(caseId, cards)
-        .then(({ cards: saved }) =>
-          set((s) => ({ layoutByCase: { ...s.layoutByCase, [caseId]: saved } })),
+        .putBoardLayout(caseId, cards, dismissed)
+        .then(({ cards: saved, dismissed: savedDismissed }) =>
+          set((s) => ({
+            layoutByCase: { ...s.layoutByCase, [caseId]: saved },
+            dismissedByCase: { ...s.dismissedByCase, [caseId]: savedDismissed ?? dismissed },
+          })),
         )
         .catch(() => {
           // Keep the local layout; the next drag/link retries the flush.
@@ -245,9 +291,11 @@ export function deriveBoardCards(
   layout: BoardCard[] | undefined,
   hypotheses: HypothesisRecord[] | undefined,
   pins: PinnedItem[] | undefined,
+  dismissed: string[] | undefined = [],
 ): BoardCard[] {
   const out: BoardCard[] = layout ? [...layout] : [];
   const ids = new Set(out.map((c) => c.id));
+  const dismissedIds = new Set(dismissed);
 
   // Auto-placed cards get their own sequential grid, started below whatever the
   // user has already dragged onto the board so a fresh hypothesis/pin never
@@ -257,7 +305,7 @@ export function deriveBoardCards(
     out.length > 0 ? Math.max(80, ...out.map((c) => c.y + c.h)) + 40 : 80;
 
   const push = (card: BoardCard) => {
-    if (ids.has(card.id)) return;
+    if (ids.has(card.id) || dismissedIds.has(card.id)) return;
     ids.add(card.id);
     out.push(card);
   };
@@ -292,6 +340,7 @@ export function deriveBoardCards(
         h: 120,
         color: 'var(--pin-green)',
         connections: [],
+        content: p.content,
         ...scatter(id, seq++, originY),
       });
     } else if (p.content_type === 'suspect') {
@@ -307,6 +356,7 @@ export function deriveBoardCards(
         h: 175,
         color: 'var(--pin-blue)',
         connections: [],
+        content: p.content,
         ...scatter(id, seq++, originY),
       });
     }

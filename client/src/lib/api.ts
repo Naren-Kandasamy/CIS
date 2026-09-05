@@ -110,12 +110,17 @@ export const pinToBoard = (
   caseId: string,
   body: { source_session_id: string; content_type: string; content: Record<string, unknown> },
 ) => apiFetch<{ status: string }>(`/api/cases/${caseId}/board`, { method: 'POST', body });
+export const unpinFromBoard = (caseId: string, pinnedAt: number) =>
+  apiFetch<{ status: string }>(`/api/cases/${caseId}/board`, {
+    method: 'DELETE',
+    body: { pinned_at: pinnedAt },
+  });
 export const getBoardLayout = (caseId: string) =>
   apiFetch<BoardLayoutResponse>(`/api/cases/${caseId}/board/layout`);
-export const putBoardLayout = (caseId: string, cards: BoardCard[]) =>
+export const putBoardLayout = (caseId: string, cards: BoardCard[], dismissed: string[] = []) =>
   apiFetch<BoardLayoutResponse>(`/api/cases/${caseId}/board/layout`, {
     method: 'PUT',
-    body: { cards },
+    body: { cards, dismissed },
   });
 
 // ─── entity relation network ────────────────────────────────────────────────

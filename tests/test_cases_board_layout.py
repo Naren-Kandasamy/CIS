@@ -72,7 +72,7 @@ def test_get_board_layout_empty_when_absent(mock_get_session, mock_get, mock_set
         headers={"Authorization": "Bearer mocktoken"},
     )
     assert r.status_code == 200
-    assert r.json() == {"cards": []}
+    assert r.json() == {"cards": [], "dismissed": []}
     mock_set.assert_not_called()
 
 
